@@ -1,0 +1,95 @@
+{
+  "game": {
+    "window_title": "Tthol",
+    "process_name": "tthola.dat",
+    "architecture": "32-bit",
+    "base_address": "0x400000"
+  },
+  "character_structure": {
+    "description": "角色數據結構，以血量地址為基準 (offset 0)",
+    "note": "基準地址是動態的，需每次重新掃描血量值來定位",
+    "fields": {
+      "-96": { "name": "外功", "type": "int32", "sample_value": 190 },
+      "-92": { "name": "未知", "type": "int32", "sample_value": 1 },
+      "-88": { "name": "根骨", "type": "int32", "sample_value": 61 },
+      "-84": { "name": "未知", "type": "int32", "sample_value": 8 },
+      "-80": { "name": "技巧", "type": "int32", "sample_value": 85 },
+      "-76": { "name": "未知", "type": "int32", "sample_value": 1 },
+      "-72": { "name": "未知", "type": "int32", "sample_value": 19 },
+      "-68": { "name": "未知", "type": "int32", "sample_value": 0 },
+      "-64": { "name": "未知", "type": "int32", "sample_value": 6 },
+      "-60": { "name": "未知", "type": "int32", "sample_value": 0 },
+      "-56": { "name": "未知", "type": "int32", "sample_value": 8 },
+      "-52": { "name": "未知", "type": "int32", "sample_value": 0 },
+      "-48": { "name": "未知", "type": "int32", "sample_value": 29007 },
+      "-44": { "name": "未知", "type": "int32", "sample_value": 10 },
+      "-40": { "name": "未知", "type": "int32", "sample_value": 0 },
+      "-36": { "name": "等級", "type": "int32", "sample_value": 192 },
+      "0":   { "name": "血量", "type": "int32", "sample_value": 46277 },
+      "4":   { "name": "最大血量", "type": "int32", "sample_value": 46277 },
+      "8":   { "name": "真氣", "type": "int32", "sample_value": 5070 },
+      "12":  { "name": "最大真氣", "type": "int32", "sample_value": 5070 },
+      "24":  { "name": "負重", "type": "int32", "sample_value": 31842 },
+      "28":  { "name": "最大負重", "type": "int32", "sample_value": 82498 },
+      "32":  { "name": "未知", "type": "int32", "sample_value": 24600 },
+      "44":  { "name": "魅力值", "type": "int32", "sample_value": 30454 },
+      "72":  { "name": "物攻", "type": "int32", "sample_value": 2204 },
+      "76":  { "name": "物攻(基礎?)", "type": "int32", "sample_value": 2204 },
+      "80":  { "name": "內勁", "type": "int32", "sample_value": 253 },
+      "84":  { "name": "防禦", "type": "int32", "sample_value": 1050 },
+      "88":  { "name": "護勁", "type": "int32", "sample_value": 548 },
+      "92":  { "name": "命中", "type": "int32", "sample_value": 656 },
+      "96":  { "name": "閃躲", "type": "int32", "sample_value": 309 },
+      "416": { "name": "X座標", "type": "int32", "sample_value": 54 },
+      "420": { "name": "Y座標", "type": "int32", "sample_value": 127 }
+    }
+  },
+  "inventory_structure": {
+    "description": "背包物品陣列，每槽固定 2272 bytes (0x8E0)",
+    "locate_method": "掃描已知物品ID，匹配特徵模式: [8 bytes zeros][item_id][pointer][24+ bytes zeros]",
+    "slot_size": 2272,
+    "slot_fields": {
+      "0": { "name": "物品ID", "type": "int32" },
+      "4": { "name": "物品指針", "type": "pointer", "note": "指向物品實例結構" },
+      "108": { "name": "未知常數", "type": "int32", "sample_value": 1 },
+      "112": { "name": "未知常數", "type": "int32", "sample_value": 4000 }
+    },
+    "item_instance_fields": {
+      "0": { "name": "數量", "type": "int32" }
+    },
+    "item_db": {
+      "file": "tthol.sqlite",
+      "table": "items",
+      "encoding": "utf-8",
+      "key_column": "id",
+      "name_column": "name"
+    }
+  },
+  "warehouse_structure": {
+    "description": "倉庫物品陣列，結構與背包完全相同，每槽 2272 bytes (0x8E0)",
+    "lifecycle": "僅在倉庫 UI 開啟時存在於記憶體，關閉即釋放",
+    "locate_method": "需已知一對相鄰道具ID，掃描記憶體中以 0x8E0 間距出現的配對",
+    "slot_size": 2272,
+    "max_slots": 80,
+    "slot_fields": {
+      "0": { "name": "物品ID", "type": "int32" },
+      "4": { "name": "物品指針", "type": "pointer", "note": "指向物品實例結構" }
+    },
+    "item_instance_fields": {
+      "0": { "name": "數量", "type": "int32" }
+    },
+    "verified_sample": {
+      "anchor_pair": [26968, 55220],
+      "total_items_found": 54,
+      "array_base": "0x24A8A964",
+      "note": "地址每次開啟倉庫都會變動"
+    }
+  },
+  "locate_method": {
+    "description": "每次遊戲啟動做一次快速掃描定位（約0.4秒）",
+    "approach": "掃描血量值 + 知識庫結構驗證 (score >= 0.8)",
+    "tool": "reader.py",
+    "usage": "uv run reader.py <血量值> [--loop]",
+    "note": "無穩定靜態指針鏈，堆記憶體指針是短暫的，快速掃描是最可靠方案"
+  }
+}

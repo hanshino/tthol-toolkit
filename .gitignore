@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Generated scan data
+candidates.json
+pointer_history.json
+pointers.json
+
+# AHK/game scripts
+*.Q
+
+# Claude Code local config
+.claude/
