@@ -53,7 +53,8 @@ def get_memory_regions(process_handle):
 # 知識庫
 # ============================================================
 def load_knowledge():
-    with open("knowledge.json", 'r', encoding='utf-8') as f:
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge.json")
+    with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 def get_display_fields(knowledge):

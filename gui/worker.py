@@ -9,6 +9,7 @@ States:
     RESCANNING    - re-running locate_character
 """
 import time
+import threading
 import pymem
 from PySide6.QtCore import QThread, Signal
 
@@ -42,14 +43,14 @@ FAILURE_THRESHOLD = 3      # consecutive failures before rescan
 class ReaderWorker(QThread):
     state_changed = Signal(str)          # new state string
     stats_updated = Signal(list)         # list of (name, value) tuples
-    inventory_ready = Signal(list)       # list of (item_id, qty)
-    warehouse_ready = Signal(list)       # list of (item_id, qty)
+    inventory_ready = Signal(list)       # list of (item_id, qty, name)
+    warehouse_ready = Signal(list)       # list of (item_id, qty, name)
     scan_error = Signal(str)             # human-readable error message
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._hp_value = None
-        self._stop = False
+        self._stop_event = threading.Event()
         self._scan_inventory = False
         self._scan_warehouse = False
         self._knowledge = load_knowledge()
@@ -62,7 +63,7 @@ class ReaderWorker(QThread):
     def connect(self, hp_value: int):
         """Start the worker with a known HP value."""
         self._hp_value = hp_value
-        self._stop = False
+        self._stop_event.clear()
         if not self.isRunning():
             self.start()
 
@@ -73,12 +74,16 @@ class ReaderWorker(QThread):
         self._scan_warehouse = True
 
     def stop(self):
-        self._stop = True
+        self._stop_event.set()
 
     # ------------------------------------------------------------------
     # Thread entry point
     # ------------------------------------------------------------------
     def run(self):
+        if self._hp_value is None:
+            self.scan_error.emit("HP value not set, call connect(hp_value) first")
+            self.state_changed.emit("DISCONNECTED")
+            return
         self.state_changed.emit("CONNECTING")
 
         pm = self._connect_process()
@@ -94,7 +99,7 @@ class ReaderWorker(QThread):
         self.state_changed.emit("LOCATED")
         failure_count = 0
 
-        while not self._stop:
+        while not self._stop_event.is_set():
             # --- Handle inventory scan request ---
             if self._scan_inventory:
                 self._scan_inventory = False
@@ -103,7 +108,7 @@ class ReaderWorker(QThread):
             # --- Handle warehouse scan request ---
             if self._scan_warehouse:
                 self._scan_warehouse = False
-                self._do_warehouse_scan(pm, hp_addr)
+                self._do_warehouse_scan(pm)
 
             # --- Poll character stats ---
             try:
@@ -113,6 +118,7 @@ class ReaderWorker(QThread):
                 if score < 0.8:
                     failure_count += 1
                     if failure_count >= FAILURE_THRESHOLD:
+                        self.state_changed.emit("READ_ERROR")
                         self.state_changed.emit("RESCANNING")
                         hp_addr = self._locate(pm)
                         if hp_addr is None:
@@ -128,6 +134,7 @@ class ReaderWorker(QThread):
                 failure_count += 1
                 if failure_count >= FAILURE_THRESHOLD:
                     # Try re-connecting process first
+                    self.state_changed.emit("READ_ERROR")
                     pm = self._connect_process()
                     if pm is None:
                         self.state_changed.emit("DISCONNECTED")
@@ -140,7 +147,7 @@ class ReaderWorker(QThread):
                     self.state_changed.emit("LOCATED")
                     failure_count = 0
 
-            time.sleep(POLL_INTERVAL)
+            self._stop_event.wait(POLL_INTERVAL)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -172,7 +179,7 @@ class ReaderWorker(QThread):
         except Exception as e:
             self.scan_error.emit(f"Inventory scan error: {e}")
 
-    def _do_warehouse_scan(self, pm, hp_addr):
+    def _do_warehouse_scan(self, pm):
         try:
             # Find inventory range for exclusion
             inv_match = locate_inventory(pm)
