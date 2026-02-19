@@ -149,6 +149,9 @@ class ReaderWorker(QThread):
 
             self._stop_event.wait(POLL_INTERVAL)
 
+        # Emit DISCONNECTED when loop exits cleanly (stop() was called)
+        self.state_changed.emit("DISCONNECTED")
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

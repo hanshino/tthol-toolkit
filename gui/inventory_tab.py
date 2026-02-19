@@ -41,6 +41,10 @@ class InventoryTab(QWidget):
         self._scan_btn.setEnabled(not scanning)
         if scanning:
             self._status_lbl.setText("Scanning...")
+        else:
+            # Reset label so it doesn't stay stuck at "Scanning..." after an error
+            if self._status_lbl.text() == "Scanning...":
+                self._status_lbl.setText("Ready")
 
     def populate(self, items: list):
         """items = list of (item_id, qty, name)"""
