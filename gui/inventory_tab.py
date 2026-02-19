@@ -44,9 +44,8 @@ class InventoryTab(QWidget):
 
     def populate(self, items: list):
         """items = list of (item_id, qty, name)"""
-        self._table.setRowCount(0)
+        self._table.setRowCount(len(items))
         for i, (item_id, qty, name) in enumerate(items):
-            self._table.insertRow(i)
             for col, val in enumerate([i + 1, item_id, qty, name]):
                 cell = QTableWidgetItem(str(val))
                 cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter if col < 3
