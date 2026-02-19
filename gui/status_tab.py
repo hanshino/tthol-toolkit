@@ -73,7 +73,9 @@ class StatusTab(QWidget):
             ("Weight", "負重", "最大負重"),
         ]:
             cur = data.get(cur_key, 0)
-            mx = data.get(max_key, 1) or 1
+            mx = data.get(max_key)
+            if not isinstance(mx, int) or mx <= 0:
+                mx = 1
             bar = self._bars[key]
             bar.setMaximum(mx)
             bar.setValue(max(0, cur) if isinstance(cur, int) else 0)
