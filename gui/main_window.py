@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTabWidget, QStatusBar,
 )
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Slot
 
 from gui.worker import ReaderWorker
 from gui.status_tab import StatusTab
@@ -33,6 +33,7 @@ class MainWindow(QMainWindow):
         self.setMinimumWidth(560)
 
         self._worker = ReaderWorker(self)
+        self._pending_hp = None
         self._worker.state_changed.connect(self._on_state_changed)
         self._worker.stats_updated.connect(self._on_stats_updated)
         self._worker.inventory_ready.connect(self._on_inventory_ready)
@@ -115,9 +116,10 @@ class MainWindow(QMainWindow):
         if not hp_text.isdigit():
             self.statusBar().showMessage("Enter a valid HP value first", 3000)
             return
+        self._pending_hp = int(hp_text)
+        self._relocate_btn.setEnabled(False)
         self._worker.stop()
-        self._worker.wait()
-        self._worker.connect(int(hp_text))
+        # Reconnect happens in _on_state_changed when DISCONNECTED is received
 
     @Slot(str)
     def _on_state_changed(self, state: str):
@@ -126,7 +128,13 @@ class MainWindow(QMainWindow):
         self._state_indicator.setStyleSheet(f"color: {color}; font-weight: bold;")
         self._relocate_btn.setEnabled(state == "LOCATED")
         if state == "DISCONNECTED":
-            self._connect_btn.setEnabled(True)
+            if self._pending_hp is not None:
+                # Auto-reconnect after relocate
+                hp = self._pending_hp
+                self._pending_hp = None
+                self._worker.connect(hp)
+            else:
+                self._connect_btn.setEnabled(True)
 
     @Slot(list)
     def _on_stats_updated(self, fields: list):
@@ -161,6 +169,9 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_scan_error(self, msg: str):
         self.statusBar().showMessage(f"[Error] {msg}", 5000)
+        # Re-enable scan buttons in case the error came from a scan operation
+        self._inventory_tab.set_scanning(False)
+        self._warehouse_tab.set_scanning(False)
 
     @Slot()
     def _on_inventory_scan(self):
