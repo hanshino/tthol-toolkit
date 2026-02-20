@@ -2,35 +2,38 @@
 Main application window.
 
 Layout:
-  Row 1: HP input | Connect btn | Status indicator | Relocate btn
-  Row 2: Vitals strip (Lv / HP / MP / Weight / Pos) — always visible
+  Row 1: op_bar (HP input | Connect btn | state badge | Relocate btn)
+  Row 2: vitals strip (Lv / HP / MP / Weight / Pos) — always visible
   Row 3: TabWidget (Status | Inventory | Warehouse)
 """
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QTabWidget, QStatusBar,
+    QLabel, QLineEdit, QPushButton, QTabWidget, QStatusBar, QFrame,
 )
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Qt, Slot
 
 from gui.worker import ReaderWorker
 from gui.status_tab import StatusTab
 from gui.inventory_tab import InventoryTab
 from gui.warehouse_tab import WarehouseTab
+from gui.theme import badge_style, vital_html, fraction_html, GREEN, BLUE, AMBER, BG_SURFACE
 
-STATE_COLORS = {
-    "DISCONNECTED": "gray",
-    "CONNECTING":   "orange",
-    "LOCATED":      "green",
-    "READ_ERROR":   "red",
-    "RESCANNING":   "orange",
-}
+
+def _vsep() -> QFrame:
+    """Thin vertical separator for the vitals strip."""
+    f = QFrame()
+    f.setObjectName("vitals_sep")
+    f.setFrameShape(QFrame.Shape.VLine)
+    f.setFixedWidth(1)
+    f.setFixedHeight(20)
+    return f
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Tthol Reader")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(580)
 
         self._worker = ReaderWorker(self)
         self._pending_hp = None
@@ -43,45 +46,64 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(8, 8, 8, 4)
-        root.setSpacing(4)
+        root.setContentsMargins(10, 10, 10, 6)
+        root.setSpacing(6)
 
-        # --- Row 1: operation bar ---
-        op_row = QHBoxLayout()
-        op_row.addWidget(QLabel("HP:"))
+        # ── Row 1: operation bar ──────────────────────────────────────
+        op_frame = QFrame()
+        op_frame.setObjectName("op_bar")
+        op_layout = QHBoxLayout(op_frame)
+        op_layout.setContentsMargins(10, 6, 10, 6)
+        op_layout.setSpacing(8)
+
+        hp_lbl = QLabel("HP")
+        hp_lbl.setStyleSheet(f"color: {GREEN}; font-weight: 600; font-size: 11px;")
+        op_layout.addWidget(hp_lbl)
+
         self._hp_input = QLineEdit()
         self._hp_input.setPlaceholderText("current HP value")
-        self._hp_input.setMaximumWidth(120)
-        op_row.addWidget(self._hp_input)
+        self._hp_input.setMaximumWidth(130)
+        op_layout.addWidget(self._hp_input)
 
         self._connect_btn = QPushButton("Connect")
+        self._connect_btn.setObjectName("primary_btn")
         self._connect_btn.clicked.connect(self._on_connect)
-        op_row.addWidget(self._connect_btn)
+        op_layout.addWidget(self._connect_btn)
 
         self._state_indicator = QLabel("● DISCONNECTED")
-        self._state_indicator.setStyleSheet("color: gray; font-weight: bold;")
-        op_row.addWidget(self._state_indicator)
+        self._state_indicator.setStyleSheet(badge_style("DISCONNECTED"))
+        op_layout.addWidget(self._state_indicator)
+
+        op_layout.addStretch()
 
         self._relocate_btn = QPushButton("Relocate")
         self._relocate_btn.setEnabled(False)
         self._relocate_btn.clicked.connect(self._on_relocate)
-        op_row.addWidget(self._relocate_btn)
-        op_row.addStretch()
-        root.addLayout(op_row)
+        op_layout.addWidget(self._relocate_btn)
 
-        # --- Row 2: vitals strip ---
-        vitals_row = QHBoxLayout()
+        root.addWidget(op_frame)
+
+        # ── Row 2: vitals strip ───────────────────────────────────────
+        vitals_frame = QFrame()
+        vitals_frame.setObjectName("vitals_strip")
+        vitals_layout = QHBoxLayout(vitals_frame)
+        vitals_layout.setContentsMargins(14, 6, 14, 6)
+        vitals_layout.setSpacing(12)
+
         self._vitals_labels = {}
-        for key in ["Lv", "HP", "MP", "Weight", "Pos"]:
-            lbl = QLabel(f"{key}: ---")
-            vitals_row.addWidget(lbl)
-            if key != "Pos":
-                vitals_row.addWidget(QLabel("|"))
+        vitals_defs = ["Lv", "HP", "MP", "Weight", "Pos"]
+        for i, key in enumerate(vitals_defs):
+            lbl = QLabel(self._vital_placeholder(key))
+            lbl.setTextFormat(Qt.TextFormat.RichText)
+            vitals_layout.addWidget(lbl)
             self._vitals_labels[key] = lbl
-        vitals_row.addStretch()
-        root.addLayout(vitals_row)
+            if i < len(vitals_defs) - 1:
+                vitals_layout.addWidget(_vsep())
 
-        # --- Row 3: tabs ---
+        vitals_layout.addStretch()
+        root.addWidget(vitals_frame)
+
+        # ── Row 3: tabs ───────────────────────────────────────────────
         tabs = QTabWidget()
         self._status_tab = StatusTab()
         self._inventory_tab = InventoryTab()
@@ -92,11 +114,17 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._warehouse_tab, "Warehouse")
         root.addWidget(tabs)
 
-        # Wire tab scan buttons
         self._inventory_tab.scan_requested.connect(self._on_inventory_scan)
         self._warehouse_tab.scan_requested.connect(self._on_warehouse_scan)
 
         self.setStatusBar(QStatusBar())
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _vital_placeholder(key: str) -> str:
+        return vital_html(key.upper(), "---")
 
     # ------------------------------------------------------------------
     # Slots
@@ -119,17 +147,14 @@ class MainWindow(QMainWindow):
         self._pending_hp = int(hp_text)
         self._relocate_btn.setEnabled(False)
         self._worker.stop()
-        # Reconnect happens in _on_state_changed when DISCONNECTED is received
 
     @Slot(str)
     def _on_state_changed(self, state: str):
-        color = STATE_COLORS.get(state, "gray")
         self._state_indicator.setText(f"● {state}")
-        self._state_indicator.setStyleSheet(f"color: {color}; font-weight: bold;")
+        self._state_indicator.setStyleSheet(badge_style(state))
         self._relocate_btn.setEnabled(state == "LOCATED")
         if state == "DISCONNECTED":
             if self._pending_hp is not None:
-                # Auto-reconnect after relocate
                 hp = self._pending_hp
                 self._pending_hp = None
                 self._worker.connect(hp)
@@ -140,21 +165,21 @@ class MainWindow(QMainWindow):
     def _on_stats_updated(self, fields: list):
         data = {name: value for name, value in fields}
 
-        hp = data.get("血量", "---")
+        hp     = data.get("血量", "---")
         hp_max = data.get("最大血量", "---")
-        mp = data.get("真氣", "---")
+        mp     = data.get("真氣", "---")
         mp_max = data.get("最大真氣", "---")
-        wt = data.get("負重", "---")
+        wt     = data.get("負重", "---")
         wt_max = data.get("最大負重", "---")
-        lv = data.get("等級", "---")
-        x = data.get("X座標", "---")
-        y = data.get("Y座標", "---")
+        lv     = data.get("等級", "---")
+        x      = data.get("X座標", "---")
+        y      = data.get("Y座標", "---")
 
-        self._vitals_labels["Lv"].setText(f"Lv: {lv}")
-        self._vitals_labels["HP"].setText(f"HP: {hp}/{hp_max}")
-        self._vitals_labels["MP"].setText(f"MP: {mp}/{mp_max}")
-        self._vitals_labels["Weight"].setText(f"Weight: {wt}/{wt_max}")
-        self._vitals_labels["Pos"].setText(f"Pos: ({x}, {y})")
+        self._vitals_labels["Lv"].setText(vital_html("LV", lv))
+        self._vitals_labels["HP"].setText(fraction_html("HP", hp, hp_max, GREEN))
+        self._vitals_labels["MP"].setText(fraction_html("MP", mp, mp_max, BLUE))
+        self._vitals_labels["Weight"].setText(fraction_html("WT", wt, wt_max, AMBER))
+        self._vitals_labels["Pos"].setText(vital_html("POS", f"({x}, {y})"))
 
         self._status_tab.update_stats(fields)
 
@@ -169,7 +194,6 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_scan_error(self, msg: str):
         self.statusBar().showMessage(f"[Error] {msg}", 5000)
-        # Re-enable scan buttons in case the error came from a scan operation
         self._inventory_tab.set_scanning(False)
         self._warehouse_tab.set_scanning(False)
 
