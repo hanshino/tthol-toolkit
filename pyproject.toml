@@ -8,4 +8,5 @@ dependencies = [
     "pymem>=1.14.0",
     "pywin32>=311",
     "pyside6>=6.7",
+    "pytest>=8.0",
 ]
