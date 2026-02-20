@@ -5,7 +5,9 @@ from gui.snapshot_db import SnapshotDB
 
 @pytest.fixture
 def db(tmp_path):
-    return SnapshotDB(str(tmp_path / "test.db"))
+    instance = SnapshotDB(str(tmp_path / "test.db"))
+    yield instance
+    instance.close()
 
 
 def test_save_and_load(db):
