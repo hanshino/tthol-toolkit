@@ -16,6 +16,8 @@ from gui.worker import ReaderWorker
 from gui.status_tab import StatusTab
 from gui.inventory_tab import InventoryTab
 from gui.warehouse_tab import WarehouseTab
+from gui.snapshot_db import SnapshotDB
+from gui.inventory_manager_tab import InventoryManagerTab
 from gui.theme import badge_style, vital_html, fraction_html, GREEN, BLUE, AMBER, BG_SURFACE
 
 
@@ -37,6 +39,10 @@ class MainWindow(QMainWindow):
 
         self._worker = ReaderWorker(self)
         self._pending_hp = None
+        self._snapshot_db = SnapshotDB()
+        self._current_character: str = ""
+        self._last_inventory: list[dict] = []
+        self._last_warehouse: list[dict] = []
         self._worker.state_changed.connect(self._on_state_changed)
         self._worker.stats_updated.connect(self._on_stats_updated)
         self._worker.inventory_ready.connect(self._on_inventory_ready)
@@ -108,14 +114,18 @@ class MainWindow(QMainWindow):
         self._status_tab = StatusTab()
         self._inventory_tab = InventoryTab()
         self._warehouse_tab = WarehouseTab()
+        self._manager_tab = InventoryManagerTab(self._snapshot_db)
 
         tabs.addTab(self._status_tab, "Status")
         tabs.addTab(self._inventory_tab, "Inventory")
         tabs.addTab(self._warehouse_tab, "Warehouse")
+        tabs.addTab(self._manager_tab, "道具總覽")
         root.addWidget(tabs)
 
         self._inventory_tab.scan_requested.connect(self._on_inventory_scan)
         self._warehouse_tab.scan_requested.connect(self._on_warehouse_scan)
+        self._inventory_tab.save_requested.connect(self._on_inventory_save)
+        self._warehouse_tab.save_requested.connect(self._on_warehouse_save)
 
         self.setStatusBar(QStatusBar())
 
@@ -164,6 +174,7 @@ class MainWindow(QMainWindow):
     @Slot(list)
     def _on_stats_updated(self, fields: list):
         data = {name: value for name, value in fields}
+        self._current_character = data.get("角色名稱", self._current_character)
 
         hp     = data.get("血量", "---")
         hp_max = data.get("最大血量", "---")
@@ -186,10 +197,12 @@ class MainWindow(QMainWindow):
     @Slot(list)
     def _on_inventory_ready(self, items: list):
         self._inventory_tab.populate(items)
+        self._last_inventory = [{"item_id": iid, "qty": qty} for iid, qty, _ in items]
 
     @Slot(list)
     def _on_warehouse_ready(self, items: list):
         self._warehouse_tab.populate(items)
+        self._last_warehouse = [{"item_id": iid, "qty": qty} for iid, qty, _ in items]
 
     @Slot(str)
     def _on_scan_error(self, msg: str):
@@ -207,7 +220,36 @@ class MainWindow(QMainWindow):
         self._warehouse_tab.set_scanning(True)
         self._worker.request_warehouse_scan()
 
+    @Slot()
+    def _on_inventory_save(self):
+        if not self._current_character or not self._last_inventory:
+            self.statusBar().showMessage("No inventory data to save", 3000)
+            return
+        saved = self._snapshot_db.save_snapshot(
+            self._current_character, "inventory", self._last_inventory
+        )
+        if saved:
+            self.statusBar().showMessage("Snapshot saved", 3000)
+        else:
+            self.statusBar().showMessage("No change detected, skipped", 3000)
+        self._manager_tab.refresh()
+
+    @Slot()
+    def _on_warehouse_save(self):
+        if not self._current_character or not self._last_warehouse:
+            self.statusBar().showMessage("No warehouse data to save", 3000)
+            return
+        saved = self._snapshot_db.save_snapshot(
+            self._current_character, "warehouse", self._last_warehouse
+        )
+        if saved:
+            self.statusBar().showMessage("Snapshot saved", 3000)
+        else:
+            self.statusBar().showMessage("No change detected, skipped", 3000)
+        self._manager_tab.refresh()
+
     def closeEvent(self, event):
         self._worker.stop()
         self._worker.wait()
+        self._snapshot_db.close()
         event.accept()
