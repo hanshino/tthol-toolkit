@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, Signal
 
 class WarehouseTab(QWidget):
     scan_requested = Signal()
+    save_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -29,9 +30,13 @@ class WarehouseTab(QWidget):
         top = QHBoxLayout()
         self._scan_btn = QPushButton("Scan Warehouse")
         self._scan_btn.clicked.connect(self.scan_requested)
+        self._save_btn = QPushButton("Save Snapshot")
+        self._save_btn.setEnabled(False)
+        self._save_btn.clicked.connect(self.save_requested)
+        top.addWidget(self._scan_btn)
+        top.addWidget(self._save_btn)
         self._status_lbl = QLabel("Not scanned")
         self._status_lbl.setStyleSheet("color: #475569; font-size: 12px;")
-        top.addWidget(self._scan_btn)
         top.addWidget(self._status_lbl)
         top.addStretch()
         layout.addLayout(top)
@@ -72,3 +77,4 @@ class WarehouseTab(QWidget):
         self._status_lbl.setText(f"Updated {now}")
         self._footer_lbl.setText(f"{len(items)} items")
         self._scan_btn.setEnabled(True)
+        self._save_btn.setEnabled(True)
