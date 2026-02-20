@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QTreeWidget, QTreeWidgetItem, QPushButton, QStackedWidget,
+    QButtonGroup,
 )
 from PySide6.QtCore import Qt
 
@@ -69,6 +70,11 @@ class InventoryManagerTab(QWidget):
         self._btn_by_item.clicked.connect(lambda: self._set_mode(_MODE_BY_ITEM))
         filter_bar.addWidget(self._btn_by_item)
 
+        self._view_group = QButtonGroup(self)
+        self._view_group.setExclusive(True)
+        self._view_group.addButton(self._btn_by_char)
+        self._view_group.addButton(self._btn_by_item)
+
         layout.addLayout(filter_bar)
 
         # ── Stacked widget ───────────────────────────────────────────────
@@ -113,6 +119,8 @@ class InventoryManagerTab(QWidget):
         self._apply_filter()
 
     def _set_mode(self, mode: str, initial: bool = False):
+        if mode == self._mode and not initial:
+            return
         self._mode = mode
         is_by_item = mode == _MODE_BY_ITEM
         self._btn_by_char.setChecked(not is_by_item)
