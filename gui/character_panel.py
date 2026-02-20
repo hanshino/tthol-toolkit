@@ -14,7 +14,7 @@ from gui.inventory_tab import InventoryTab
 from gui.warehouse_tab import WarehouseTab
 from gui.snapshot_db import SnapshotDB
 from gui.inventory_manager_tab import InventoryManagerTab
-from gui.theme import badge_style, vital_html, fraction_html, GREEN, BLUE, AMBER, DIM
+from gui.theme import badge_style, vital_html, fraction_html, GREEN, BLUE, AMBER
 
 
 def _vsep() -> QFrame:
@@ -108,17 +108,17 @@ class CharacterPanel(QWidget):
         root.addWidget(vitals_frame)
 
         # ── inner tabs ────────────────────────────────────────────────
-        tabs = QTabWidget()
+        self._tabs = QTabWidget()
         self._status_tab = StatusTab()
         self._inventory_tab = InventoryTab()
         self._warehouse_tab = WarehouseTab()
         self._manager_tab = InventoryManagerTab(self._snapshot_db)
 
-        tabs.addTab(self._status_tab, "Status")
-        tabs.addTab(self._inventory_tab, "Inventory")
-        tabs.addTab(self._warehouse_tab, "Warehouse")
-        tabs.addTab(self._manager_tab, "道具總覽")
-        root.addWidget(tabs)
+        self._tabs.addTab(self._status_tab, "Status")
+        self._tabs.addTab(self._inventory_tab, "Inventory")
+        self._tabs.addTab(self._warehouse_tab, "Warehouse")
+        self._tabs.addTab(self._manager_tab, "道具總覽")
+        root.addWidget(self._tabs)
 
         self._inventory_tab.scan_requested.connect(self._on_inventory_scan)
         self._warehouse_tab.scan_requested.connect(self._on_warehouse_scan)
@@ -163,6 +163,8 @@ class CharacterPanel(QWidget):
     @Slot(list)
     def _on_stats_updated(self, fields: list):
         data = dict(fields)
+        # Only update character name on first occurrence (name is stable for a session).
+        # Uses empty-string fallback so a transient missing field does not clear the stored name.
         name = data.get("角色名稱", "")
         if name and name != self._current_character:
             self._current_character = name
@@ -239,4 +241,5 @@ class CharacterPanel(QWidget):
     def shutdown(self):
         """Stop the worker thread. Call before removing this panel."""
         self._worker.stop()
-        self._worker.wait()
+        if not self._worker.wait(5000):   # 5-second timeout
+            self._worker.terminate()      # last resort if worker is stuck
