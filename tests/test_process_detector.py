@@ -19,3 +19,10 @@ def test_ignores_other_processes():
     with patch("gui.process_detector.psutil.process_iter", return_value=[proc]):
         result = detect_game_windows()
     assert result == []
+
+def test_includes_entry_when_hwnd_not_found():
+    proc = MagicMock(); proc.info = {"pid": 42, "name": "tthola.dat"}
+    with patch("gui.process_detector.psutil.process_iter", return_value=[proc]):
+        with patch("gui.process_detector._hwnd_for_pid", return_value=0):
+            result = detect_game_windows()
+    assert result == [(42, 0, "視窗 1")]

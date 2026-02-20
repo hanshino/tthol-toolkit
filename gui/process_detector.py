@@ -3,7 +3,7 @@ import psutil
 import win32gui
 import win32process
 
-PROCESS_NAME = "tthola.dat"
+PROCESS_NAME = "tthola.dat"  # exact case as reported by psutil on Windows
 
 
 def _hwnd_for_pid(target_pid: int) -> int:
