@@ -74,7 +74,7 @@ QWidget {{
     background-color: {BG_BASE};
     color: {TEXT};
     font-family: "Noto Sans TC", "Microsoft JhengHei UI", "Segoe UI", sans-serif;
-    font-size: 13px;
+    font-size: 10pt;
     outline: 0;
 }}
 
@@ -101,7 +101,7 @@ QGroupBox::title {{
     background-color: {BG_BASE};
     padding: 0 4px;
     color: {DIM};
-    font-size: 10px;
+    font-size: 8pt;
     font-weight: 600;
     letter-spacing: 1px;
 }}
@@ -264,7 +264,7 @@ QStatusBar {{
     background-color: {BG_BASE};
     color: {DIM};
     border-top: 1px solid {BG_CARD};
-    font-size: 11px;
+    font-size: 9pt;
     padding: 2px 6px;
 }}
 
