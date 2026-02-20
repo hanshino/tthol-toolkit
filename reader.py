@@ -171,8 +171,26 @@ def verify_structure(pm, hp_addr, fields):
 # ============================================================
 # 顯示角色狀態
 # ============================================================
+NAME_OFFSET = -228
+NAME_MAX_BYTES = 32
+
+
+def read_character_name(pm, hp_addr):
+    """Read null-terminated Big5 character name at HP_ADDR + NAME_OFFSET."""
+    try:
+        raw = pm.read_bytes(hp_addr + NAME_OFFSET, NAME_MAX_BYTES)
+        end = raw.find(b'\x00')
+        if end != -1:
+            raw = raw[:end]
+        if not raw:
+            return ''
+        return raw.decode('big5', errors='replace')
+    except Exception:
+        return ''
+
+
 def read_all_fields(pm, hp_addr, display_fields):
-    """讀取所有已知欄位"""
+    """Read all known integer fields."""
     result = []
     for offset, name in display_fields:
         try:
@@ -182,9 +200,11 @@ def read_all_fields(pm, hp_addr, display_fields):
             result.append((name, '???'))
     return result
 
-def format_status(fields_data):
+def format_status(fields_data, char_name=''):
     """Format character status as string."""
     lines = []
+    if char_name:
+        lines.append(f"  Character: {char_name}")
 
     hp = mp = weight = level = None
     stats = []
@@ -402,8 +422,9 @@ def main():
     print(f"[OK] Character located at 0x{hp_addr:08X} ({elapsed:.2f}s)\n")
 
     # Read character status
+    char_name = read_character_name(pm, hp_addr)
     fields_data = read_all_fields(pm, hp_addr, display_fields)
-    print(format_status(fields_data))
+    print(format_status(fields_data, char_name))
 
     # Inventory
     if show_inventory:
@@ -435,7 +456,7 @@ def main():
         try:
             while True:
                 fields_data = read_all_fields(pm, hp_addr, display_fields)
-                status = format_status(fields_data)
+                status = format_status(fields_data, char_name)
                 line_count = status.count('\n') + 1
                 sys.stdout.write(f"\r\033[{line_count}A{status}\n")
                 sys.stdout.flush()

@@ -9,6 +9,7 @@
     "description": "角色數據結構，以血量地址為基準 (offset 0)",
     "note": "基準地址是動態的，需每次重新掃描血量值來定位",
     "fields": {
+      "-228": { "name": "Name", "type": "string", "encoding": "big5", "max_bytes": 32, "note": "null-terminated Big5 character name" },
       "-96": { "name": "外功", "type": "int32", "sample_value": 190 },
       "-92": { "name": "未知", "type": "int32", "sample_value": 1 },
       "-88": { "name": "根骨", "type": "int32", "sample_value": 61 },
