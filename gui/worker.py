@@ -161,7 +161,7 @@ class ReaderWorker(QThread):
     # ------------------------------------------------------------------
     def _connect_process(self):
         try:
-            return pymem.Pymem(process_id=self._pid)
+            return pymem.Pymem(self._pid)
         except Exception as e:
             self.scan_error.emit(f"Cannot connect to PID {self._pid}: {e}")
             return None

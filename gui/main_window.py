@@ -37,7 +37,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Tthol Reader")
         self.setMinimumWidth(580)
 
-        self._worker = ReaderWorker(self)
+        self._worker = ReaderWorker(pid=0, parent=self)
         self._pending_hp = None
         self._snapshot_db = SnapshotDB()
         self._current_character: str = ""
