@@ -248,7 +248,7 @@ QHeaderView::section {{
     border-right: 1px solid {BG_CARD};
     padding: 6px 8px;
     font-weight: 600;
-    font-size: 10px;
+    font-size: 8pt;
     letter-spacing: 0.5px;
 }}
 QHeaderView::section:last-child {{
