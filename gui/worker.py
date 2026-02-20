@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from reader import (
     locate_character,
     read_all_fields,
+    read_character_name,
     get_display_fields,
     load_knowledge,
     verify_structure,
@@ -97,6 +98,7 @@ class ReaderWorker(QThread):
             return
 
         self.state_changed.emit("LOCATED")
+        char_name = read_character_name(pm, hp_addr)
         failure_count = 0
 
         while not self._stop_event.is_set():
@@ -125,10 +127,11 @@ class ReaderWorker(QThread):
                             self.state_changed.emit("DISCONNECTED")
                             return
                         self.state_changed.emit("LOCATED")
+                        char_name = read_character_name(pm, hp_addr)
                         failure_count = 0
                 else:
                     failure_count = 0
-                    self.stats_updated.emit(fields)
+                    self.stats_updated.emit([("角色名稱", char_name)] + fields)
 
             except Exception:
                 failure_count += 1
@@ -145,6 +148,7 @@ class ReaderWorker(QThread):
                         self.state_changed.emit("DISCONNECTED")
                         return
                     self.state_changed.emit("LOCATED")
+                    char_name = read_character_name(pm, hp_addr)
                     failure_count = 0
 
             self._stop_event.wait(POLL_INTERVAL)

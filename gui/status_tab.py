@@ -19,6 +19,16 @@ class StatusTab(QWidget):
         basic_grid.setHorizontalSpacing(10)
         basic_grid.setVerticalSpacing(8)
 
+        # Character name row
+        self._name_label = QLabel("---")
+        self._name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        font = self._name_label.font()
+        font.setPointSize(font.pointSize() + 2)
+        font.setBold(True)
+        self._name_label.setFont(font)
+        basic_grid.addWidget(QLabel("Name"), 0, 0)
+        basic_grid.addWidget(self._name_label, 0, 1, 1, 2)
+
         self._bars = {}
         self._bar_labels = {}
         bar_defs = [
@@ -26,7 +36,7 @@ class StatusTab(QWidget):
             ("MP",     "mp_bar"),
             ("Weight", "weight_bar"),
         ]
-        for row, (key, obj_name) in enumerate(bar_defs):
+        for row, (key, obj_name) in enumerate(bar_defs, start=1):
             key_lbl = QLabel(key)
             bar = QProgressBar()
             bar.setObjectName(obj_name)
@@ -51,11 +61,13 @@ class StatusTab(QWidget):
         attr_grid.setHorizontalSpacing(16)
         attr_grid.setVerticalSpacing(8)
         self._attr_labels = {}
-        for r, name in enumerate(["外功", "根骨", "技巧", "魅力值"]):
-            attr_grid.addWidget(QLabel(name), r, 0)
+        attr_fields = ["外功", "根骨", "身法", "技巧", "內力", "玄學"]
+        for i, name in enumerate(attr_fields):
+            r, c = divmod(i, 2)
+            attr_grid.addWidget(QLabel(name), r, c * 2)
             val = QLabel("---")
             val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            attr_grid.addWidget(val, r, 1)
+            attr_grid.addWidget(val, r, c * 2 + 1)
             self._attr_labels[name] = val
         row_layout.addWidget(attr_box)
 
@@ -80,6 +92,9 @@ class StatusTab(QWidget):
     def update_stats(self, fields: list):
         """Update all displayed values. fields = list of (name, value)."""
         data = {name: value for name, value in fields}
+
+        char_name = data.get("角色名稱", "")
+        self._name_label.setText(char_name if char_name else "---")
 
         for key, cur_key, max_key in [
             ("HP",     "血量",   "最大血量"),

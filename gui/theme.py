@@ -73,9 +73,14 @@ DARK_QSS = f"""
 QWidget {{
     background-color: {BG_BASE};
     color: {TEXT};
-    font-family: "Consolas", "Cascadia Code", "Segoe UI", monospace;
+    font-family: "Noto Sans TC", "Microsoft JhengHei UI", "Segoe UI", sans-serif;
     font-size: 13px;
     outline: 0;
+}}
+
+/* ── Monospace: stat values, addresses ──────────────────────────── */
+QLabel#mono {{
+    font-family: "Cascadia Code", "Consolas", monospace;
 }}
 QMainWindow, QDialog {{
     background-color: {BG_BASE};
