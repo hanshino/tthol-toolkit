@@ -9,6 +9,15 @@ from PySide6.QtCore import Qt
 from gui.snapshot_db import SnapshotDB
 
 
+class _NumericItem(QTableWidgetItem):
+    """QTableWidgetItem that sorts numerically instead of lexicographically."""
+    def __lt__(self, other: "QTableWidgetItem") -> bool:
+        try:
+            return float(self.text()) < float(other.text())
+        except ValueError:
+            return super().__lt__(other)
+
+
 class InventoryManagerTab(QWidget):
     COLUMNS = ["Character", "Item ID", "Name", "Qty", "Source", "Snapshot Time"]
 
@@ -106,7 +115,7 @@ class InventoryManagerTab(QWidget):
                 r["scanned_at"],
             ]
             for col, val in enumerate(values):
-                item = QTableWidgetItem(val)
+                item = _NumericItem(val) if col in (1, 3) else QTableWidgetItem(val)
                 align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
                 if col in (1, 3):  # item_id, qty — right-align numbers
                     align = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
