@@ -41,10 +41,13 @@ def _checksum(canonical: str) -> str:
 class SnapshotDB:
     def __init__(self, path: str | None = None):
         db_path = path or str(DEFAULT_DB)
-        self._con = sqlite3.connect(db_path, check_same_thread=False)
+        self._con = sqlite3.connect(db_path)
         self._con.row_factory = sqlite3.Row
         self._con.executescript(SCHEMA)
         self._con.commit()
+
+    def close(self):
+        self._con.close()
 
     def save_snapshot(self, character: str, source: str, items: list[dict]) -> bool:
         """
@@ -89,9 +92,12 @@ class SnapshotDB:
         # Build item_id -> name map from tthol.sqlite
         name_map: dict[int, str] = {}
         if ITEM_NAME_DB.exists():
-            with sqlite3.connect(str(ITEM_NAME_DB)) as name_con:
-                for r in name_con.execute("SELECT id, name FROM items"):
-                    name_map[r[0]] = r[1]
+            try:
+                with sqlite3.connect(str(ITEM_NAME_DB)) as name_con:
+                    for r in name_con.execute("SELECT id, name FROM items"):
+                        name_map[r[0]] = r[1]
+            except sqlite3.OperationalError:
+                pass
 
         result = []
         for snap in snapshot_rows:
