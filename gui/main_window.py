@@ -10,12 +10,12 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
     QLabel, QPushButton, QTabWidget, QStatusBar,
 )
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Qt, Slot
 
 from gui.character_panel import CharacterPanel
 from gui.process_detector import detect_game_windows
 from gui.snapshot_db import SnapshotDB
-from gui.theme import DARK_QSS, DIM
+from gui.theme import DIM
 
 
 _PLACEHOLDER_LABEL = "請先開啟遊戲"
@@ -26,8 +26,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Tthol Reader")
         self.setMinimumWidth(580)
-        self.setStyleSheet(DARK_QSS)
-
         self._snapshot_db = SnapshotDB()
         self._panels: dict[int, CharacterPanel] = {}   # pid → panel
 
@@ -61,23 +59,31 @@ class MainWindow(QMainWindow):
         if not windows and not self._panels:
             self._show_placeholder()
             return
+        added = 0
         for pid, hwnd, label in windows:
             if pid in self._panels:
                 continue
             self._remove_placeholder()
             panel = CharacterPanel(pid=pid, hwnd=hwnd, snapshot_db=self._snapshot_db)
             panel.status_message.connect(self._on_status_message)
-            idx = self._outer_tabs.addTab(panel, label)
-            # Capture idx in closure so the lambda updates the correct tab.
+            self._outer_tabs.addTab(panel, label)
+            # Use indexOf(panel) so the rename targets the correct tab even
+            # after lower-indexed tabs have been closed.
             panel.tab_label_changed.connect(
-                lambda name, i=idx: self._outer_tabs.setTabText(i, name)
+                lambda name, p=panel: self._outer_tabs.setTabText(
+                    self._outer_tabs.indexOf(p), name
+                )
             )
             self._panels[pid] = panel
+            added += 1
+        if windows and added == 0:
+            self.statusBar().showMessage("No new game windows found", 2000)
 
     def _show_placeholder(self):
         """Show a single informational tab when no game window is found."""
         if self._outer_tabs.count() == 0:
             lbl = QLabel(_PLACEHOLDER_LABEL)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet(f"color: {DIM}; font-size: 14px;")
             lbl.setProperty("is_placeholder", True)
             self._outer_tabs.addTab(lbl, _PLACEHOLDER_LABEL)
