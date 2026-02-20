@@ -20,7 +20,10 @@ def _hwnd_for_pid(target_pid: int) -> int:
             return False   # stop enumeration
         return True
 
-    win32gui.EnumWindows(_callback, None)
+    try:
+        win32gui.EnumWindows(_callback, None)
+    except Exception:
+        pass   # EnumWindows raises if callback returns False (stop signal); ignore
     return found
 
 
