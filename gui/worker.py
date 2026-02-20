@@ -36,7 +36,6 @@ from warehouse_scan import (
     SLOT_SIZE,
 )
 
-PROCESS_NAME = "tthola.dat"
 POLL_INTERVAL = 1.0        # seconds between stat reads
 FAILURE_THRESHOLD = 3      # consecutive failures before rescan
 
@@ -48,8 +47,9 @@ class ReaderWorker(QThread):
     warehouse_ready = Signal(list)       # list of (item_id, qty, name)
     scan_error = Signal(str)             # human-readable error message
 
-    def __init__(self, parent=None):
+    def __init__(self, pid: int, parent=None):
         super().__init__(parent)
+        self._pid = pid
         self._hp_value = None
         self._stop_event = threading.Event()
         self._scan_inventory = False
@@ -161,9 +161,9 @@ class ReaderWorker(QThread):
     # ------------------------------------------------------------------
     def _connect_process(self):
         try:
-            return pymem.Pymem(PROCESS_NAME)
+            return pymem.Pymem(process_id=self._pid)
         except Exception as e:
-            self.scan_error.emit(f"Cannot connect to {PROCESS_NAME}: {e}")
+            self.scan_error.emit(f"Cannot connect to PID {self._pid}: {e}")
             return None
 
     def _locate(self, pm):
