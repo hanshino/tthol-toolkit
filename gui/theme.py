@@ -332,4 +332,65 @@ QFrame#op_bar {{
     border: 1px solid {BG_CARD};
     border-radius: 8px;
 }}
+
+/* ── View toggle segmented control ──────────────────────────── */
+QPushButton#toggle_left, QPushButton#toggle_right {{
+    padding: 4px 12px;
+    min-height: 26px;
+    font-weight: 500;
+    border-radius: 0;
+}}
+QPushButton#toggle_left {{
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-right: none;
+}}
+QPushButton#toggle_right {{
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}}
+QPushButton#toggle_left:checked, QPushButton#toggle_right:checked {{
+    background-color: {GREEN};
+    color: {BG_BASE};
+    border-color: {GREEN};
+    font-weight: 700;
+}}
+QPushButton#toggle_left:hover:!checked, QPushButton#toggle_right:hover:!checked {{
+    background-color: {BORDER};
+    border-color: {GREEN};
+    color: {GREEN};
+}}
+
+/* ── Tree Widget ─────────────────────────────────────────────── */
+QTreeWidget {{
+    background-color: {BG_SURFACE};
+    alternate-background-color: {BG_CARD};
+    border: 1px solid {BG_CARD};
+    border-radius: 6px;
+    selection-background-color: #122118;
+    selection-color: {GREEN};
+    outline: 0;
+}}
+QTreeWidget::item {{
+    padding: 4px 8px;
+    border: none;
+}}
+QTreeWidget::item:selected {{
+    background-color: #122118;
+    color: {GREEN};
+}}
+QTreeWidget QHeaderView::section {{
+    background-color: {BG_BASE};
+    color: {DIM};
+    border: none;
+    border-bottom: 1px solid {BG_CARD};
+    border-right: 1px solid {BG_CARD};
+    padding: 6px 8px;
+    font-weight: 600;
+    font-size: 8pt;
+    letter-spacing: 0.5px;
+}}
+QTreeWidget QHeaderView::section:last-child {{
+    border-right: none;
+}}
 """
