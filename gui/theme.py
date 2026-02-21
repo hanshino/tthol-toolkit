@@ -452,6 +452,12 @@ QTreeWidget#mgmt_acct_tree::item {{
     color: {DIM};
 }}
 
+/* ── Delete button in snapshot table ────────────────────────── */
+QPushButton#delete_btn {{
+    padding: 4px 8px;
+    min-height: 24px;
+}}
+
 /* ── Character card (By Char view) ───────────────────────────── */
 QFrame#char_card {{
     background-color: {BG_CARD};

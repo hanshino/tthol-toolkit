@@ -170,6 +170,12 @@ class _CharDetailPanel(QWidget):
             self._snap_table.setCellWidget(row, 3, cell_widget)
 
         self._snap_table.resizeRowsToContents()
+        # resizeRowsToContents ignores cellWidgets; ensure each row is tall
+        # enough to fully display the delete button (min-height 24 + padding).
+        min_row_height = 60
+        for row in range(self._snap_table.rowCount()):
+            if self._snap_table.rowHeight(row) < min_row_height:
+                self._snap_table.setRowHeight(row, min_row_height)
 
     # ── Slots ─────────────────────────────────────────────────────────────
 
