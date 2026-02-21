@@ -31,9 +31,7 @@ from gui.theme import BORDER, DIM
 def _section_label(text: str) -> QLabel:
     """Create a small caps section header label."""
     lbl = QLabel(text)
-    lbl.setStyleSheet(
-        f"color: {DIM}; font-size: 8pt; font-weight: 600; letter-spacing: 1px;"
-    )
+    lbl.setStyleSheet(f"color: {DIM}; font-size: 8pt; font-weight: 600; letter-spacing: 1px;")
     return lbl
 
 
@@ -131,9 +129,7 @@ class _CharDetailPanel(QWidget):
             self._acct_combo.addItem(acct["name"], userData=acct["id"])
 
         # Select current account
-        current = (
-            self._db.get_character_account(self._character) if self._character else None
-        )
+        current = self._db.get_character_account(self._character) if self._character else None
         if current is not None:
             for i in range(self._acct_combo.count()):
                 if self._acct_combo.itemData(i) == current["id"]:
@@ -159,13 +155,19 @@ class _CharDetailPanel(QWidget):
             self._snap_table.setItem(row, 1, QTableWidgetItem(snap["scanned_at"]))
             self._snap_table.setItem(row, 2, QTableWidgetItem(str(snap["item_count"])))
 
+            # Wrap button in a container widget so it doesn't bleed over cell borders
             del_btn = QPushButton(t("delete_snapshot"))
             del_btn.setObjectName("delete_btn")
             snap_id = snap["id"]
             del_btn.clicked.connect(
                 lambda checked=False, sid=snap_id: self._on_delete_snapshot(sid)
             )
-            self._snap_table.setCellWidget(row, 3, del_btn)
+            cell_widget = QWidget()
+            cell_layout = QHBoxLayout(cell_widget)
+            cell_layout.setContentsMargins(4, 3, 4, 3)
+            cell_layout.setSpacing(0)
+            cell_layout.addWidget(del_btn)
+            self._snap_table.setCellWidget(row, 3, cell_widget)
 
         self._snap_table.resizeRowsToContents()
 
@@ -257,8 +259,7 @@ class DataManagementTab(QWidget):
 
         char_header = QLabel(t("mgmt_characters_header"))
         char_header.setStyleSheet(
-            "font-size: 8pt; font-weight: 700; letter-spacing: 1px; "
-            "padding: 4px 10px 2px 10px;"
+            "font-size: 8pt; font-weight: 700; letter-spacing: 1px; padding: 4px 10px 2px 10px;"
         )
         left_layout.addWidget(char_header)
 
@@ -268,8 +269,7 @@ class DataManagementTab(QWidget):
 
         acct_header = QLabel(t("mgmt_accounts_header"))
         acct_header.setStyleSheet(
-            "font-size: 8pt; font-weight: 700; letter-spacing: 1px; "
-            "padding: 8px 10px 2px 10px;"
+            "font-size: 8pt; font-weight: 700; letter-spacing: 1px; padding: 8px 10px 2px 10px;"
         )
         left_layout.addWidget(acct_header)
 
