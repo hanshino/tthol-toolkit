@@ -3,10 +3,11 @@ Main application window.
 
 Layout:
   QHBoxLayout
-  ├── QFrame#nav_sidebar  — vertical nav buttons (角色 / 道具)
+  ├── QFrame#nav_sidebar  — vertical nav buttons (角色 / 道具 / 資料)
   └── QStackedWidget
       ├── page 0: character area  (QTabWidget, one tab per process)
-      └── page 1: InventoryManagerTab  (shared, cross-character)
+      ├── page 1: InventoryManagerTab  (shared, cross-character)
+      └── page 2: DataManagementTab   (character/snapshot/account management)
 """
 
 from PySide6.QtWidgets import (
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Slot
 
 from gui.character_panel import CharacterPanel
+from gui.data_management_tab import DataManagementTab
 from gui.inventory_manager_tab import InventoryManagerTab
 from gui.process_detector import detect_game_windows
 from gui.snapshot_db import SnapshotDB
@@ -91,6 +93,14 @@ class MainWindow(QMainWindow):
 
         nav_layout.addWidget(self._btn_chars)
         nav_layout.addWidget(self._btn_inventory)
+
+        self._btn_data_mgmt = QPushButton(t("nav_data_mgmt"))
+        self._btn_data_mgmt.setObjectName("nav_btn")
+        self._btn_data_mgmt.setCheckable(True)
+        self._btn_data_mgmt.clicked.connect(lambda: self._switch_page(2))
+        self._nav_group.addButton(self._btn_data_mgmt, 2)
+        nav_layout.addWidget(self._btn_data_mgmt)
+
         nav_layout.addStretch()
 
         root.addWidget(sidebar)
@@ -122,6 +132,11 @@ class MainWindow(QMainWindow):
         self._manager_tab = InventoryManagerTab(self._snapshot_db)
         self._stack.addWidget(self._manager_tab)
 
+        # page 2: DataManagementTab
+        self._data_mgmt_tab = DataManagementTab(self._snapshot_db)
+        self._stack.addWidget(self._data_mgmt_tab)
+        self._data_mgmt_tab.status_message.connect(self._on_status_message)
+
         self.setStatusBar(QStatusBar())
         self._populate_tabs()
 
@@ -133,6 +148,8 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(index)
         if index == 1:
             self._manager_tab.refresh()
+        elif index == 2:
+            self._data_mgmt_tab.refresh()
 
     # ------------------------------------------------------------------
     # Tab management
@@ -149,7 +166,9 @@ class MainWindow(QMainWindow):
     def _attach_close_btn(self, index: int, panel: "CharacterPanel"):
         """Place a custom close button on the right side of the tab at index."""
         btn = self._make_close_btn(panel)
-        self._outer_tabs.tabBar().setTabButton(index, QTabBar.ButtonPosition.RightSide, btn)
+        self._outer_tabs.tabBar().setTabButton(
+            index, QTabBar.ButtonPosition.RightSide, btn
+        )
 
     def _populate_tabs(self):
         """Detect game windows and add a tab for each new PID found."""
@@ -168,7 +187,9 @@ class MainWindow(QMainWindow):
             idx = self._outer_tabs.addTab(panel, label)
             self._attach_close_btn(idx, panel)
             panel.tab_label_changed.connect(
-                lambda name, p=panel: self._outer_tabs.setTabText(self._outer_tabs.indexOf(p), name)
+                lambda name, p=panel: self._outer_tabs.setTabText(
+                    self._outer_tabs.indexOf(p), name
+                )
             )
             self._panels[pid] = panel
             added += 1
@@ -207,7 +228,9 @@ class MainWindow(QMainWindow):
         if index == -1:
             return
         self._outer_tabs.removeTab(index)
-        pid_to_remove = next((pid for pid, p in self._panels.items() if p is panel), None)
+        pid_to_remove = next(
+            (pid for pid, p in self._panels.items() if p is panel), None
+        )
         if pid_to_remove is not None:
             del self._panels[pid_to_remove]
         panel.shutdown()
@@ -221,6 +244,7 @@ class MainWindow(QMainWindow):
     def _on_snapshot_saved(self):
         """Refresh inventory manager when any character saves a snapshot."""
         self._manager_tab.refresh()
+        self._data_mgmt_tab.refresh()
 
     def closeEvent(self, event):
         for panel in list(self._panels.values()):
