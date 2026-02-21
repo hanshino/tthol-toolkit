@@ -115,7 +115,7 @@ def test_badge_style_light_mode_returns_different_colors():
 
     ThemeManager._mode = "light"
     ThemeManager._palette = LIGHT_PALETTE
-    dark_result = badge_style("LOCATED")  # but using light mode
+    result = badge_style("LOCATED")
     # Light mode LOCATED badge should have light green bg (DCFCE7), not dark (#0D2417)
-    assert "#DCFCE7" in badge_style("LOCATED")
-    assert "#0D2417" not in badge_style("LOCATED")
+    assert "#DCFCE7" in result
+    assert "#0D2417" not in result
