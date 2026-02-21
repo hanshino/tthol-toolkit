@@ -25,14 +25,14 @@ from PySide6.QtWidgets import (
 
 from gui.i18n import t
 from gui.snapshot_db import SnapshotDB
-from gui.theme import BORDER
+from gui.theme import BORDER, DIM
 
 
 def _section_label(text: str) -> QLabel:
     """Create a small caps section header label."""
     lbl = QLabel(text)
     lbl.setStyleSheet(
-        "color: #94A3B8; font-size: 8pt; font-weight: 600; letter-spacing: 1px;"
+        f"color: {DIM}; font-size: 8pt; font-weight: 600; letter-spacing: 1px;"
     )
     return lbl
 
@@ -74,7 +74,9 @@ class _CharDetailPanel(QWidget):
         layout.addWidget(_section_label(t("snapshot_history")))
 
         self._snap_table = QTableWidget(0, 4)
-        self._snap_table.setHorizontalHeaderLabels(["來源", "快照時間", "數量", ""])
+        self._snap_table.setHorizontalHeaderLabels(
+            [t("mgr_col_source"), t("mgr_col_snapshot_time"), t("mgr_col_qty"), ""]
+        )
         self._snap_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
         )
@@ -325,6 +327,8 @@ class DataManagementTab(QWidget):
 
         self._char_list.blockSignals(False)
 
+        # setCurrentRow is intentionally called after blockSignals(False) so that
+        # _on_char_selected fires and reloads the detail panel with fresh data.
         if reselect_row >= 0:
             self._char_list.setCurrentRow(reselect_row)
             self._right_stack.setCurrentIndex(1)
