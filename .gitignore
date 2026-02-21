@@ -30,3 +30,6 @@ toolkit/
 
 # Git worktrees
 .worktrees/
+
+# User preferences (generated at runtime)
+config.json

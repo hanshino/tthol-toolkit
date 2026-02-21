@@ -73,9 +73,7 @@ class CharacterPanel(QWidget):
         op_layout.setSpacing(8)
 
         hp_lbl = QLabel(t("vital_hp"))
-        hp_lbl.setStyleSheet(
-            f"color: {GREEN}; font-weight: 600; font-size: 11px; padding: 2px 6px;"
-        )
+        hp_lbl.setObjectName("vital_hp_label")
         op_layout.addWidget(hp_lbl)
 
         self._hp_input = QLineEdit()
@@ -108,7 +106,7 @@ class CharacterPanel(QWidget):
         op_layout.addWidget(self._relocate_btn)
 
         self._advanced_btn = QPushButton(t("filter_toggle_show"))
-        self._advanced_btn.setFlat(True)
+        self._advanced_btn.setObjectName("filter_toggle_btn")
         self._advanced_btn.clicked.connect(self._on_toggle_filter)
         op_layout.addWidget(self._advanced_btn)
 
@@ -122,7 +120,7 @@ class CharacterPanel(QWidget):
         filter_layout.setSpacing(8)
 
         mp_lbl = QLabel(t("mp_filter_label"))
-        mp_lbl.setStyleSheet(f"color: {BLUE}; font-weight: 600; font-size: 11px; padding: 2px 6px;")
+        mp_lbl.setObjectName("vital_mp_label")
         filter_layout.addWidget(mp_lbl)
 
         self._mp_input = QLineEdit()
