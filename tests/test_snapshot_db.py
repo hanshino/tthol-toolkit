@@ -1,4 +1,3 @@
-import os
 import pytest
 from gui.snapshot_db import SnapshotDB
 
@@ -48,3 +47,34 @@ def test_multiple_characters(db):
     rows = db.load_latest_snapshots()
     chars = {r["character"] for r in rows}
     assert chars == {"Hero", "Alt"}
+
+
+def test_list_characters_returns_all(db):
+    db.save_snapshot("Alice", "inventory", [{"item_id": 1, "qty": 1}])
+    db.save_snapshot("Bob", "warehouse", [{"item_id": 2, "qty": 2}])
+    chars = db.list_characters()
+    names = [c["character"] for c in chars]
+    assert sorted(names) == ["Alice", "Bob"]
+
+
+def test_list_characters_includes_account(db):
+    db.save_snapshot("Alice", "inventory", [{"item_id": 1, "qty": 1}])
+    acct_id = db.create_account("TestAccount")
+    db.set_character_account("Alice", acct_id)
+    chars = db.list_characters()
+    alice = next(c for c in chars if c["character"] == "Alice")
+    assert alice["account_name"] == "TestAccount"
+    assert alice["account_id"] == acct_id
+
+
+def test_list_characters_no_account_returns_none(db):
+    db.save_snapshot("Bob", "inventory", [{"item_id": 1, "qty": 1}])
+    chars = db.list_characters()
+    bob = next(c for c in chars if c["character"] == "Bob")
+    assert bob["account_name"] is None
+    assert bob["account_id"] is None
+
+
+def test_list_characters_empty_when_no_snapshots(db):
+    chars = db.list_characters()
+    assert chars == []

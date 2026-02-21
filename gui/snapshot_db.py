@@ -246,3 +246,24 @@ class SnapshotDB:
             "DELETE FROM character_accounts WHERE character=?", (character,)
         )
         self._con.commit()
+
+    def list_characters(self) -> list[dict]:
+        """Return all characters that have at least one snapshot, with optional account info.
+        Each dict: {character, account_id, account_name}
+        account_id/account_name are None if not assigned.
+        """
+        rows = self._con.execute(
+            "SELECT DISTINCT s.character, a.id AS account_id, a.name AS account_name "
+            "FROM snapshots s "
+            "LEFT JOIN character_accounts ca ON ca.character=s.character "
+            "LEFT JOIN accounts a ON a.id=ca.account_id "
+            "ORDER BY s.character"
+        ).fetchall()
+        return [
+            {
+                "character": r["character"],
+                "account_id": r["account_id"],
+                "account_name": r["account_name"],
+            }
+            for r in rows
+        ]
