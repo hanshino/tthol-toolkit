@@ -119,3 +119,66 @@ def test_locate_character_no_filters_keeps_candidate():
             result = locate_character(pm, hp, knowledge, offset_filters={})
 
     assert result == pos  # found at correct position
+
+
+def test_locate_character_filter_match_keeps_candidate():
+    """Filter matches the actual value -> candidate is kept."""
+    from reader import locate_character, load_knowledge
+
+    knowledge = load_knowledge()
+
+    hp = 287
+    buf = bytearray(1024)
+    pos = 228
+    struct.pack_into("<i", buf, pos, hp)
+    struct.pack_into("<i", buf, pos + 4, hp)
+    struct.pack_into("<i", buf, pos + 8, 100)
+    struct.pack_into("<i", buf, pos + 12, 100)
+    struct.pack_into("<i", buf, pos + 24, 0)
+    struct.pack_into("<i", buf, pos + 28, 1000)
+    struct.pack_into("<i", buf, pos - 36, 99)  # level = 99
+
+    pm = MagicMock()
+    pm.process_handle = MagicMock()
+    with patch("reader.get_memory_regions", return_value=[(0, len(buf))]):
+        with patch("reader.verify_structure", return_value=1.0):
+            pm.read_bytes.return_value = bytes(buf)
+            pm.read_int.side_effect = lambda addr: struct.unpack_from("<i", buf, addr)[0]
+            result = locate_character(pm, hp, knowledge, offset_filters={-36: 99})
+
+    assert result == pos  # filter matches level=99, candidate kept
+
+
+def test_locate_character_filter_read_error_drops_candidate():
+    """If filter read_int raises, candidate is dropped but scan continues."""
+    from reader import locate_character, load_knowledge
+
+    knowledge = load_knowledge()
+
+    hp = 287
+    buf = bytearray(1024)
+    pos = 228
+    struct.pack_into("<i", buf, pos, hp)
+    struct.pack_into("<i", buf, pos + 4, hp)
+    struct.pack_into("<i", buf, pos + 8, 100)
+    struct.pack_into("<i", buf, pos + 12, 100)
+    struct.pack_into("<i", buf, pos + 24, 0)
+    struct.pack_into("<i", buf, pos + 28, 1000)
+    struct.pack_into("<i", buf, pos - 36, 99)
+
+    pm = MagicMock()
+    pm.process_handle = MagicMock()
+
+    def read_int_raises_on_filter(addr):
+        # Normal reads work, but the filter offset (-36 relative = pos-36 = 192) raises
+        if addr == pos - 36:
+            raise OSError("cannot read")
+        return struct.unpack_from("<i", buf, addr)[0]
+
+    with patch("reader.get_memory_regions", return_value=[(0, len(buf))]):
+        with patch("reader.verify_structure", return_value=1.0):
+            pm.read_bytes.return_value = bytes(buf)
+            pm.read_int.side_effect = read_int_raises_on_filter
+            result = locate_character(pm, hp, knowledge, offset_filters={-36: 99})
+
+    assert result is None  # candidate dropped due to read error

@@ -141,10 +141,15 @@ def locate_character(pm, hp_value, knowledge, offset_filters=None):
                     addr = base + pos
                     score = verify_structure(pm, addr, fields)
                     if score >= 0.8:
-                        # Apply user-supplied filters
-                        if all(
-                            pm.read_int(addr + off) == val for off, val in offset_filters.items()
-                        ):
+                        # Apply user-supplied filters; treat read errors as filter miss
+                        try:
+                            passes = all(
+                                pm.read_int(addr + off) == val
+                                for off, val in offset_filters.items()
+                            )
+                        except Exception:
+                            passes = False
+                        if passes:
                             candidates.append((addr, score))
                 offset = pos + 1
         except Exception:
