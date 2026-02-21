@@ -333,6 +333,34 @@ QFrame#op_bar {{
     border-radius: 8px;
 }}
 
+/* ── Nav sidebar ─────────────────────────────────────────────── */
+QFrame#nav_sidebar {{
+    background-color: {BG_SURFACE};
+    border-right: 1px solid {BG_CARD};
+}}
+QPushButton#nav_btn {{
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0;
+    color: {DIM};
+    font-size: 9pt;
+    font-weight: 600;
+    letter-spacing: 1px;
+    padding: 12px 0;
+    text-align: center;
+    min-height: 48px;
+}}
+QPushButton#nav_btn:hover:!checked {{
+    background: rgba(34,197,94,0.08);
+    color: {TEXT};
+}}
+QPushButton#nav_btn:checked {{
+    background: rgba(34,197,94,0.12);
+    border-left-color: {GREEN};
+    color: {GREEN};
+}}
+
 /* ── View toggle segmented control ──────────────────────────── */
 QPushButton#toggle_left, QPushButton#toggle_right {{
     padding: 4px 12px;

@@ -19,6 +19,15 @@ class InventoryTab(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
+        # Warning chip
+        warn = QLabel(t("inventory_warning"))
+        warn.setStyleSheet(
+            "color: #F59E0B; background-color: #1A1200; "
+            "border: 1px solid #7C5A00; border-radius: 6px; "
+            "padding: 5px 10px; font-size: 12px;"
+        )
+        layout.addWidget(warn)
+
         # Top bar
         top = QHBoxLayout()
         self._scan_btn = QPushButton(t("scan_inventory"))

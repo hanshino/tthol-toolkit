@@ -2,17 +2,31 @@
 Main application window.
 
 Layout:
-  Outer QTabWidget — one tab per detected tthola.dat process.
-    Each tab: CharacterPanel (op_bar + vitals + inner tabs)
-  Refresh button embedded in the tab bar (RightSide) to re-scan for new windows.
+  QHBoxLayout
+  ├── QFrame#nav_sidebar  — vertical nav buttons (角色 / 道具)
+  └── QStackedWidget
+      ├── page 0: character area  (QTabWidget, one tab per process)
+      └── page 1: InventoryManagerTab  (shared, cross-character)
 """
+
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout,
-    QLabel, QPushButton, QTabWidget, QTabBar, QStatusBar,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTabWidget,
+    QTabBar,
+    QStatusBar,
+    QStackedWidget,
+    QFrame,
+    QButtonGroup,
 )
 from PySide6.QtCore import Qt, Slot
 
 from gui.character_panel import CharacterPanel
+from gui.inventory_manager_tab import InventoryManagerTab
 from gui.process_detector import detect_game_windows
 from gui.snapshot_db import SnapshotDB
 from gui.theme import BORDER, DIM, GREEN, MUTED, RED
@@ -40,19 +54,57 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(t("window_title"))
-        self.setMinimumWidth(580)
+        self.setMinimumWidth(620)
         self._snapshot_db = SnapshotDB()
-        self._panels: dict[int, CharacterPanel] = {}   # pid → panel
+        self._panels: dict[int, CharacterPanel] = {}  # pid → panel
 
         central = QWidget()
         self.setCentralWidget(central)
-        root = QVBoxLayout(central)
+        root = QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
+        # ── Left nav sidebar ──────────────────────────────────────────
+        sidebar = QFrame()
+        sidebar.setObjectName("nav_sidebar")
+        sidebar.setFixedWidth(72)
+        nav_layout = QVBoxLayout(sidebar)
+        nav_layout.setContentsMargins(0, 8, 0, 8)
+        nav_layout.setSpacing(2)
+
+        self._btn_chars = QPushButton(t("nav_characters"))
+        self._btn_chars.setObjectName("nav_btn")
+        self._btn_chars.setCheckable(True)
+        self._btn_chars.setChecked(True)
+        self._btn_chars.clicked.connect(lambda: self._switch_page(0))
+
+        self._btn_inventory = QPushButton(t("nav_inventory"))
+        self._btn_inventory.setObjectName("nav_btn")
+        self._btn_inventory.setCheckable(True)
+        self._btn_inventory.clicked.connect(lambda: self._switch_page(1))
+
+        self._nav_group = QButtonGroup(self)
+        self._nav_group.setExclusive(True)
+        self._nav_group.addButton(self._btn_chars, 0)
+        self._nav_group.addButton(self._btn_inventory, 1)
+
+        nav_layout.addWidget(self._btn_chars)
+        nav_layout.addWidget(self._btn_inventory)
+        nav_layout.addStretch()
+
+        root.addWidget(sidebar)
+
+        # ── Main stacked area ─────────────────────────────────────────
+        self._stack = QStackedWidget()
+        root.addWidget(self._stack)
+
+        # page 0: character tabs
+        char_area = QWidget()
+        char_layout = QVBoxLayout(char_area)
+        char_layout.setContentsMargins(0, 0, 0, 0)
+        char_layout.setSpacing(0)
+
         self._outer_tabs = QTabWidget()
-        # Custom close buttons are added per-tab via _attach_close_btn().
-        # setTabsClosable(False) prevents the native platform close button.
         self._outer_tabs.setTabsClosable(False)
 
         refresh_btn = QPushButton("+")
@@ -62,17 +114,31 @@ class MainWindow(QMainWindow):
         refresh_btn.clicked.connect(self._on_refresh)
         self._outer_tabs.setCornerWidget(refresh_btn, Qt.Corner.TopRightCorner)
 
-        root.addWidget(self._outer_tabs)
-        self.setStatusBar(QStatusBar())
+        char_layout.addWidget(self._outer_tabs)
+        self._stack.addWidget(char_area)
 
+        # page 1: shared InventoryManagerTab
+        self._manager_tab = InventoryManagerTab(self._snapshot_db)
+        self._stack.addWidget(self._manager_tab)
+
+        self.setStatusBar(QStatusBar())
         self._populate_tabs()
+
+    # ------------------------------------------------------------------
+    # Navigation
+    # ------------------------------------------------------------------
+    @Slot()
+    def _switch_page(self, index: int):
+        self._stack.setCurrentIndex(index)
+        if index == 1:
+            self._manager_tab.refresh()
 
     # ------------------------------------------------------------------
     # Tab management
     # ------------------------------------------------------------------
     def _make_close_btn(self, panel: "CharacterPanel") -> QPushButton:
-        """Return a styled ✕ button that closes the given panel's tab."""
-        btn = QPushButton("✕")
+        """Return a styled X button that closes the given panel's tab."""
+        btn = QPushButton("X")
         btn.setFixedSize(20, 20)
         btn.setStyleSheet(_CLOSE_BTN_STYLE)
         btn.setToolTip(t("close_tab_tooltip"))
@@ -99,10 +165,9 @@ class MainWindow(QMainWindow):
             self._remove_placeholder()
             panel = CharacterPanel(pid=pid, hwnd=hwnd, snapshot_db=self._snapshot_db)
             panel.status_message.connect(self._on_status_message)
+            panel.snapshot_saved.connect(self._on_snapshot_saved)
             idx = self._outer_tabs.addTab(panel, label)
             self._attach_close_btn(idx, panel)
-            # Use indexOf(panel) so the rename targets the correct tab even
-            # after lower-indexed tabs have been closed.
             panel.tab_label_changed.connect(
                 lambda name, p=panel: self._outer_tabs.setTabText(
                     self._outer_tabs.indexOf(p), name
@@ -140,7 +205,7 @@ class MainWindow(QMainWindow):
     def _close_panel(self, panel: "CharacterPanel"):
         """Close the tab containing panel (minimum 1 tab enforced)."""
         if self._outer_tabs.count() <= 1:
-            return   # prevent closing the last tab
+            return
         index = self._outer_tabs.indexOf(panel)
         if index == -1:
             return
@@ -156,6 +221,11 @@ class MainWindow(QMainWindow):
     @Slot(str, int)
     def _on_status_message(self, msg: str, timeout: int):
         self.statusBar().showMessage(msg, timeout)
+
+    @Slot()
+    def _on_snapshot_saved(self):
+        """Refresh inventory manager when any character saves a snapshot."""
+        self._manager_tab.refresh()
 
     def closeEvent(self, event):
         for panel in list(self._panels.values()):

@@ -13,7 +13,6 @@ from gui.status_tab import StatusTab
 from gui.inventory_tab import InventoryTab
 from gui.warehouse_tab import WarehouseTab
 from gui.snapshot_db import SnapshotDB
-from gui.inventory_manager_tab import InventoryManagerTab
 from gui.theme import badge_style, vital_html, fraction_html, GREEN, BLUE, AMBER
 from gui.i18n import t
 
@@ -32,6 +31,8 @@ class CharacterPanel(QWidget):
     tab_label_changed = Signal(str)
     # Forwarded to MainWindow's status bar.
     status_message = Signal(str, int)   # message, timeout_ms
+    # Emitted after a snapshot is saved — MainWindow refreshes the shared InventoryManagerTab.
+    snapshot_saved = Signal()
 
     def __init__(self, pid: int, hwnd: int, snapshot_db: SnapshotDB, parent=None):
         super().__init__(parent)
@@ -117,12 +118,10 @@ class CharacterPanel(QWidget):
         self._status_tab = StatusTab()
         self._inventory_tab = InventoryTab()
         self._warehouse_tab = WarehouseTab()
-        self._manager_tab = InventoryManagerTab(self._snapshot_db)
 
         self._tabs.addTab(self._status_tab, t("tab_status"))
         self._tabs.addTab(self._inventory_tab, t("tab_inventory"))
         self._tabs.addTab(self._warehouse_tab, t("tab_warehouse"))
-        self._tabs.addTab(self._manager_tab, t("tab_manager"))
         root.addWidget(self._tabs)
 
         self._inventory_tab.scan_requested.connect(self._on_inventory_scan)
@@ -229,7 +228,7 @@ class CharacterPanel(QWidget):
         )
         msg = t("snapshot_saved") if saved else t("snapshot_no_change")
         self.status_message.emit(msg, 3000)
-        self._manager_tab.refresh()
+        self.snapshot_saved.emit()
 
     @Slot()
     def _on_warehouse_save(self):
@@ -241,7 +240,7 @@ class CharacterPanel(QWidget):
         )
         msg = t("snapshot_saved") if saved else t("snapshot_no_change")
         self.status_message.emit(msg, 3000)
-        self._manager_tab.refresh()
+        self.snapshot_saved.emit()
 
     def shutdown(self):
         """Stop the worker thread. Call before removing this panel."""

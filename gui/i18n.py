@@ -15,6 +15,8 @@ _STRINGS: dict[str, str] = {
     "refresh_tooltip": "掃描新遊戲視窗",
     "close_tab_tooltip": "關閉分頁",
     "no_new_windows": "未找到新遊戲視窗",
+    "nav_characters": "角色",
+    "nav_inventory": "道具總管",
     # ── Character panel — op bar ─────────────────────────────────────────
     "hp_input_placeholder": "當前血量",
     "connect": "連線",
@@ -60,6 +62,7 @@ _STRINGS: dict[str, str] = {
     "col_name": "名稱",
     # ── Warehouse tab ────────────────────────────────────────────────────
     "scan_warehouse": "掃描倉庫",
+    "inventory_warning": "  ⚠  請先在遊戲中開啟背包介面，再進行掃描。",
     "warehouse_warning": "  ⚠  請先在遊戲中開啟倉庫介面，再進行掃描。",
     # ── Inventory manager tab ────────────────────────────────────────────
     "search_placeholder": "搜尋道具名稱...",
