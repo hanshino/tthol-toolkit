@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Ensure the remote URL is clean (no auth tokens embedded)
+      - name: Fix git remote URL
+        shell: bash
+        run: git remote set-url origin https://github.com/${{ github.repository }}.git
+
+      # ── Portable Python ───────────────────────────────────────────
+      - name: Download Python 3.11.9 embeddable
+        shell: powershell
+        run: |
+          curl -L "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -o python-embed.zip
+          New-Item -ItemType Directory -Path "toolkit\python" -Force | Out-Null
+          Expand-Archive -Path "python-embed.zip" -DestinationPath "toolkit\python" -Force
+          Remove-Item python-embed.zip
+
+      - name: Enable pip in embeddable Python
+        shell: powershell
+        run: |
+          (Get-Content "toolkit\python\python311._pth") -replace '#import site', 'import site' |
+            Set-Content "toolkit\python\python311._pth"
+          curl -L "https://bootstrap.pypa.io/get-pip.py" -o get-pip.py
+          toolkit\python\python.exe get-pip.py --quiet
+          Remove-Item get-pip.py
+
+      - name: Create sitecustomize.py
+        shell: powershell
+        run: |
+          $content = @'
+          import sys
+          import os
+
+          # Add project root to sys.path so that the 'gui' package is importable.
+          # This file lives at: <project_root>/toolkit/python/sitecustomize.py
+          _python_dir = os.path.dirname(os.path.abspath(__file__))  # toolkit/python/
+          _project_root = os.path.dirname(os.path.dirname(_python_dir))  # project root
+          if _project_root not in sys.path:
+              sys.path.insert(0, _project_root)
+          '@
+          # Strip leading spaces from heredoc
+          $content = ($content -split "`n" | ForEach-Object { $_ -replace '^\s{10}', '' }) -join "`n"
+          [System.IO.File]::WriteAllText(
+            "$PWD\toolkit\python\sitecustomize.py",
+            $content,
+            [System.Text.Encoding]::UTF8
+          )
+
+      # ── Portable Git ──────────────────────────────────────────────
+      - name: Download and extract Portable Git
+        shell: powershell
+        run: |
+          $release = Invoke-RestMethod "https://api.github.com/repos/git-for-windows/git/releases/latest"
+          $asset = $release.assets |
+            Where-Object { $_.name -like "PortableGit-*-64-bit.7z.exe" } |
+            Select-Object -First 1
+          Write-Host "Downloading $($asset.name)"
+          curl -L $asset.browser_download_url -o PortableGit.exe
+          New-Item -ItemType Directory -Path "toolkit\git" -Force | Out-Null
+          7z x PortableGit.exe -o"toolkit\git" -y | Out-Null
+          Remove-Item PortableGit.exe
+
+      # ── Package ───────────────────────────────────────────────────
+      - name: Get tag name
+        id: tag
+        shell: bash
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create release zip
+        shell: powershell
+        run: |
+          $zip = "tthol-reader-${{ steps.tag.outputs.TAG }}.zip"
+          7z a $zip . -xr!".venv" -xr!"__pycache__" -xr!"*.zip" -xr!"*.pyc"
+          Write-Host "Created $zip ($('{0:N1} MB' -f ((Get-Item $zip).Length / 1MB)))"
+
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: tthol-reader-*.zip
+          generate_release_notes: true
