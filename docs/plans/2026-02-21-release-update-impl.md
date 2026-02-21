@@ -195,13 +195,34 @@ The embeddable package disables pip by default. Fix it:
 4. Run: `toolkit\python\python.exe get-pip.py`
 5. Verify: `toolkit\python\python.exe -m pip --version`
 
-**Step 3: Pre-install dependencies into the toolkit**
+**Step 3: Create sitecustomize.py**
 
-```bat
-toolkit\python\python.exe -m pip install -r requirements.txt
+Embeddable Python ignores `PYTHONPATH` when a `._pth` file is present. The fix is
+a `sitecustomize.py` that adds the project root to `sys.path` at startup:
+
+```bash
+cat > toolkit/python/sitecustomize.py << 'EOF'
+import sys
+import os
+
+# Add project root to sys.path so that the 'gui' package is importable.
+# This file lives at: <project_root>/toolkit/python/sitecustomize.py
+_python_dir = os.path.dirname(os.path.abspath(__file__))  # toolkit/python/
+_project_root = os.path.dirname(os.path.dirname(_python_dir))  # project root
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+EOF
 ```
 
-This means users don't wait for a large download on first launch.
+Verify it works:
+
+```bash
+toolkit/python/python.exe -c "import sys; print(sys.path[0])"
+# Expected: <absolute path to project root>
+
+toolkit/python/python.exe -c "from gui.main_window import MainWindow; print('OK')"
+# Expected: OK
+```
 
 **Step 4: Download portable Git**
 
