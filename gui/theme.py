@@ -17,27 +17,27 @@ Color system (Slate-950 base + Green accent):
     ORANGE = #F97316  — connecting / scanning
 """
 
-GREEN  = "#22C55E"
-BLUE   = "#3B82F6"
-AMBER  = "#F59E0B"
-RED    = "#EF4444"
+GREEN = "#22C55E"
+BLUE = "#3B82F6"
+AMBER = "#F59E0B"
+RED = "#EF4444"
 ORANGE = "#F97316"
 
-BG_BASE    = "#020617"
+BG_BASE = "#020617"
 BG_SURFACE = "#0F172A"
-BG_CARD    = "#1E293B"
-BORDER     = "#334155"
-MUTED      = "#475569"
-DIM        = "#94A3B8"
-TEXT       = "#F8FAFC"
+BG_CARD = "#1E293B"
+BORDER = "#334155"
+MUTED = "#475569"
+DIM = "#94A3B8"
+TEXT = "#F8FAFC"
 
 # State badge (bg, border, text)
 _STATE_BADGE = {
     "DISCONNECTED": ("#151A23", "#334155", DIM),
-    "CONNECTING":   ("#231A0E", "#7C4A1A", ORANGE),
-    "LOCATED":      ("#0D2417", "#1E5C2E", GREEN),
-    "READ_ERROR":   ("#230E0E", "#7C1F1F", RED),
-    "RESCANNING":   ("#231A0E", "#7C4A1A", ORANGE),
+    "CONNECTING": ("#231A0E", "#7C4A1A", ORANGE),
+    "LOCATED": ("#0D2417", "#1E5C2E", GREEN),
+    "READ_ERROR": ("#230E0E", "#7C1F1F", RED),
+    "RESCANNING": ("#231A0E", "#7C4A1A", ORANGE),
 }
 
 
@@ -420,5 +420,35 @@ QTreeWidget QHeaderView::section {{
 }}
 QTreeWidget QHeaderView::section:last-child {{
     border-right: none;
+}}
+
+/* ── Data management left panel ─────────────────────────────── */
+QFrame#mgmt_left_panel {{
+    background-color: {BG_SURFACE};
+    border-right: 1px solid {BG_CARD};
+}}
+QListWidget#mgmt_char_list {{
+    background-color: {BG_SURFACE};
+    border: none;
+    outline: 0;
+}}
+QListWidget#mgmt_char_list::item {{
+    padding: 8px 10px;
+    border-bottom: 1px solid {BG_CARD};
+    color: {DIM};
+}}
+QListWidget#mgmt_char_list::item:selected {{
+    background-color: rgba(34,197,94,0.12);
+    color: {GREEN};
+    border-left: 2px solid {GREEN};
+}}
+QTreeWidget#mgmt_acct_tree {{
+    background-color: {BG_SURFACE};
+    border: 1px solid {BG_CARD};
+    border-radius: 6px;
+}}
+QTreeWidget#mgmt_acct_tree::item {{
+    padding: 4px 6px;
+    color: {DIM};
 }}
 """
