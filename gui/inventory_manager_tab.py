@@ -25,14 +25,20 @@ from gui.character_card import CharacterCard
 _MODE_BY_CHAR = "by_char"
 _MODE_BY_ITEM = "by_item"
 
+# Map raw DB source values to localised display strings.
+# Populated lazily after i18n is loaded (module-level call is fine for single-locale app).
+_SRC_DISPLAY: dict[str, str] = {}
+
+
+def _src_label(source: str) -> str:
+    """Return localised display string for a raw source value."""
+    if not _SRC_DISPLAY:
+        _SRC_DISPLAY["inventory"] = t("source_inventory")
+        _SRC_DISPLAY["warehouse"] = t("source_warehouse")
+    return _SRC_DISPLAY.get(source, source)
+
 
 class InventoryManagerTab(QWidget):
-    ITEM_COLUMNS = [
-        t("mgr_col_name"),
-        t("mgr_col_item_id"),
-        t("mgr_col_total_qty"),
-        t("mgr_col_details"),
-    ]
     ITEM_COLUMNS = [
         t("mgr_col_name"),
         t("mgr_col_item_id"),
@@ -204,7 +210,7 @@ class InventoryManagerTab(QWidget):
         removed = [c for c in list(self._cards) if c not in by_char]
         for char in removed:
             card = self._cards.pop(char)
-            self._char_layout.removeWidget(card)
+            card.setParent(None)
             card.deleteLater()
 
         # Insert / update cards in alphabetical order
@@ -269,7 +275,7 @@ class InventoryManagerTab(QWidget):
                 child.setText(0, r["character"])
                 child.setText(1, "")
                 child.setText(2, str(r["qty"]))
-                child.setText(3, f"{r['source']} · {r['scanned_at']}")
+                child.setText(3, f"{_src_label(r['source'])} · {r['scanned_at']}")
                 child.setTextAlignment(
                     2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                 )
