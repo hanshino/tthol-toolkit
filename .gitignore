@@ -25,3 +25,5 @@ pointers.json
 
 # Opencode local config
 .opencode/
+# Release toolkit (distributed in zip, not committed)
+toolkit/
