@@ -79,6 +79,14 @@ jobs:
           Remove-Item PortableGit.exe
 
       # ── Package ───────────────────────────────────────────────────
+      # Ensure the packaged .git has HEAD on main with upstream configured,
+      # so end users can run git pull without detached HEAD errors.
+      - name: Set HEAD to main branch for end users
+        shell: bash
+        run: |
+          git checkout -b main
+          git branch --set-upstream-to=origin/main main
+
       - name: Get tag name
         id: tag
         shell: bash
@@ -88,7 +96,7 @@ jobs:
         shell: powershell
         run: |
           $zip = "tthol-reader-${{ steps.tag.outputs.TAG }}.zip"
-          7z a $zip . -xr!".venv" -xr!"__pycache__" -xr!"*.zip" -xr!"*.pyc"
+          7z a $zip . -xr!".venv" -xr!"__pycache__" -xr!"*.pyc"
           Write-Host "Created $zip ($('{0:N1} MB' -f ((Get-Item $zip).Length / 1MB)))"
 
       - name: Upload to GitHub Releases

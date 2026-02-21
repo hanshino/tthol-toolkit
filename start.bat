@@ -20,6 +20,18 @@ cd /d "%_root%"
 :: ── Update ────────────────────────────────────────────────────
 title Tthol Reader - Updating...
 echo [1/2] Pulling latest code...
+
+:: If in detached HEAD (e.g. first run after extracting release zip), switch to main.
+git symbolic-ref HEAD >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Detached HEAD detected, switching to main branch...
+    git checkout main >nul 2>&1
+    if %errorlevel% neq 0 (
+        git checkout -b main origin/main >nul 2>&1
+    )
+    git branch --set-upstream-to=origin/main main >nul 2>&1
+)
+
 git pull --ff-only
 if %errorlevel% neq 0 (
     echo.
