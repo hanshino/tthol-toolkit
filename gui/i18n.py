@@ -83,6 +83,26 @@ _STRINGS: dict[str, str] = {
     "char_count": "{n} 個角色",
     "summary_kinds_total": "{kinds} 種 · 共 {total} 個",
     "footer_items": "共 {n} 筆",
+    # ── Snapshot management (shared by DataManagementTab and CharacterCard) ─────
+    "manage": "管理",
+    "account_label": "帳號歸屬",
+    "no_account": "未設定",
+    "create_account": "+ 建立新帳號",
+    "snapshot_history": "快照歷史",
+    "delete_snapshot": "刪除",
+    "delete_character": "刪除此角色所有記錄",
+    "confirm_delete_snapshot": "確定刪除此快照？此操作無法還原。",
+    "confirm_delete_character": "確定刪除「{character}」的所有快照與帳號設定？此操作無法還原。",
+    "deleted_snapshot": "已刪除快照",
+    "deleted_character": "已刪除角色「{character}」的所有記錄",
+    "account_assigned": "已將角色歸入帳號「{name}」",
+    "enter_account_name": "輸入帳號名稱",
+    "new_account_placeholder": "帳號名稱",
+    # ── Data management tab ───────────────────────────────────────────────────────
+    "nav_data_mgmt": "資料管理",
+    "mgmt_characters_header": "角色列表",
+    "mgmt_accounts_header": "帳號列表",
+    "mgmt_select_character": "請選擇一個角色",
 }
 
 
