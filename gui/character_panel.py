@@ -2,10 +2,18 @@
 Per-character panel: op_bar + vitals strip + inner tabs.
 One instance per detected game window.
 """
+
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QTabWidget, QFrame,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTabWidget,
+    QFrame,
 )
+from PySide6.QtGui import QIntValidator
 from PySide6.QtCore import Qt, Slot, Signal
 
 from gui.worker import ReaderWorker
@@ -15,6 +23,7 @@ from gui.warehouse_tab import WarehouseTab
 from gui.snapshot_db import SnapshotDB
 from gui.theme import badge_style, vital_html, fraction_html, GREEN, BLUE, AMBER
 from gui.i18n import t
+from reader import resolve_filters
 
 
 def _vsep() -> QFrame:
@@ -30,16 +39,16 @@ class CharacterPanel(QWidget):
     # Emitted when the character name becomes known — used to rename the outer tab.
     tab_label_changed = Signal(str)
     # Forwarded to MainWindow's status bar.
-    status_message = Signal(str, int)   # message, timeout_ms
+    status_message = Signal(str, int)  # message, timeout_ms
     # Emitted after a snapshot is saved — MainWindow refreshes the shared InventoryManagerTab.
     snapshot_saved = Signal()
 
     def __init__(self, pid: int, hwnd: int, snapshot_db: SnapshotDB, parent=None):
         super().__init__(parent)
         self._pid = pid
-        self._hwnd = hwnd          # reserved for Phase 2 OCR
+        self._hwnd = hwnd  # reserved for Phase 2 OCR
         self._snapshot_db = snapshot_db
-        self._pending_hp: int | None = None
+        self._pending_hp: tuple[int, dict | None] | None = None
         self._current_character: str = ""
         self._last_inventory: list[dict] = []
         self._last_warehouse: list[dict] = []
@@ -87,7 +96,35 @@ class CharacterPanel(QWidget):
         self._relocate_btn.clicked.connect(self._on_relocate)
         op_layout.addWidget(self._relocate_btn)
 
+        self._advanced_btn = QPushButton(t("filter_toggle_show"))
+        self._advanced_btn.setFlat(True)
+        self._advanced_btn.clicked.connect(self._on_toggle_filter)
+        op_layout.addWidget(self._advanced_btn)
+
         root.addWidget(op_frame)
+
+        # ── filter row (hidden by default) ───────────────────────────
+        filter_frame = QFrame()
+        filter_frame.setObjectName("filter_row")
+        filter_layout = QHBoxLayout(filter_frame)
+        filter_layout.setContentsMargins(10, 4, 10, 4)
+        filter_layout.setSpacing(8)
+
+        mp_lbl = QLabel(t("mp_filter_label"))
+        mp_lbl.setStyleSheet(f"color: {BLUE}; font-weight: 600; font-size: 11px;")
+        filter_layout.addWidget(mp_lbl)
+
+        self._mp_input = QLineEdit()
+        self._mp_input.setPlaceholderText(t("mp_filter_placeholder"))
+        self._mp_input.setMaximumWidth(130)
+        self._mp_input.setValidator(QIntValidator(0, 2_147_483_647))
+        filter_layout.addWidget(self._mp_input)
+
+        filter_layout.addStretch()
+
+        self._filter_frame = filter_frame
+        self._filter_frame.setVisible(False)
+        root.addWidget(self._filter_frame)
 
         # ── vitals strip ──────────────────────────────────────────────
         vitals_frame = QFrame()
@@ -99,8 +136,11 @@ class CharacterPanel(QWidget):
         self._vitals_labels: dict[str, QLabel] = {}
         vitals_defs = ["Lv", "HP", "MP", "Weight", "Pos"]
         vitals_keys = {
-            "Lv": t("vital_lv"), "HP": t("vital_hp"),
-            "MP": t("vital_mp"), "Weight": t("vital_wt"), "Pos": t("vital_pos"),
+            "Lv": t("vital_lv"),
+            "HP": t("vital_hp"),
+            "MP": t("vital_mp"),
+            "Weight": t("vital_wt"),
+            "Pos": t("vital_pos"),
         }
         for i, key in enumerate(vitals_defs):
             lbl = QLabel(vital_html(vitals_keys[key], "---"))
@@ -139,7 +179,13 @@ class CharacterPanel(QWidget):
             self.status_message.emit(t("enter_valid_hp"), 3000)
             return
         self._connect_btn.setEnabled(False)
-        self._worker.connect(int(hp_text))
+        self._worker.connect(int(hp_text), offset_filters=self._build_offset_filters())
+
+    @Slot()
+    def _on_toggle_filter(self):
+        visible = not self._filter_frame.isVisible()
+        self._filter_frame.setVisible(visible)
+        self._advanced_btn.setText(t("filter_toggle_hide") if visible else t("filter_toggle_show"))
 
     @Slot()
     def _on_relocate(self):
@@ -147,7 +193,7 @@ class CharacterPanel(QWidget):
         if not hp_text.isdigit():
             self.status_message.emit(t("enter_valid_hp"), 3000)
             return
-        self._pending_hp = int(hp_text)
+        self._pending_hp = (int(hp_text), self._build_offset_filters())
         self._relocate_btn.setEnabled(False)
         self._worker.stop()
 
@@ -158,9 +204,9 @@ class CharacterPanel(QWidget):
         self._relocate_btn.setEnabled(state == "LOCATED")
         if state == "DISCONNECTED":
             if self._pending_hp is not None:
-                hp = self._pending_hp
+                hp, offset_filters = self._pending_hp
                 self._pending_hp = None
-                self._worker.connect(hp)
+                self._worker.connect(hp, offset_filters=offset_filters)
             else:
                 self._connect_btn.setEnabled(True)
 
@@ -174,15 +220,15 @@ class CharacterPanel(QWidget):
             self._current_character = name
             self.tab_label_changed.emit(name)
 
-        hp     = data.get("血量", "---")
+        hp = data.get("血量", "---")
         hp_max = data.get("最大血量", "---")
-        mp     = data.get("真氣", "---")
+        mp = data.get("真氣", "---")
         mp_max = data.get("最大真氣", "---")
-        wt     = data.get("負重", "---")
+        wt = data.get("負重", "---")
         wt_max = data.get("最大負重", "---")
-        lv     = data.get("等級", "---")
-        x      = data.get("X座標", "---")
-        y      = data.get("Y座標", "---")
+        lv = data.get("等級", "---")
+        x = data.get("X座標", "---")
+        y = data.get("Y座標", "---")
 
         self._vitals_labels["Lv"].setText(vital_html(t("vital_lv"), lv))
         self._vitals_labels["HP"].setText(fraction_html(t("vital_hp"), hp, hp_max, GREEN))
@@ -242,8 +288,21 @@ class CharacterPanel(QWidget):
         self.status_message.emit(msg, 3000)
         self.snapshot_saved.emit()
 
+    def _build_offset_filters(self):
+        """Read MP input and return resolved offset_filters dict, or None."""
+        mp_text = self._mp_input.text().strip()
+        if not mp_text:
+            return None
+        try:
+            mp_val = int(mp_text)
+        except ValueError:
+            self.status_message.emit(t("enter_valid_mp"), 3000)
+            return None
+        knowledge = self._worker._knowledge
+        return resolve_filters({"真氣": mp_val}, knowledge)
+
     def shutdown(self):
         """Stop the worker thread. Call before removing this panel."""
         self._worker.stop()
-        if not self._worker.wait(5000):   # 5-second timeout
-            self._worker.terminate()      # last resort if worker is stuck
+        if not self._worker.wait(5000):  # 5-second timeout
+            self._worker.terminate()  # last resort if worker is stuck
