@@ -3,8 +3,8 @@ Snapshot database for tthol_inventory.db.
 
 Schema:
     snapshots(id, character, source, scanned_at, items TEXT, checksum TEXT)
-    accounts(id, name)
-    character_accounts(character, account_id)
+    accounts(id, name TEXT UNIQUE)
+    character_accounts(character TEXT PK, account_id INTEGER NOT NULL → accounts.id)
 
 items is a JSON array sorted by item_id: [{"item_id": N, "qty": N}, ...]
 checksum is SHA256 of the canonical items JSON string.
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 );
 CREATE TABLE IF NOT EXISTS character_accounts (
     character  TEXT PRIMARY KEY,
-    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE SET NULL
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT
 );
 """
 
@@ -202,10 +202,14 @@ class SnapshotDB:
         return [{"id": r["id"], "name": r["name"]} for r in rows]
 
     def create_account(self, name: str) -> int:
-        """Create a new account, return its id."""
-        cur = self._con.execute("INSERT INTO accounts (name) VALUES (?)", (name,))
-        self._con.commit()
-        return cur.lastrowid
+        """Create a new account, return its id. Returns existing id if name already exists."""
+        try:
+            cur = self._con.execute("INSERT INTO accounts (name) VALUES (?)", (name,))
+            self._con.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            row = self._con.execute("SELECT id FROM accounts WHERE name=?", (name,)).fetchone()
+            return row["id"]
 
     def set_character_account(self, character: str, account_id: int) -> None:
         """Assign a character to an account (upsert)."""
