@@ -33,3 +33,20 @@ def test_parse_filters_empty_name_raises():
 
     with pytest.raises(SystemExit):
         parse_filters(["=7"])
+
+
+def test_resolve_filters_maps_name_to_offset():
+    from reader import resolve_filters, load_knowledge
+
+    knowledge = load_knowledge()
+    filters = {"等級": 7, "真氣": 150}
+    result = resolve_filters(filters, knowledge)
+    assert result == {-36: 7, 8: 150}
+
+
+def test_resolve_filters_unknown_field_raises():
+    from reader import resolve_filters, load_knowledge
+
+    knowledge = load_knowledge()
+    with pytest.raises(SystemExit):
+        resolve_filters({"不存在欄位": 1}, knowledge)

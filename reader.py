@@ -95,6 +95,22 @@ def parse_filters(filter_args):
     return result
 
 
+def resolve_filters(filters, knowledge):
+    """Resolve {field_name: value} to {offset: value} using knowledge.json.
+    Exits with error if a field name is not found in the knowledge base.
+    """
+    fields = knowledge["character_structure"]["fields"]
+    name_to_offset = {info["name"]: int(offset_str) for offset_str, info in fields.items()}
+    result = {}
+    for name, value in filters.items():
+        if name not in name_to_offset:
+            known = ", ".join(sorted(name_to_offset.keys()))
+            print(f"[X] Unknown field '{name}'. Known fields: {known}")
+            raise SystemExit(1)
+        result[name_to_offset[name]] = value
+    return result
+
+
 # ============================================================
 # 定位角色結構
 # ============================================================
