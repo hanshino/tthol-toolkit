@@ -456,14 +456,38 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
 
     if len(sys.argv) < 2:
-        print("Usage: uv run reader.py <current_hp> [--loop] [--inventory]")
-        print("  --loop       Continuous monitoring mode (updates every second)")
-        print("  --inventory  Show inventory contents")
+        print(
+            "Usage: uv run reader.py <current_hp> [--loop] [--inventory] [--filter field=value ...]"
+        )
+        print("  --loop              Continuous monitoring mode (updates every second)")
+        print("  --inventory         Show inventory contents")
+        print("  --filter field=val  Require field to equal value (repeatable)")
+        print("  Example: uv run reader.py 287 --filter 等級=7 --filter 真氣=150")
         return
 
     hp_value = int(sys.argv[1])
     loop_mode = "--loop" in sys.argv
     show_inventory = "--inventory" in sys.argv
+
+    # Collect all --filter arguments
+    raw_filters = []
+    args = sys.argv[2:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--filter" and i + 1 < len(args):
+            raw_filters.append(args[i + 1])
+            i += 2
+        else:
+            i += 1
+
+    knowledge = load_knowledge()
+
+    filters = parse_filters(raw_filters)
+    offset_filters = resolve_filters(filters, knowledge) if filters else {}
+
+    if offset_filters:
+        filter_desc = ", ".join(f"{k}={v}" for k, v in filters.items())
+        print(f"Filters: {filter_desc}")
 
     print("Connecting to Tthol...")
     try:
@@ -472,12 +496,11 @@ def main():
         print(f"[X] Cannot connect: {e}")
         return
 
-    knowledge = load_knowledge()
     display_fields = get_display_fields(knowledge)
 
     print(f"Locating character struct (HP={hp_value})...")
     t0 = time.time()
-    hp_addr = locate_character(pm, hp_value, knowledge)
+    hp_addr = locate_character(pm, hp_value, knowledge, offset_filters=offset_filters)
     elapsed = time.time() - t0
 
     if hp_addr is None:
