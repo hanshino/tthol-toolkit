@@ -1,28 +1,30 @@
 """
-Dark gaming-style theme for Tthol Reader.
+Theme system for Tthol Reader.
 
-Color system (Slate-950 base + Green accent):
-    BG_BASE    = #020617  slate-950  — main window background
-    BG_SURFACE = #0F172A  slate-900  — tab pane, panels
-    BG_CARD    = #1E293B  slate-800  — cards, group boxes
-    BORDER     = #334155  slate-700  — interactive borders
-    MUTED      = #475569  slate-600  — disabled / secondary text
-    DIM        = #94A3B8  slate-400  — labels / captions
-    TEXT       = #F8FAFC  slate-50   — primary text
+Two palettes: DARK_PALETTE (slate-950 base) and LIGHT_PALETTE (slate-50 base).
+QSS is generated from the active palette at runtime.
+ThemeManager singleton applies theme and persists preference.
 
-    GREEN  = #22C55E  — HP, active, primary CTA
-    BLUE   = #3B82F6  — MP / mana
-    AMBER  = #F59E0B  — Weight / warning
-    RED    = #EF4444  — error
-    ORANGE = #F97316  — connecting / scanning
+Shared accent colors (both modes):
+    GREEN  = #22C55E
+    BLUE   = #3B82F6
+    AMBER  = #F59E0B
+    RED    = #EF4444
+    ORANGE = #F97316
 """
 
+from gui.config import save_theme
+
+# ── Shared accents (kept as module constants for val_color params) ─────────────
 GREEN = "#22C55E"
 BLUE = "#3B82F6"
 AMBER = "#F59E0B"
 RED = "#EF4444"
 ORANGE = "#F97316"
 
+# ── Backward-compatible dark-palette module constants ──────────────────────────
+# These are used by gui modules that import them directly (e.g. BORDER, DIM).
+# They reflect the dark palette defaults. Dynamic theming should use ThemeManager.c().
 BG_BASE = "#020617"
 BG_SURFACE = "#0F172A"
 BG_CARD = "#1E293B"
@@ -31,19 +33,101 @@ MUTED = "#475569"
 DIM = "#94A3B8"
 TEXT = "#F8FAFC"
 
-# State badge (bg, border, text)
-_STATE_BADGE = {
-    "DISCONNECTED": ("#151A23", "#334155", DIM),
+# ── Palettes ──────────────────────────────────────────────────────────────────
+DARK_PALETTE: dict[str, str] = {
+    "BG_BASE": "#020617",
+    "BG_SURFACE": "#0F172A",
+    "BG_CARD": "#1E293B",
+    "BORDER": "#334155",
+    "MUTED": "#475569",
+    "DIM": "#94A3B8",
+    "TEXT": "#F8FAFC",
+    "GREEN": GREEN,
+    "BLUE": BLUE,
+    "AMBER": AMBER,
+    "RED": RED,
+    "ORANGE": ORANGE,
+}
+
+LIGHT_PALETTE: dict[str, str] = {
+    "BG_BASE": "#F8FAFC",
+    "BG_SURFACE": "#F1F5F9",
+    "BG_CARD": "#E2E8F0",
+    "BORDER": "#CBD5E1",
+    "MUTED": "#64748B",
+    "DIM": "#475569",
+    "TEXT": "#0F172A",
+    "GREEN": GREEN,
+    "BLUE": BLUE,
+    "AMBER": AMBER,
+    "RED": RED,
+    "ORANGE": ORANGE,
+}
+
+# ── State badge configs ───────────────────────────────────────────────────────
+_STATE_BADGE_DARK = {
+    "DISCONNECTED": ("#151A23", "#334155", "#94A3B8"),
     "CONNECTING": ("#231A0E", "#7C4A1A", ORANGE),
     "LOCATED": ("#0D2417", "#1E5C2E", GREEN),
     "READ_ERROR": ("#230E0E", "#7C1F1F", RED),
     "RESCANNING": ("#231A0E", "#7C4A1A", ORANGE),
 }
 
+_STATE_BADGE_LIGHT = {
+    "DISCONNECTED": ("#E2E8F0", "#CBD5E1", "#475569"),
+    "CONNECTING": ("#FEF3C7", "#F59E0B", "#92400E"),
+    "LOCATED": ("#DCFCE7", "#86EFAC", "#166534"),
+    "READ_ERROR": ("#FEE2E2", "#FCA5A5", "#991B1B"),
+    "RESCANNING": ("#FEF3C7", "#F59E0B", "#92400E"),
+}
 
+
+# ── ThemeManager ──────────────────────────────────────────────────────────────
+class ThemeManager:
+    """Singleton managing active theme palette and QSS application."""
+
+    _mode: str = "dark"
+    _palette: dict[str, str] = DARK_PALETTE
+    _app = None
+
+    @classmethod
+    def apply(cls, app, mode: str) -> None:
+        """Apply palette to app stylesheet and persist preference."""
+        if mode not in ("dark", "light"):
+            mode = "dark"
+        cls._app = app
+        cls._mode = mode
+        cls._palette = DARK_PALETTE if mode == "dark" else LIGHT_PALETTE
+        app.setStyleSheet(_build_qss(cls._palette))
+        save_theme(mode)
+
+    @classmethod
+    def toggle(cls) -> None:
+        """Switch between dark and light modes."""
+        new_mode = "light" if cls._mode == "dark" else "dark"
+        new_palette = LIGHT_PALETTE if new_mode == "light" else DARK_PALETTE
+        cls._mode = new_mode
+        cls._palette = new_palette
+        if cls._app is not None:
+            cls._app.setStyleSheet(_build_qss(new_palette))
+        save_theme(new_mode)
+
+    @classmethod
+    def c(cls, key: str) -> str:
+        """Return current palette value for key. Returns magenta on missing key."""
+        return cls._palette.get(key, "#FF00FF")
+
+    @classmethod
+    def mode(cls) -> str:
+        """Return current mode string ('dark' or 'light')."""
+        return cls._mode
+
+
+# ── Dynamic style helpers ─────────────────────────────────────────────────────
 def badge_style(state: str) -> str:
     """Return inline QSS for the connection-state pill badge."""
-    bg, border, color = _STATE_BADGE.get(state, _STATE_BADGE["DISCONNECTED"])
+    badges = _STATE_BADGE_DARK if ThemeManager._mode == "dark" else _STATE_BADGE_LIGHT
+    bg, border, color = badges.get(state, badges["DISCONNECTED"])
     return (
         f"color: {color}; background-color: {bg}; "
         f"border: 1px solid {border}; border-radius: 10px; "
@@ -51,24 +135,49 @@ def badge_style(state: str) -> str:
     )
 
 
-def vital_html(key: str, val, val_color: str = TEXT) -> str:
+def vital_html(key: str, val, val_color: str | None = None) -> str:
     """Render a simple vital field: dim key + bright value."""
+    dim = ThemeManager.c("DIM")
+    text = val_color or ThemeManager.c("TEXT")
     return (
-        f'<span style="color:{DIM};font-size:10px;letter-spacing:1px;">{key}</span>'
-        f'&thinsp;<span style="color:{val_color};font-weight:700;">{val}</span>'
+        f'<span style="color:{dim};font-size:10px;letter-spacing:1px;">{key}</span>'
+        f"&thinsp;"
+        f'<span style="color:{text};font-weight:700;">{val}</span>'
     )
 
 
 def fraction_html(key: str, cur, mx, val_color: str = GREEN) -> str:
     """Render a cur/max vital: dim key + colored cur + muted /max."""
+    dim = ThemeManager.c("DIM")
+    muted = ThemeManager.c("MUTED")
     return (
-        f'<span style="color:{DIM};font-size:10px;letter-spacing:1px;">{key}</span>'
-        f'&thinsp;<span style="color:{val_color};font-weight:700;">{cur}</span>'
-        f'<span style="color:{MUTED};">/{mx}</span>'
+        f'<span style="color:{dim};font-size:10px;letter-spacing:1px;">{key}</span>'
+        f"&thinsp;"
+        f'<span style="color:{val_color};font-weight:700;">{cur}</span>'
+        f'<span style="color:{muted};">/{mx}</span>'
     )
 
 
-DARK_QSS = f"""
+# ── QSS builder ───────────────────────────────────────────────────────────────
+def _build_qss(p: dict[str, str]) -> str:
+    """Generate full application QSS from palette dict p."""
+    BG_BASE = p["BG_BASE"]
+    BG_SURFACE = p["BG_SURFACE"]
+    BG_CARD = p["BG_CARD"]
+    BORDER = p["BORDER"]
+    MUTED = p["MUTED"]
+    DIM = p["DIM"]
+    TEXT = p["TEXT"]
+    _GREEN = p["GREEN"]
+    _BLUE = p["BLUE"]
+    _AMBER = p["AMBER"]
+    _RED = p["RED"]
+
+    # Table/tree selection tint: green tint adapted per theme
+    _SEL_BG = "#122118" if BG_BASE == "#020617" else "#DCFCE7"
+    _SEL_COL = _GREEN
+
+    return f"""
 /* ── Global ─────────────────────────────────────────────────────── */
 QWidget {{
     background-color: {BG_BASE};
@@ -77,8 +186,6 @@ QWidget {{
     font-size: 10pt;
     outline: 0;
 }}
-
-/* ── Monospace: stat values, addresses ──────────────────────────── */
 QLabel#mono {{
     font-family: "Cascadia Code", "Consolas", monospace;
 }}
@@ -118,13 +225,13 @@ QPushButton {{
 }}
 QPushButton:hover {{
     background-color: {BORDER};
-    border-color: {GREEN};
-    color: {GREEN};
+    border-color: {_GREEN};
+    color: {_GREEN};
 }}
 QPushButton:pressed {{
-    background-color: {GREEN};
+    background-color: {_GREEN};
     color: {BG_BASE};
-    border-color: {GREEN};
+    border-color: {_GREEN};
 }}
 QPushButton:disabled {{
     background-color: {BG_SURFACE};
@@ -132,9 +239,9 @@ QPushButton:disabled {{
     border-color: {BG_CARD};
 }}
 
-/* Primary green button (Connect) */
+/* Primary green button */
 QPushButton#primary_btn {{
-    background-color: {GREEN};
+    background-color: {_GREEN};
     color: {BG_BASE};
     font-weight: 700;
     border: none;
@@ -153,6 +260,57 @@ QPushButton#primary_btn:disabled {{
     border: 1px solid {BG_CARD};
 }}
 
+/* Close tab button */
+QPushButton#close_btn {{
+    color: {MUTED};
+    background: transparent;
+    border: none;
+    padding: 3px;
+    font-size: 12px;
+    min-height: 0;
+    min-width: 0;
+}}
+QPushButton#close_btn:hover {{
+    color: {_RED};
+    background: rgba(239,68,68,0.15);
+    border-radius: 4px;
+}}
+
+/* Refresh/add tab button */
+QPushButton#refresh_btn {{
+    color: {DIM};
+    background: transparent;
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 16px;
+    font-weight: 700;
+    min-height: 0;
+    min-width: 0;
+}}
+QPushButton#refresh_btn:hover {{
+    color: {_GREEN};
+    border-color: {_GREEN};
+    background: rgba(34,197,94,0.10);
+}}
+QPushButton#refresh_btn:pressed {{
+    background: rgba(34,197,94,0.20);
+}}
+
+/* Filter toggle button */
+QPushButton#filter_toggle_btn {{
+    background: transparent;
+    border: none;
+    color: {TEXT};
+    font-size: 10pt;
+    font-weight: 500;
+    min-height: 0;
+    padding: 2px 6px;
+}}
+QPushButton#filter_toggle_btn:hover {{
+    color: {_GREEN};
+}}
+
 /* ── Line Edit ───────────────────────────────────────────────────── */
 QLineEdit {{
     background-color: {BG_SURFACE};
@@ -161,11 +319,11 @@ QLineEdit {{
     border-radius: 6px;
     padding: 5px 10px;
     min-height: 28px;
-    selection-background-color: {GREEN};
+    selection-background-color: {_GREEN};
     selection-color: {BG_BASE};
 }}
 QLineEdit:focus {{
-    border-color: {GREEN};
+    border-color: {_GREEN};
 }}
 
 /* ── Tabs ────────────────────────────────────────────────────────── */
@@ -189,7 +347,7 @@ QTabBar::tab {{
 QTabBar::tab:selected {{
     background-color: {BG_SURFACE};
     color: {TEXT};
-    border-top: 2px solid {GREEN};
+    border-top: 2px solid {_GREEN};
     border-left-color: {BG_CARD};
     border-right-color: {BG_CARD};
     border-bottom-color: {BG_SURFACE};
@@ -209,13 +367,13 @@ QProgressBar {{
 }}
 QProgressBar::chunk {{
     border-radius: 5px;
-    background-color: {GREEN};
+    background-color: {_GREEN};
 }}
 QProgressBar#mp_bar::chunk {{
-    background-color: {BLUE};
+    background-color: {_BLUE};
 }}
 QProgressBar#weight_bar::chunk {{
-    background-color: {AMBER};
+    background-color: {_AMBER};
 }}
 
 /* ── Tables ──────────────────────────────────────────────────────── */
@@ -225,8 +383,8 @@ QTableWidget {{
     border: 1px solid {BG_CARD};
     border-radius: 6px;
     gridline-color: {BG_CARD};
-    selection-background-color: #122118;
-    selection-color: {GREEN};
+    selection-background-color: {_SEL_BG};
+    selection-color: {_SEL_COL};
     outline: 0;
 }}
 QTableWidget::item {{
@@ -234,8 +392,8 @@ QTableWidget::item {{
     border: none;
 }}
 QTableWidget::item:selected {{
-    background-color: #122118;
-    color: {GREEN};
+    background-color: {_SEL_BG};
+    color: {_SEL_COL};
 }}
 QHeaderView {{
     background-color: {BG_BASE};
@@ -326,14 +484,14 @@ QFrame#vitals_sep {{
     min-width: 1px;
 }}
 
-/* ── Operation bar container ─────────────────────────────────────── */
+/* ── Operation bar ───────────────────────────────────────────────── */
 QFrame#op_bar {{
     background-color: {BG_SURFACE};
     border: 1px solid {BG_CARD};
     border-radius: 8px;
 }}
 
-/* ── Nav sidebar ─────────────────────────────────────────────── */
+/* ── Nav sidebar ─────────────────────────────────────────────────── */
 QFrame#nav_sidebar {{
     background-color: {BG_SURFACE};
     border-right: 1px solid {BG_CARD};
@@ -357,8 +515,27 @@ QPushButton#nav_btn:hover:!checked {{
 }}
 QPushButton#nav_btn:checked {{
     background: rgba(34,197,94,0.12);
-    border-left-color: {GREEN};
-    color: {GREEN};
+    border-left-color: {_GREEN};
+    color: {_GREEN};
+}}
+
+/* Theme toggle button in nav sidebar */
+QPushButton#theme_toggle_btn {{
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0;
+    color: {MUTED};
+    font-size: 9pt;
+    font-weight: 600;
+    letter-spacing: 1px;
+    padding: 10px 0;
+    text-align: center;
+    min-height: 36px;
+}}
+QPushButton#theme_toggle_btn:hover {{
+    background: rgba(34,197,94,0.08);
+    color: {TEXT};
 }}
 
 /* ── View toggle segmented control ──────────────────────────── */
@@ -378,15 +555,15 @@ QPushButton#toggle_right {{
     border-bottom-right-radius: 6px;
 }}
 QPushButton#toggle_left:checked, QPushButton#toggle_right:checked {{
-    background-color: {GREEN};
+    background-color: {_GREEN};
     color: {BG_BASE};
-    border-color: {GREEN};
+    border-color: {_GREEN};
     font-weight: 700;
 }}
 QPushButton#toggle_left:hover:!checked, QPushButton#toggle_right:hover:!checked {{
     background-color: {BORDER};
-    border-color: {GREEN};
-    color: {GREEN};
+    border-color: {_GREEN};
+    color: {_GREEN};
 }}
 
 /* ── Tree Widget ─────────────────────────────────────────────── */
@@ -395,8 +572,8 @@ QTreeWidget {{
     alternate-background-color: {BG_CARD};
     border: 1px solid {BG_CARD};
     border-radius: 6px;
-    selection-background-color: #122118;
-    selection-color: {GREEN};
+    selection-background-color: {_SEL_BG};
+    selection-color: {_SEL_COL};
     outline: 0;
 }}
 QTreeWidget::item {{
@@ -404,8 +581,8 @@ QTreeWidget::item {{
     border: none;
 }}
 QTreeWidget::item:selected {{
-    background-color: #122118;
-    color: {GREEN};
+    background-color: {_SEL_BG};
+    color: {_SEL_COL};
 }}
 QTreeWidget QHeaderView::section {{
     background-color: {BG_BASE};
@@ -439,8 +616,8 @@ QListWidget#mgmt_char_list::item {{
 }}
 QListWidget#mgmt_char_list::item:selected {{
     background-color: rgba(34,197,94,0.12);
-    color: {GREEN};
-    border-left: 2px solid {GREEN};
+    color: {_GREEN};
+    border-left: 2px solid {_GREEN};
 }}
 QTreeWidget#mgmt_acct_tree {{
     background-color: {BG_SURFACE};
@@ -458,7 +635,34 @@ QPushButton#delete_btn {{
     min-height: 24px;
 }}
 
-/* ── Character card (By Char view) ───────────────────────────── */
+/* ── HP / MP labels in op_bar ────────────────────────────────── */
+QLabel#vital_hp_label {{
+    color: {_GREEN};
+    font-weight: 600;
+    font-size: 11px;
+    padding: 2px 6px;
+}}
+QLabel#vital_mp_label {{
+    color: {_BLUE};
+    font-weight: 600;
+    font-size: 11px;
+    padding: 2px 6px;
+}}
+
+/* ── Version label in status bar ─────────────────────────────── */
+QLabel#version_label {{
+    color: {MUTED};
+    font-size: 11px;
+    padding-right: 6px;
+}}
+
+/* ── Placeholder tab label ───────────────────────────────────── */
+QLabel#placeholder_lbl {{
+    color: {DIM};
+    font-size: 14px;
+}}
+
+/* ── Character card ──────────────────────────────────────────── */
 QFrame#char_card {{
     background-color: {BG_CARD};
     border: 1px solid {BORDER};
@@ -470,3 +674,7 @@ QFrame#char_card_header {{
     padding: 0 4px;
 }}
 """
+
+
+# Convenience alias — startup uses this before ThemeManager.apply() is called
+DARK_QSS = _build_qss(DARK_PALETTE)
