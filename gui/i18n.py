@@ -23,6 +23,8 @@ _STRINGS: dict[str, str] = {
     "relocate": "重新定位",
     "state_disconnected": "● 未連線",
     "enter_valid_hp": "請輸入有效的血量值",
+    "focus_window": "視窗",
+    "focus_window_tooltip": "將此遊戲視窗移至最上層",
     "filter_toggle_show": "+ 進階",
     "filter_toggle_hide": "▲ 進階",
     "mp_filter_label": "真氣",

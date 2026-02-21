@@ -129,6 +129,9 @@ class ReaderWorker(QThread):
                         self.state_changed.emit("RESCANNING")
                         hp_addr = self._locate(pm)
                         if hp_addr is None:
+                            self.scan_error.emit(
+                                "Character not found — please enter the new character's HP value"
+                            )
                             self.state_changed.emit("DISCONNECTED")
                             return
                         self.state_changed.emit("LOCATED")
@@ -150,6 +153,9 @@ class ReaderWorker(QThread):
                     self.state_changed.emit("RESCANNING")
                     hp_addr = self._locate(pm)
                     if hp_addr is None:
+                        self.scan_error.emit(
+                            "Character not found — please enter the new character's HP value"
+                        )
                         self.state_changed.emit("DISCONNECTED")
                         return
                     self.state_changed.emit("LOCATED")

@@ -14,8 +14,9 @@ from PySide6.QtWidgets import (
     QFrame,
 )
 from PySide6.QtGui import QIntValidator
-from PySide6.QtCore import Qt, Slot, Signal
+from PySide6.QtCore import Qt, QTimer, Slot, Signal
 
+from gui.process_detector import bring_window_to_front
 from gui.worker import ReaderWorker
 from gui.status_tab import StatusTab
 from gui.inventory_tab import InventoryTab
@@ -90,6 +91,12 @@ class CharacterPanel(QWidget):
         op_layout.addWidget(self._state_indicator)
 
         op_layout.addStretch()
+
+        self._focus_window_btn = QPushButton(t("focus_window"))
+        self._focus_window_btn.setToolTip(t("focus_window_tooltip"))
+        self._focus_window_btn.setEnabled(bool(hwnd))
+        self._focus_window_btn.clicked.connect(self._on_focus_window)
+        op_layout.addWidget(self._focus_window_btn)
 
         self._relocate_btn = QPushButton(t("relocate"))
         self._relocate_btn.setEnabled(False)
@@ -188,6 +195,10 @@ class CharacterPanel(QWidget):
         self._advanced_btn.setText(t("filter_toggle_hide") if visible else t("filter_toggle_show"))
 
     @Slot()
+    def _on_focus_window(self):
+        bring_window_to_front(self._hwnd)
+
+    @Slot()
     def _on_relocate(self):
         hp_text = self._hp_input.text().strip()
         if not hp_text.isdigit():
@@ -209,6 +220,12 @@ class CharacterPanel(QWidget):
                 self._worker.connect(hp, offset_filters=offset_filters)
             else:
                 self._connect_btn.setEnabled(True)
+                # If we were previously located (had a character), the disconnect
+                # likely means an account switch — clear HP input and highlight it
+                # so the user knows to enter the new character's HP value.
+                if self._current_character:
+                    self._hp_input.clear()
+                    self._flash_hp_input()
 
     @Slot(list)
     def _on_stats_updated(self, fields: list):
@@ -305,6 +322,11 @@ class CharacterPanel(QWidget):
         except SystemExit:
             self.status_message.emit(t("enter_valid_mp"), 3000)
             return None
+
+    def _flash_hp_input(self):
+        """Briefly highlight the HP input with a red border to prompt re-entry."""
+        self._hp_input.setStyleSheet("border: 1px solid #EF4444;")
+        QTimer.singleShot(1500, lambda: self._hp_input.setStyleSheet(""))
 
     def shutdown(self):
         """Stop the worker thread. Call before removing this panel."""
