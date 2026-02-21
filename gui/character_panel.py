@@ -15,6 +15,7 @@ from gui.warehouse_tab import WarehouseTab
 from gui.snapshot_db import SnapshotDB
 from gui.inventory_manager_tab import InventoryManagerTab
 from gui.theme import badge_style, vital_html, fraction_html, GREEN, BLUE, AMBER
+from gui.i18n import t
 
 
 def _vsep() -> QFrame:
@@ -65,22 +66,22 @@ class CharacterPanel(QWidget):
         op_layout.addWidget(hp_lbl)
 
         self._hp_input = QLineEdit()
-        self._hp_input.setPlaceholderText("current HP value")
+        self._hp_input.setPlaceholderText(t("hp_input_placeholder"))
         self._hp_input.setMaximumWidth(130)
         op_layout.addWidget(self._hp_input)
 
-        self._connect_btn = QPushButton("Connect")
+        self._connect_btn = QPushButton(t("connect"))
         self._connect_btn.setObjectName("primary_btn")
         self._connect_btn.clicked.connect(self._on_connect)
         op_layout.addWidget(self._connect_btn)
 
-        self._state_indicator = QLabel("● DISCONNECTED")
+        self._state_indicator = QLabel(t("state_disconnected"))
         self._state_indicator.setStyleSheet(badge_style("DISCONNECTED"))
         op_layout.addWidget(self._state_indicator)
 
         op_layout.addStretch()
 
-        self._relocate_btn = QPushButton("Relocate")
+        self._relocate_btn = QPushButton(t("relocate"))
         self._relocate_btn.setEnabled(False)
         self._relocate_btn.clicked.connect(self._on_relocate)
         op_layout.addWidget(self._relocate_btn)
@@ -96,8 +97,12 @@ class CharacterPanel(QWidget):
 
         self._vitals_labels: dict[str, QLabel] = {}
         vitals_defs = ["Lv", "HP", "MP", "Weight", "Pos"]
+        vitals_keys = {
+            "Lv": t("vital_lv"), "HP": t("vital_hp"),
+            "MP": t("vital_mp"), "Weight": t("vital_wt"), "Pos": t("vital_pos"),
+        }
         for i, key in enumerate(vitals_defs):
-            lbl = QLabel(vital_html(key.upper(), "---"))
+            lbl = QLabel(vital_html(vitals_keys[key], "---"))
             lbl.setTextFormat(Qt.TextFormat.RichText)
             vitals_layout.addWidget(lbl)
             self._vitals_labels[key] = lbl
@@ -114,10 +119,10 @@ class CharacterPanel(QWidget):
         self._warehouse_tab = WarehouseTab()
         self._manager_tab = InventoryManagerTab(self._snapshot_db)
 
-        self._tabs.addTab(self._status_tab, "Status")
-        self._tabs.addTab(self._inventory_tab, "Inventory")
-        self._tabs.addTab(self._warehouse_tab, "Warehouse")
-        self._tabs.addTab(self._manager_tab, "道具總覽")
+        self._tabs.addTab(self._status_tab, t("tab_status"))
+        self._tabs.addTab(self._inventory_tab, t("tab_inventory"))
+        self._tabs.addTab(self._warehouse_tab, t("tab_warehouse"))
+        self._tabs.addTab(self._manager_tab, t("tab_manager"))
         root.addWidget(self._tabs)
 
         self._inventory_tab.scan_requested.connect(self._on_inventory_scan)
@@ -132,7 +137,7 @@ class CharacterPanel(QWidget):
     def _on_connect(self):
         hp_text = self._hp_input.text().strip()
         if not hp_text.isdigit():
-            self.status_message.emit("Enter a valid HP value first", 3000)
+            self.status_message.emit(t("enter_valid_hp"), 3000)
             return
         self._connect_btn.setEnabled(False)
         self._worker.connect(int(hp_text))
@@ -141,7 +146,7 @@ class CharacterPanel(QWidget):
     def _on_relocate(self):
         hp_text = self._hp_input.text().strip()
         if not hp_text.isdigit():
-            self.status_message.emit("Enter a valid HP value first", 3000)
+            self.status_message.emit(t("enter_valid_hp"), 3000)
             return
         self._pending_hp = int(hp_text)
         self._relocate_btn.setEnabled(False)
@@ -180,11 +185,11 @@ class CharacterPanel(QWidget):
         x      = data.get("X座標", "---")
         y      = data.get("Y座標", "---")
 
-        self._vitals_labels["Lv"].setText(vital_html("LV", lv))
-        self._vitals_labels["HP"].setText(fraction_html("HP", hp, hp_max, GREEN))
-        self._vitals_labels["MP"].setText(fraction_html("MP", mp, mp_max, BLUE))
-        self._vitals_labels["Weight"].setText(fraction_html("WT", wt, wt_max, AMBER))
-        self._vitals_labels["Pos"].setText(vital_html("POS", f"({x}, {y})"))
+        self._vitals_labels["Lv"].setText(vital_html(t("vital_lv"), lv))
+        self._vitals_labels["HP"].setText(fraction_html(t("vital_hp"), hp, hp_max, GREEN))
+        self._vitals_labels["MP"].setText(fraction_html(t("vital_mp"), mp, mp_max, BLUE))
+        self._vitals_labels["Weight"].setText(fraction_html(t("vital_wt"), wt, wt_max, AMBER))
+        self._vitals_labels["Pos"].setText(vital_html(t("vital_pos"), f"({x}, {y})"))
 
         self._status_tab.update_stats(fields)
 
@@ -200,7 +205,7 @@ class CharacterPanel(QWidget):
 
     @Slot(str)
     def _on_scan_error(self, msg: str):
-        self.status_message.emit(f"[Error] {msg}", 5000)
+        self.status_message.emit(t("scan_error", msg=msg), 5000)
         self._inventory_tab.set_scanning(False)
         self._warehouse_tab.set_scanning(False)
 
@@ -217,24 +222,24 @@ class CharacterPanel(QWidget):
     @Slot()
     def _on_inventory_save(self):
         if not self._current_character or not self._last_inventory:
-            self.status_message.emit("No inventory data to save", 3000)
+            self.status_message.emit(t("no_inventory_to_save"), 3000)
             return
         saved = self._snapshot_db.save_snapshot(
             self._current_character, "inventory", self._last_inventory
         )
-        msg = "Snapshot saved" if saved else "No change detected, skipped"
+        msg = t("snapshot_saved") if saved else t("snapshot_no_change")
         self.status_message.emit(msg, 3000)
         self._manager_tab.refresh()
 
     @Slot()
     def _on_warehouse_save(self):
         if not self._current_character or not self._last_warehouse:
-            self.status_message.emit("No warehouse data to save", 3000)
+            self.status_message.emit(t("no_warehouse_to_save"), 3000)
             return
         saved = self._snapshot_db.save_snapshot(
             self._current_character, "warehouse", self._last_warehouse
         )
-        msg = "Snapshot saved" if saved else "No change detected, skipped"
+        msg = t("snapshot_saved") if saved else t("snapshot_no_change")
         self.status_message.emit(msg, 3000)
         self._manager_tab.refresh()
 

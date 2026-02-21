@@ -6,6 +6,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 
+from gui.i18n import t
+
 
 class WarehouseTab(QWidget):
     scan_requested = Signal()
@@ -18,7 +20,7 @@ class WarehouseTab(QWidget):
         layout.setSpacing(8)
 
         # Warning chip
-        warn = QLabel("  ⚠  Open the warehouse UI in-game before scanning.")
+        warn = QLabel(t("warehouse_warning"))
         warn.setStyleSheet(
             "color: #F59E0B; background-color: #1A1200; "
             "border: 1px solid #7C5A00; border-radius: 6px; "
@@ -28,14 +30,14 @@ class WarehouseTab(QWidget):
 
         # Top bar
         top = QHBoxLayout()
-        self._scan_btn = QPushButton("Scan Warehouse")
+        self._scan_btn = QPushButton(t("scan_warehouse"))
         self._scan_btn.clicked.connect(self.scan_requested)
-        self._save_btn = QPushButton("Save Snapshot")
+        self._save_btn = QPushButton(t("save_snapshot"))
         self._save_btn.setEnabled(False)
         self._save_btn.clicked.connect(self.save_requested)
         top.addWidget(self._scan_btn)
         top.addWidget(self._save_btn)
-        self._status_lbl = QLabel("Not scanned")
+        self._status_lbl = QLabel(t("not_scanned"))
         self._status_lbl.setStyleSheet("color: #475569; font-size: 12px;")
         top.addWidget(self._status_lbl)
         top.addStretch()
@@ -43,7 +45,9 @@ class WarehouseTab(QWidget):
 
         # Table
         self._table = QTableWidget(0, 4)
-        self._table.setHorizontalHeaderLabels(["#", "ITEM ID", "QTY", "NAME"])
+        self._table.setHorizontalHeaderLabels([
+            t("col_seq"), t("col_item_id"), t("col_qty"), t("col_name"),
+        ])
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -58,9 +62,9 @@ class WarehouseTab(QWidget):
     def set_scanning(self, scanning: bool):
         self._scan_btn.setEnabled(not scanning)
         if scanning:
-            self._status_lbl.setText("Scanning...")
-        elif self._status_lbl.text() == "Scanning...":
-            self._status_lbl.setText("Ready")
+            self._status_lbl.setText(t("scanning"))
+        elif self._status_lbl.text() == t("scanning"):
+            self._status_lbl.setText(t("ready"))
 
     def populate(self, items: list):
         """items = list of (item_id, qty, name)"""
@@ -74,7 +78,7 @@ class WarehouseTab(QWidget):
                 )
                 self._table.setItem(i, col, cell)
         now = datetime.now().strftime("%H:%M:%S")
-        self._status_lbl.setText(f"Updated {now}")
-        self._footer_lbl.setText(f"{len(items)} items")
+        self._status_lbl.setText(t("updated_at", time=now))
+        self._footer_lbl.setText(t("items_count", n=len(items)))
         self._scan_btn.setEnabled(True)
         self._save_btn.setEnabled(True)

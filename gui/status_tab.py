@@ -5,6 +5,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from gui.i18n import t
+
 
 class StatusTab(QWidget):
     def __init__(self, parent=None):
@@ -14,7 +16,7 @@ class StatusTab(QWidget):
         layout.setSpacing(10)
 
         # ── BASIC: HP / MP / Weight with colored progress bars ────────
-        basic_box = QGroupBox("BASIC")
+        basic_box = QGroupBox(t("group_basic"))
         basic_grid = QGridLayout(basic_box)
         basic_grid.setHorizontalSpacing(10)
         basic_grid.setVerticalSpacing(8)
@@ -26,18 +28,18 @@ class StatusTab(QWidget):
         font.setPointSize(font.pointSize() + 2)
         font.setBold(True)
         self._name_label.setFont(font)
-        basic_grid.addWidget(QLabel("Name"), 0, 0)
+        basic_grid.addWidget(QLabel(t("field_name")), 0, 0)
         basic_grid.addWidget(self._name_label, 0, 1, 1, 2)
 
         self._bars = {}
         self._bar_labels = {}
         bar_defs = [
-            ("HP",     "hp_bar"),
-            ("MP",     "mp_bar"),
-            ("Weight", "weight_bar"),
+            ("HP",     "hp_bar",     t("bar_hp")),
+            ("MP",     "mp_bar",     t("bar_mp")),
+            ("Weight", "weight_bar", t("bar_weight")),
         ]
-        for row, (key, obj_name) in enumerate(bar_defs, start=1):
-            key_lbl = QLabel(key)
+        for row, (key, obj_name, label) in enumerate(bar_defs, start=1):
+            key_lbl = QLabel(label)
             bar = QProgressBar()
             bar.setObjectName(obj_name)
             bar.setTextVisible(False)
@@ -56,7 +58,7 @@ class StatusTab(QWidget):
         row_layout = QHBoxLayout()
         row_layout.setSpacing(10)
 
-        attr_box = QGroupBox("ATTRIBUTES")
+        attr_box = QGroupBox(t("group_attributes"))
         attr_grid = QGridLayout(attr_box)
         attr_grid.setHorizontalSpacing(16)
         attr_grid.setVerticalSpacing(8)
@@ -71,7 +73,7 @@ class StatusTab(QWidget):
             self._attr_labels[name] = val
         row_layout.addWidget(attr_box)
 
-        combat_box = QGroupBox("COMBAT")
+        combat_box = QGroupBox(t("group_combat"))
         combat_grid = QGridLayout(combat_box)
         combat_grid.setHorizontalSpacing(16)
         combat_grid.setVerticalSpacing(8)

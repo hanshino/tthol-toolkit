@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from gui.snapshot_db import SnapshotDB
+from gui.i18n import t
 
 _MODE_BY_CHAR = "by_char"
 _MODE_BY_ITEM = "by_item"
@@ -24,8 +25,14 @@ class _NumericItem(QTableWidgetItem):
 
 
 class InventoryManagerTab(QWidget):
-    CHAR_COLUMNS = ["Character", "Item ID", "Name", "Qty", "Source", "Snapshot Time"]
-    ITEM_COLUMNS = ["Name", "Item ID", "Total Qty", "Details"]
+    CHAR_COLUMNS = [
+        t("mgr_col_character"), t("mgr_col_item_id"), t("mgr_col_name"),
+        t("mgr_col_qty"), t("mgr_col_source"), t("mgr_col_snapshot_time"),
+    ]
+    ITEM_COLUMNS = [
+        t("mgr_col_name"), t("mgr_col_item_id"),
+        t("mgr_col_total_qty"), t("mgr_col_details"),
+    ]
 
     def __init__(self, db: SnapshotDB, parent=None):
         super().__init__(parent)
@@ -41,30 +48,32 @@ class InventoryManagerTab(QWidget):
         filter_bar = QHBoxLayout()
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search item name...")
+        self._search.setPlaceholderText(t("search_placeholder"))
         self._search.setMaximumWidth(220)
         self._search.textChanged.connect(self._apply_filter)
         filter_bar.addWidget(self._search)
 
         self._char_combo = QComboBox()
-        self._char_combo.addItem("All Characters")
+        self._char_combo.addItem(t("all_characters"))
         self._char_combo.currentIndexChanged.connect(self._apply_filter)
         filter_bar.addWidget(self._char_combo)
 
         self._source_combo = QComboBox()
-        self._source_combo.addItems(["All Sources", "inventory", "warehouse"])
+        self._source_combo.addItems([
+            t("all_sources"), t("source_inventory"), t("source_warehouse"),
+        ])
         self._source_combo.currentIndexChanged.connect(self._apply_filter)
         filter_bar.addWidget(self._source_combo)
 
         filter_bar.addStretch()
 
-        self._btn_by_char = QPushButton("By Char")
+        self._btn_by_char = QPushButton(t("by_char"))
         self._btn_by_char.setObjectName("toggle_left")
         self._btn_by_char.setCheckable(True)
         self._btn_by_char.clicked.connect(lambda: self._set_mode(_MODE_BY_CHAR))
         filter_bar.addWidget(self._btn_by_char)
 
-        self._btn_by_item = QPushButton("By Item")
+        self._btn_by_item = QPushButton(t("by_item"))
         self._btn_by_item.setObjectName("toggle_right")
         self._btn_by_item.setCheckable(True)
         self._btn_by_item.clicked.connect(lambda: self._set_mode(_MODE_BY_ITEM))
@@ -136,10 +145,10 @@ class InventoryManagerTab(QWidget):
         current = self._char_combo.currentText()
         self._char_combo.blockSignals(True)
         self._char_combo.clear()
-        self._char_combo.addItem("All Characters")
+        self._char_combo.addItem(t("all_characters"))
         for c in chars:
             self._char_combo.addItem(c)
-        idx = self._char_combo.findText(current)
+        idx = self._char_combo.findText(current) if current else -1
         self._char_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._char_combo.blockSignals(False)
 
@@ -155,13 +164,17 @@ class InventoryManagerTab(QWidget):
         char_filter = self._char_combo.currentText()
         source_filter = self._source_combo.currentText()
 
+        _all_chars = t("all_characters")
+        _all_sources = t("all_sources")
+        _src_map = {t("source_inventory"): "inventory", t("source_warehouse"): "warehouse"}
+
         visible = []
         for r in self._all_rows:
             if name_filter and name_filter not in r["name"].lower():
                 continue
-            if char_filter != "All Characters" and r["character"] != char_filter:
+            if char_filter != _all_chars and r["character"] != char_filter:
                 continue
-            if source_filter != "All Sources" and r["source"] != source_filter:
+            if source_filter != _all_sources and r["source"] != _src_map.get(source_filter, source_filter):
                 continue
             visible.append(r)
 
@@ -184,7 +197,7 @@ class InventoryManagerTab(QWidget):
                 item.setTextAlignment(align)
                 self._table.setItem(i, col, item)
         self._table.setSortingEnabled(True)
-        self._footer.setText(f"{len(visible)} items")
+        self._footer.setText(t("footer_items", n=len(visible)))
 
     def _populate_tree(self):
         """Populate the By Item aggregated tree."""
@@ -217,7 +230,7 @@ class InventoryManagerTab(QWidget):
             parent.setText(0, item["name"])
             parent.setText(1, str(item["item_id"]))
             parent.setText(2, str(item["total_qty"]))
-            parent.setText(3, f"{char_count} char(s)")
+            parent.setText(3, t("char_count", n=char_count))
             parent.setTextAlignment(1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             parent.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
@@ -229,4 +242,4 @@ class InventoryManagerTab(QWidget):
                 child.setText(3, f"{r['source']} · {r['scanned_at']}")
                 child.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        self._footer.setText(f"{len(items_sorted)} kinds · {total_qty} total")
+        self._footer.setText(t("summary_kinds_total", kinds=len(items_sorted), total=total_qty))
