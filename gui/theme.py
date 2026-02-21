@@ -451,4 +451,16 @@ QTreeWidget#mgmt_acct_tree::item {{
     padding: 4px 6px;
     color: {DIM};
 }}
+
+/* ── Character card (By Char view) ───────────────────────────── */
+QFrame#char_card {{
+    background-color: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+}}
+QFrame#char_card_header {{
+    background-color: {BG_CARD};
+    border-radius: 8px 8px 0 0;
+    padding: 0 4px;
+}}
 """

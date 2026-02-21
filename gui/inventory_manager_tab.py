@@ -1,37 +1,43 @@
 """Item Overview tab: shows latest snapshots for all characters."""
+
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QComboBox,
-    QTableWidget, QTableWidgetItem, QHeaderView,
-    QTreeWidget, QTreeWidgetItem, QPushButton, QStackedWidget,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QComboBox,
+    QHeaderView,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QPushButton,
+    QStackedWidget,
     QButtonGroup,
+    QScrollArea,
+    QFrame,
 )
 from PySide6.QtCore import Qt
 
 from gui.snapshot_db import SnapshotDB
 from gui.i18n import t
+from gui.character_card import CharacterCard
 
 _MODE_BY_CHAR = "by_char"
 _MODE_BY_ITEM = "by_item"
 
 
-class _NumericItem(QTableWidgetItem):
-    """QTableWidgetItem that sorts numerically instead of lexicographically."""
-    def __lt__(self, other: "QTableWidgetItem") -> bool:
-        try:
-            return float(self.text()) < float(other.text())
-        except ValueError:
-            return super().__lt__(other)
-
-
 class InventoryManagerTab(QWidget):
-    CHAR_COLUMNS = [
-        t("mgr_col_character"), t("mgr_col_item_id"), t("mgr_col_name"),
-        t("mgr_col_qty"), t("mgr_col_source"), t("mgr_col_snapshot_time"),
+    ITEM_COLUMNS = [
+        t("mgr_col_name"),
+        t("mgr_col_item_id"),
+        t("mgr_col_total_qty"),
+        t("mgr_col_details"),
     ]
     ITEM_COLUMNS = [
-        t("mgr_col_name"), t("mgr_col_item_id"),
-        t("mgr_col_total_qty"), t("mgr_col_details"),
+        t("mgr_col_name"),
+        t("mgr_col_item_id"),
+        t("mgr_col_total_qty"),
+        t("mgr_col_details"),
     ]
 
     def __init__(self, db: SnapshotDB, parent=None):
@@ -59,9 +65,13 @@ class InventoryManagerTab(QWidget):
         filter_bar.addWidget(self._char_combo)
 
         self._source_combo = QComboBox()
-        self._source_combo.addItems([
-            t("all_sources"), t("source_inventory"), t("source_warehouse"),
-        ])
+        self._source_combo.addItems(
+            [
+                t("all_sources"),
+                t("source_inventory"),
+                t("source_warehouse"),
+            ]
+        )
         self._source_combo.currentIndexChanged.connect(self._apply_filter)
         filter_bar.addWidget(self._source_combo)
 
@@ -89,16 +99,18 @@ class InventoryManagerTab(QWidget):
         # ── Stacked widget ───────────────────────────────────────────────
         self._stack = QStackedWidget()
 
-        # Index 0: By Char flat table
-        self._table = QTableWidget(0, len(self.CHAR_COLUMNS))
-        self._table.setHorizontalHeaderLabels(self.CHAR_COLUMNS)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._table.setAlternatingRowColors(True)
-        self._table.verticalHeader().setVisible(False)
-        self._table.setSortingEnabled(True)
-        self._stack.addWidget(self._table)
+        # Index 0: By Char — scrollable card list
+        self._char_scroll = QScrollArea()
+        self._char_scroll.setWidgetResizable(True)
+        self._char_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._char_container = QWidget()
+        self._char_layout = QVBoxLayout(self._char_container)
+        self._char_layout.setContentsMargins(0, 0, 0, 0)
+        self._char_layout.setSpacing(8)
+        self._char_layout.addStretch()
+        self._char_scroll.setWidget(self._char_container)
+        self._stack.addWidget(self._char_scroll)
+        self._cards: dict[str, CharacterCard] = {}
 
         # Index 1: By Item tree
         self._tree = QTreeWidget()
@@ -156,17 +168,20 @@ class InventoryManagerTab(QWidget):
         if self._mode == _MODE_BY_ITEM:
             self._populate_tree()
         else:
-            self._populate_table()
+            self._populate_cards()
 
-    def _populate_table(self):
-        """Populate the By Char flat table."""
+    def _populate_cards(self):
+        """Populate the By Char scrollable card list."""
         name_filter = self._search.text().strip().lower()
         char_filter = self._char_combo.currentText()
         source_filter = self._source_combo.currentText()
 
         _all_chars = t("all_characters")
         _all_sources = t("all_sources")
-        _src_map = {t("source_inventory"): "inventory", t("source_warehouse"): "warehouse"}
+        _src_map = {
+            t("source_inventory"): "inventory",
+            t("source_warehouse"): "warehouse",
+        }
 
         visible = []
         for r in self._all_rows:
@@ -174,29 +189,40 @@ class InventoryManagerTab(QWidget):
                 continue
             if char_filter != _all_chars and r["character"] != char_filter:
                 continue
-            if source_filter != _all_sources and r["source"] != _src_map.get(source_filter, source_filter):
+            if source_filter != _all_sources and r["source"] != _src_map.get(
+                source_filter, source_filter
+            ):
                 continue
             visible.append(r)
 
-        self._table.setSortingEnabled(False)
-        self._table.setRowCount(len(visible))
-        for i, r in enumerate(visible):
-            values = [
-                r["character"],
-                str(r["item_id"]),
-                r["name"],
-                str(r["qty"]),
-                r["source"],
-                r["scanned_at"],
-            ]
-            for col, val in enumerate(values):
-                item = _NumericItem(val) if col in (1, 3) else QTableWidgetItem(val)
-                align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-                if col in (1, 3):
-                    align = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-                item.setTextAlignment(align)
-                self._table.setItem(i, col, item)
-        self._table.setSortingEnabled(True)
+        # Group by character
+        by_char: dict[str, list[dict]] = {}
+        for r in visible:
+            by_char.setdefault(r["character"], []).append(r)
+
+        # Remove cards for characters no longer in filtered set
+        removed = [c for c in list(self._cards) if c not in by_char]
+        for char in removed:
+            card = self._cards.pop(char)
+            self._char_layout.removeWidget(card)
+            card.deleteLater()
+
+        # Insert / update cards in alphabetical order
+        sorted_chars = sorted(by_char.keys())
+        for i, char in enumerate(sorted_chars):
+            rows = by_char[char]
+            if char in self._cards:
+                card = self._cards[char]
+                card.update_rows(rows)
+                # Reposition if needed (stretch is last item, so layout count = cards + 1)
+                current_pos = self._char_layout.indexOf(card)
+                if current_pos != i:
+                    self._char_layout.insertWidget(i, card)
+            else:
+                card = CharacterCard(char, rows, self._db)
+                self._cards[char] = card
+                self._char_layout.insertWidget(i, card)
+
         self._footer.setText(t("footer_items", n=len(visible)))
 
     def _populate_tree(self):
@@ -231,8 +257,12 @@ class InventoryManagerTab(QWidget):
             parent.setText(1, str(item["item_id"]))
             parent.setText(2, str(item["total_qty"]))
             parent.setText(3, t("char_count", n=char_count))
-            parent.setTextAlignment(1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            parent.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            parent.setTextAlignment(
+                1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            parent.setTextAlignment(
+                2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
 
             for r in sorted(item["rows"], key=lambda x: x["character"]):
                 child = QTreeWidgetItem(parent)
@@ -240,6 +270,10 @@ class InventoryManagerTab(QWidget):
                 child.setText(1, "")
                 child.setText(2, str(r["qty"]))
                 child.setText(3, f"{r['source']} · {r['scanned_at']}")
-                child.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                child.setTextAlignment(
+                    2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
 
-        self._footer.setText(t("summary_kinds_total", kinds=len(items_sorted), total=total_qty))
+        self._footer.setText(
+            t("summary_kinds_total", kinds=len(items_sorted), total=total_qty)
+        )
