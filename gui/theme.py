@@ -43,6 +43,8 @@ DARK_PALETTE: dict[str, str] = {
     "DIM": "#94A3B8",
     "TEXT": "#F8FAFC",
     "GREEN": GREEN,
+    "GREEN_HOVER": "#16A34A",
+    "GREEN_PRESS": "#15803D",
     "BLUE": BLUE,
     "AMBER": AMBER,
     "RED": RED,
@@ -58,6 +60,8 @@ LIGHT_PALETTE: dict[str, str] = {
     "DIM": "#475569",
     "TEXT": "#0F172A",
     "GREEN": GREEN,
+    "GREEN_HOVER": "#16A34A",
+    "GREEN_PRESS": "#15803D",
     "BLUE": BLUE,
     "AMBER": AMBER,
     "RED": RED,
@@ -169,6 +173,8 @@ def _build_qss(p: dict[str, str]) -> str:
     DIM = p["DIM"]
     TEXT = p["TEXT"]
     _GREEN = p["GREEN"]
+    _GREEN_HOVER = p["GREEN_HOVER"]
+    _GREEN_PRESS = p["GREEN_PRESS"]
     _BLUE = p["BLUE"]
     _AMBER = p["AMBER"]
     _RED = p["RED"]
@@ -247,12 +253,12 @@ QPushButton#primary_btn {{
     border: none;
 }}
 QPushButton#primary_btn:hover {{
-    background-color: #16A34A;
+    background-color: {_GREEN_HOVER};
     color: {BG_BASE};
     border: none;
 }}
 QPushButton#primary_btn:pressed {{
-    background-color: #15803D;
+    background-color: {_GREEN_PRESS};
 }}
 QPushButton#primary_btn:disabled {{
     background-color: {BG_CARD};

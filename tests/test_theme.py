@@ -1,6 +1,21 @@
 """Tests for ThemeManager and palette system."""
 
+import pytest
 from unittest.mock import patch
+from gui.theme import ThemeManager, DARK_PALETTE
+
+
+@pytest.fixture(autouse=True)
+def reset_theme_manager():
+    """Reset ThemeManager to dark defaults before each test."""
+    ThemeManager._mode = "dark"
+    ThemeManager._palette = DARK_PALETTE
+    ThemeManager._app = None
+    yield
+    # Reset after test too
+    ThemeManager._mode = "dark"
+    ThemeManager._palette = DARK_PALETTE
+    ThemeManager._app = None
 
 
 def test_theme_manager_default_mode():
@@ -93,3 +108,14 @@ def test_dark_qss_alias_exists():
 
     assert isinstance(DARK_QSS, str)
     assert len(DARK_QSS) > 100
+
+
+def test_badge_style_light_mode_returns_different_colors():
+    from gui.theme import ThemeManager, LIGHT_PALETTE, badge_style
+
+    ThemeManager._mode = "light"
+    ThemeManager._palette = LIGHT_PALETTE
+    dark_result = badge_style("LOCATED")  # but using light mode
+    # Light mode LOCATED badge should have light green bg (DCFCE7), not dark (#0D2417)
+    assert "#DCFCE7" in badge_style("LOCATED")
+    assert "#0D2417" not in badge_style("LOCATED")
