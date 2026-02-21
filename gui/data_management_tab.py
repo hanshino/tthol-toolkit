@@ -77,11 +77,15 @@ class _CharDetailPanel(QWidget):
         self._snap_table.setHorizontalHeaderLabels(
             [t("mgr_col_source"), t("mgr_col_snapshot_time"), t("mgr_col_qty"), ""]
         )
-        self._snap_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
+        hdr = self._snap_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self._snap_table.setColumnWidth(3, 72)
         self._snap_table.verticalHeader().setVisible(False)
         self._snap_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._snap_table.setWordWrap(False)
         layout.addWidget(self._snap_table)
 
         # ── Separator ────────────────────────────────────────────────────
@@ -143,10 +147,15 @@ class _CharDetailPanel(QWidget):
     def _refresh_table(self) -> None:
         if self._character is None:
             return
+        _src = {
+            "inventory": t("source_inventory"),
+            "warehouse": t("source_warehouse"),
+        }
         snapshots = self._db.list_all_snapshots(self._character)
         self._snap_table.setRowCount(len(snapshots))
         for row, snap in enumerate(snapshots):
-            self._snap_table.setItem(row, 0, QTableWidgetItem(snap["source"]))
+            src_label = _src.get(snap["source"], snap["source"])
+            self._snap_table.setItem(row, 0, QTableWidgetItem(src_label))
             self._snap_table.setItem(row, 1, QTableWidgetItem(snap["scanned_at"]))
             self._snap_table.setItem(row, 2, QTableWidgetItem(str(snap["item_count"])))
 
@@ -157,6 +166,8 @@ class _CharDetailPanel(QWidget):
                 lambda checked=False, sid=snap_id: self._on_delete_snapshot(sid)
             )
             self._snap_table.setCellWidget(row, 3, del_btn)
+
+        self._snap_table.resizeRowsToContents()
 
     # ── Slots ─────────────────────────────────────────────────────────────
 
