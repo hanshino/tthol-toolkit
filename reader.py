@@ -118,8 +118,12 @@ def resolve_filters(filters, knowledge):
 # ============================================================
 # 定位角色結構
 # ============================================================
-def locate_character(pm, hp_value, knowledge):
-    """Scan memory for HP value, return best candidate with highest score."""
+def locate_character(pm, hp_value, knowledge, offset_filters=None):
+    """Scan memory for HP value, return best candidate with highest score.
+    offset_filters: dict of {offset: expected_int_value} — candidate rejected if any mismatch.
+    """
+    if offset_filters is None:
+        offset_filters = {}
     regions = get_memory_regions(pm.process_handle)
     target_bytes = struct.pack("<i", hp_value)
     fields = knowledge["character_structure"]["fields"]
@@ -137,7 +141,11 @@ def locate_character(pm, hp_value, knowledge):
                     addr = base + pos
                     score = verify_structure(pm, addr, fields)
                     if score >= 0.8:
-                        candidates.append((addr, score))
+                        # Apply user-supplied filters
+                        if all(
+                            pm.read_int(addr + off) == val for off, val in offset_filters.items()
+                        ):
+                            candidates.append((addr, score))
                 offset = pos + 1
         except Exception:
             pass
@@ -145,7 +153,6 @@ def locate_character(pm, hp_value, knowledge):
     if not candidates:
         return None
 
-    # Return candidate with highest score
     candidates.sort(key=lambda x: x[1], reverse=True)
     return candidates[0][0]
 
