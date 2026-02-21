@@ -1,6 +1,7 @@
 """Tests for gui.config — theme preference persistence."""
 
 import json
+import pytest
 from gui.config import load_theme, save_theme
 
 
@@ -42,3 +43,9 @@ def test_save_theme_succeeds_when_existing_file_corrupt(tmp_path):
     save_theme("light", cfg)
     data = json.loads(cfg.read_text(encoding="utf-8"))
     assert data["theme"] == "light"
+
+
+def test_save_theme_raises_on_invalid_mode(tmp_path):
+    cfg = tmp_path / "config.json"
+    with pytest.raises(ValueError, match="Invalid theme"):
+        save_theme("invalid", cfg)

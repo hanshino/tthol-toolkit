@@ -1,6 +1,7 @@
 """User preference persistence (config.json in project root)."""
 
 import json
+import sys
 from pathlib import Path
 
 _DEFAULT_PATH = Path(__file__).parent.parent / "config.json"
@@ -30,6 +31,4 @@ def save_theme(mode: str, path: Path = _DEFAULT_PATH) -> None:
         existing["theme"] = mode
         path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
-        import sys
-
         print(f"[config] Failed to save theme: {e}", file=sys.stderr)
