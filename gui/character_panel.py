@@ -293,13 +293,18 @@ class CharacterPanel(QWidget):
         mp_text = self._mp_input.text().strip()
         if not mp_text:
             return None
+        # QIntValidator only enforces on submit; text() may be intermediate (e.g. "-")
         try:
             mp_val = int(mp_text)
         except ValueError:
             self.status_message.emit(t("enter_valid_mp"), 3000)
             return None
         knowledge = self._worker._knowledge
-        return resolve_filters({"真氣": mp_val}, knowledge)
+        try:
+            return resolve_filters({"真氣": mp_val}, knowledge)
+        except SystemExit:
+            self.status_message.emit(t("enter_valid_mp"), 3000)
+            return None
 
     def shutdown(self):
         """Stop the worker thread. Call before removing this panel."""
