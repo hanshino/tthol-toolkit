@@ -24,7 +24,11 @@ from PySide6.QtWidgets import (
     QFrame,
     QButtonGroup,
 )
+import subprocess
+
 from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QIcon
+from pathlib import Path
 
 from gui.character_panel import CharacterPanel
 from gui.data_management_tab import DataManagementTab
@@ -33,6 +37,21 @@ from gui.process_detector import detect_game_windows
 from gui.snapshot_db import SnapshotDB
 from gui.theme import BORDER, DIM, GREEN, MUTED, RED
 from gui.i18n import t
+
+
+def _get_version() -> str:
+    """Return short commit hash, or 'unknown' if git is unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        return result.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
 
 _CLOSE_BTN_STYLE = (
     f"QPushButton {{ color: {MUTED}; background: transparent; border: none; "
@@ -56,6 +75,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(t("window_title"))
+        _icon_path = Path(__file__).parent.parent / "icon.png"
+        if _icon_path.exists():
+            self.setWindowIcon(QIcon(str(_icon_path)))
         self.setMinimumWidth(682)
         self.resize(880, 660)
         self._snapshot_db = SnapshotDB()
@@ -138,6 +160,12 @@ class MainWindow(QMainWindow):
         self._data_mgmt_tab.status_message.connect(self._on_status_message)
 
         self.setStatusBar(QStatusBar())
+
+        version_label = QLabel(f"rev: {_get_version()}")
+        version_label.setStyleSheet(f"color: {MUTED}; font-size: 11px; padding-right: 6px;")
+        version_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.statusBar().addPermanentWidget(version_label)
+
         self._populate_tabs()
 
     # ------------------------------------------------------------------
@@ -166,9 +194,7 @@ class MainWindow(QMainWindow):
     def _attach_close_btn(self, index: int, panel: "CharacterPanel"):
         """Place a custom close button on the right side of the tab at index."""
         btn = self._make_close_btn(panel)
-        self._outer_tabs.tabBar().setTabButton(
-            index, QTabBar.ButtonPosition.RightSide, btn
-        )
+        self._outer_tabs.tabBar().setTabButton(index, QTabBar.ButtonPosition.RightSide, btn)
 
     def _populate_tabs(self):
         """Detect game windows and add a tab for each new PID found."""
@@ -187,9 +213,7 @@ class MainWindow(QMainWindow):
             idx = self._outer_tabs.addTab(panel, label)
             self._attach_close_btn(idx, panel)
             panel.tab_label_changed.connect(
-                lambda name, p=panel: self._outer_tabs.setTabText(
-                    self._outer_tabs.indexOf(p), name
-                )
+                lambda name, p=panel: self._outer_tabs.setTabText(self._outer_tabs.indexOf(p), name)
             )
             self._panels[pid] = panel
             added += 1
@@ -228,9 +252,7 @@ class MainWindow(QMainWindow):
         if index == -1:
             return
         self._outer_tabs.removeTab(index)
-        pid_to_remove = next(
-            (pid for pid, p in self._panels.items() if p is panel), None
-        )
+        pid_to_remove = next((pid for pid, p in self._panels.items() if p is panel), None)
         if pid_to_remove is not None:
             del self._panels[pid_to_remove]
         panel.shutdown()
