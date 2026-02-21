@@ -72,12 +72,13 @@ class CharacterPanel(QWidget):
         op_layout.setContentsMargins(10, 6, 10, 6)
         op_layout.setSpacing(8)
 
-        hp_lbl = QLabel("HP")
-        hp_lbl.setStyleSheet(f"color: {GREEN}; font-weight: 600; font-size: 11px;")
+        hp_lbl = QLabel(t("vital_hp"))
+        hp_lbl.setObjectName("vital_hp_label")
         op_layout.addWidget(hp_lbl)
 
         self._hp_input = QLineEdit()
         self._hp_input.setPlaceholderText(t("hp_input_placeholder"))
+        self._hp_input.setToolTip(t("hp_input_tooltip"))
         self._hp_input.setMaximumWidth(130)
         op_layout.addWidget(self._hp_input)
 
@@ -86,7 +87,7 @@ class CharacterPanel(QWidget):
         self._connect_btn.clicked.connect(self._on_connect)
         op_layout.addWidget(self._connect_btn)
 
-        self._state_indicator = QLabel(t("state_disconnected"))
+        self._state_indicator = QLabel(t("state_DISCONNECTED"))
         self._state_indicator.setStyleSheet(badge_style("DISCONNECTED"))
         op_layout.addWidget(self._state_indicator)
 
@@ -99,12 +100,13 @@ class CharacterPanel(QWidget):
         op_layout.addWidget(self._focus_window_btn)
 
         self._relocate_btn = QPushButton(t("relocate"))
+        self._relocate_btn.setToolTip(t("relocate_tooltip"))
         self._relocate_btn.setEnabled(False)
         self._relocate_btn.clicked.connect(self._on_relocate)
         op_layout.addWidget(self._relocate_btn)
 
         self._advanced_btn = QPushButton(t("filter_toggle_show"))
-        self._advanced_btn.setFlat(True)
+        self._advanced_btn.setObjectName("filter_toggle_btn")
         self._advanced_btn.clicked.connect(self._on_toggle_filter)
         op_layout.addWidget(self._advanced_btn)
 
@@ -118,7 +120,7 @@ class CharacterPanel(QWidget):
         filter_layout.setSpacing(8)
 
         mp_lbl = QLabel(t("mp_filter_label"))
-        mp_lbl.setStyleSheet(f"color: {BLUE}; font-weight: 600; font-size: 11px;")
+        mp_lbl.setObjectName("vital_mp_label")
         filter_layout.addWidget(mp_lbl)
 
         self._mp_input = QLineEdit()
@@ -210,7 +212,7 @@ class CharacterPanel(QWidget):
 
     @Slot(str)
     def _on_state_changed(self, state: str):
-        self._state_indicator.setText(f"● {state}")
+        self._state_indicator.setText(t(f"state_{state}"))
         self._state_indicator.setStyleSheet(badge_style(state))
         self._relocate_btn.setEnabled(state == "LOCATED")
         if state == "DISCONNECTED":

@@ -35,7 +35,7 @@ from gui.data_management_tab import DataManagementTab
 from gui.inventory_manager_tab import InventoryManagerTab
 from gui.process_detector import detect_game_windows
 from gui.snapshot_db import SnapshotDB
-from gui.theme import BORDER, DIM, GREEN, MUTED, RED
+from gui.theme import ThemeManager
 from gui.i18n import t
 
 
@@ -59,24 +59,6 @@ def _get_version() -> str:
         return rev.stdout.strip() or "unknown"
     except Exception:
         return "unknown"
-
-
-_CLOSE_BTN_STYLE = (
-    f"QPushButton {{ color: {MUTED}; background: transparent; border: none; "
-    f"padding: 3px; font-size: 12px; min-height: 0; min-width: 0; }}"
-    f"QPushButton:hover {{ color: {RED}; background: rgba(239,68,68,0.15); "
-    f"border-radius: 4px; }}"
-)
-
-_REFRESH_BTN_STYLE = (
-    f"QPushButton {{ color: {DIM}; background: transparent; "
-    f"border: 1px solid {BORDER}; border-radius: 6px; "
-    f"padding: 2px 6px; font-size: 16px; font-weight: 700; "
-    f"min-height: 0; min-width: 0; }}"
-    f"QPushButton:hover {{ color: {GREEN}; border-color: {GREEN}; "
-    f"background: rgba(34,197,94,0.10); }}"
-    f"QPushButton:pressed {{ background: rgba(34,197,94,0.20); }}"
-)
 
 
 class MainWindow(QMainWindow):
@@ -133,6 +115,12 @@ class MainWindow(QMainWindow):
 
         nav_layout.addStretch()
 
+        self._btn_theme = QPushButton()
+        self._btn_theme.setObjectName("theme_toggle_btn")
+        self._btn_theme.clicked.connect(self._on_toggle_theme)
+        self._update_theme_btn_label()
+        nav_layout.addWidget(self._btn_theme)
+
         root.addWidget(sidebar)
 
         # ── Main stacked area ─────────────────────────────────────────
@@ -151,7 +139,7 @@ class MainWindow(QMainWindow):
         refresh_btn = QPushButton("+")
         refresh_btn.setToolTip(t("refresh_tooltip"))
         refresh_btn.setFixedSize(34, 28)
-        refresh_btn.setStyleSheet(_REFRESH_BTN_STYLE)
+        refresh_btn.setObjectName("refresh_btn")
         refresh_btn.clicked.connect(self._on_refresh)
         self._outer_tabs.setCornerWidget(refresh_btn, Qt.Corner.TopRightCorner)
 
@@ -170,7 +158,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(QStatusBar())
 
         version_label = QLabel(f"rev: {_get_version()}")
-        version_label.setStyleSheet(f"color: {MUTED}; font-size: 11px; padding-right: 6px;")
+        version_label.setObjectName("version_label")
         version_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.statusBar().addPermanentWidget(version_label)
 
@@ -194,7 +182,7 @@ class MainWindow(QMainWindow):
         """Return a styled X button that closes the given panel's tab."""
         btn = QPushButton("X")
         btn.setFixedSize(20, 20)
-        btn.setStyleSheet(_CLOSE_BTN_STYLE)
+        btn.setObjectName("close_btn")
         btn.setToolTip(t("close_tab_tooltip"))
         btn.clicked.connect(lambda: self._close_panel(panel))
         return btn
@@ -233,7 +221,7 @@ class MainWindow(QMainWindow):
         if self._outer_tabs.count() == 0:
             lbl = QLabel(t("placeholder_tab"))
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet(f"color: {DIM}; font-size: 14px;")
+            lbl.setObjectName("placeholder_lbl")
             lbl.setProperty("is_placeholder", True)
             self._outer_tabs.addTab(lbl, t("placeholder_tab"))
 
@@ -275,6 +263,18 @@ class MainWindow(QMainWindow):
         """Refresh inventory manager when any character saves a snapshot."""
         self._manager_tab.refresh()
         self._data_mgmt_tab.refresh()
+
+    def _update_theme_btn_label(self) -> None:
+        """Set toggle button label to reflect the mode we will switch TO."""
+        if ThemeManager.mode() == "dark":
+            self._btn_theme.setText("◑ 亮色")
+        else:
+            self._btn_theme.setText("◑ 暗色")
+
+    @Slot()
+    def _on_toggle_theme(self):
+        ThemeManager.toggle()
+        self._update_theme_btn_label()
 
     def closeEvent(self, event):
         for panel in list(self._panels.values()):

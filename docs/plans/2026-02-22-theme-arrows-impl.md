@@ -1,3 +1,214 @@
+# Theme Toggle + Arrow Visibility Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Add light/dark theme toggle to nav sidebar (issue #5) and fix arrow visibility in filter toggle (issue #4) by wiring all color references through a ThemeManager.
+
+**Architecture:** Define `DARK_PALETTE`/`LIGHT_PALETTE` dicts in `theme.py`; generate QSS from the active palette; `ThemeManager` singleton applies theme and persists to `config.json`. Static inline Python styles are moved to QSS object-name rules so they update automatically on theme switch. Dynamic color functions (`badge_style`, `vital_html`, `fraction_html`) read from `ThemeManager.c()`.
+
+**Tech Stack:** PySide6, pytest-qt, Python 3.12, uv
+
+---
+
+## Reference
+
+Design doc: `docs/plans/2026-02-22-theme-arrows-design.md`
+
+Run all tests: `uv run pytest`
+Run GUI: `uv run gui_main.py`
+
+---
+
+### Task 1: config.py — read/write theme preference
+
+**Files:**
+- Create: `gui/config.py`
+- Create: `tests/test_config.py`
+
+**Step 1: Write failing tests**
+
+Create `tests/test_config.py`:
+
+```python
+"""Tests for gui.config — theme preference persistence."""
+import json
+import pytest
+from pathlib import Path
+from gui.config import load_theme, save_theme
+
+
+def test_load_theme_returns_dark_when_no_file(tmp_path):
+    cfg = tmp_path / "config.json"
+    assert load_theme(cfg) == "dark"
+
+
+def test_load_theme_returns_saved_value(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({"theme": "light"}), encoding="utf-8")
+    assert load_theme(cfg) == "light"
+
+
+def test_load_theme_returns_dark_on_corrupt_file(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("not json", encoding="utf-8")
+    assert load_theme(cfg) == "dark"
+
+
+def test_save_theme_writes_json(tmp_path):
+    cfg = tmp_path / "config.json"
+    save_theme("light", cfg)
+    data = json.loads(cfg.read_text(encoding="utf-8"))
+    assert data["theme"] == "light"
+
+
+def test_save_theme_overwrites_existing(tmp_path):
+    cfg = tmp_path / "config.json"
+    save_theme("light", cfg)
+    save_theme("dark", cfg)
+    data = json.loads(cfg.read_text(encoding="utf-8"))
+    assert data["theme"] == "dark"
+```
+
+**Step 2: Run to verify failure**
+
+```bash
+uv run pytest tests/test_config.py -v
+```
+Expected: `ImportError: cannot import name 'load_theme' from 'gui.config'`
+
+**Step 3: Implement `gui/config.py`**
+
+```python
+"""User preference persistence (config.json in project root)."""
+import json
+from pathlib import Path
+
+_DEFAULT_PATH = Path(__file__).parent.parent / "config.json"
+
+
+def load_theme(path: Path = _DEFAULT_PATH) -> str:
+    """Return saved theme ('dark' or 'light'). Falls back to 'dark'."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data.get("theme", "dark")
+    except Exception:
+        return "dark"
+
+
+def save_theme(mode: str, path: Path = _DEFAULT_PATH) -> None:
+    """Persist theme preference to config.json."""
+    try:
+        existing: dict = {}
+        if path.exists():
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        existing["theme"] = mode
+        path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+```
+
+**Step 4: Run to verify pass**
+
+```bash
+uv run pytest tests/test_config.py -v
+```
+Expected: 5 passed
+
+**Step 5: Commit**
+
+```bash
+git add gui/config.py tests/test_config.py
+git commit -m "feat: add config.py for theme preference persistence"
+```
+
+---
+
+### Task 2: theme.py — palette dicts + ThemeManager + QSS generator
+
+**Files:**
+- Modify: `gui/theme.py` (full rewrite)
+- Create: `tests/test_theme.py`
+
+**Step 1: Write failing tests**
+
+Create `tests/test_theme.py`:
+
+```python
+"""Tests for ThemeManager."""
+import pytest
+from unittest.mock import MagicMock, patch
+
+
+def test_theme_manager_default_mode():
+    from gui.theme import ThemeManager
+    ThemeManager._mode = "dark"   # reset to known state
+    assert ThemeManager.mode() == "dark"
+
+
+def test_theme_manager_c_returns_dark_green():
+    from gui.theme import ThemeManager
+    ThemeManager._mode = "dark"
+    ThemeManager._palette = __import__("gui.theme", fromlist=["DARK_PALETTE"]).DARK_PALETTE
+    assert ThemeManager.c("GREEN") == "#22C55E"
+
+
+def test_theme_manager_c_returns_light_bg():
+    from gui.theme import ThemeManager, LIGHT_PALETTE
+    ThemeManager._mode = "light"
+    ThemeManager._palette = LIGHT_PALETTE
+    assert ThemeManager.c("BG_BASE") == "#F8FAFC"
+
+
+def test_theme_manager_c_dark_bg():
+    from gui.theme import ThemeManager, DARK_PALETTE
+    ThemeManager._mode = "dark"
+    ThemeManager._palette = DARK_PALETTE
+    assert ThemeManager.c("BG_BASE") == "#020617"
+
+
+def test_badge_style_returns_string():
+    from gui.theme import ThemeManager, DARK_PALETTE, badge_style
+    ThemeManager._mode = "dark"
+    ThemeManager._palette = DARK_PALETTE
+    result = badge_style("LOCATED")
+    assert "color" in result
+    assert "#" in result
+
+
+def test_vital_html_contains_key():
+    from gui.theme import ThemeManager, DARK_PALETTE, vital_html
+    ThemeManager._mode = "dark"
+    ThemeManager._palette = DARK_PALETTE
+    result = vital_html("HP", 100)
+    assert "HP" in result
+
+
+def test_theme_manager_toggle():
+    from gui.theme import ThemeManager, DARK_PALETTE, LIGHT_PALETTE
+    ThemeManager._mode = "dark"
+    ThemeManager._palette = DARK_PALETTE
+    ThemeManager._app = None
+    with patch("gui.theme.save_theme"):
+        ThemeManager.toggle()
+    assert ThemeManager._mode == "light"
+    assert ThemeManager._palette is LIGHT_PALETTE
+```
+
+**Step 2: Run to verify failure**
+
+```bash
+uv run pytest tests/test_theme.py -v
+```
+Expected: `ImportError` or `AttributeError` (ThemeManager, DARK_PALETTE not defined yet)
+
+**Step 3: Rewrite `gui/theme.py`**
+
+Replace the entire file content with:
+
+```python
 """
 Theme system for Tthol Reader.
 
@@ -15,74 +226,59 @@ Shared accent colors (both modes):
 
 from gui.config import save_theme
 
-# ── Shared accents (kept as module constants for val_color params) ─────────────
-GREEN = "#22C55E"
-BLUE = "#3B82F6"
-AMBER = "#F59E0B"
-RED = "#EF4444"
+# ── Shared accents ────────────────────────────────────────────────────────────
+GREEN  = "#22C55E"
+BLUE   = "#3B82F6"
+AMBER  = "#F59E0B"
+RED    = "#EF4444"
 ORANGE = "#F97316"
-
-# ── Backward-compatible dark-palette module constants ──────────────────────────
-# These are used by gui modules that import them directly (e.g. BORDER, DIM).
-# They reflect the dark palette defaults. Dynamic theming should use ThemeManager.c().
-BG_BASE = "#020617"
-BG_SURFACE = "#0F172A"
-BG_CARD = "#1E293B"
-BORDER = "#334155"
-MUTED = "#475569"
-DIM = "#94A3B8"
-TEXT = "#F8FAFC"
 
 # ── Palettes ──────────────────────────────────────────────────────────────────
 DARK_PALETTE: dict[str, str] = {
-    "BG_BASE": "#020617",
+    "BG_BASE":    "#020617",
     "BG_SURFACE": "#0F172A",
-    "BG_CARD": "#1E293B",
-    "BORDER": "#334155",
-    "MUTED": "#475569",
-    "DIM": "#94A3B8",
-    "TEXT": "#F8FAFC",
-    "GREEN": GREEN,
-    "GREEN_HOVER": "#16A34A",
-    "GREEN_PRESS": "#15803D",
-    "BLUE": BLUE,
-    "AMBER": AMBER,
-    "RED": RED,
-    "ORANGE": ORANGE,
+    "BG_CARD":    "#1E293B",
+    "BORDER":     "#334155",
+    "MUTED":      "#475569",
+    "DIM":        "#94A3B8",
+    "TEXT":       "#F8FAFC",
+    "GREEN":      GREEN,
+    "BLUE":       BLUE,
+    "AMBER":      AMBER,
+    "RED":        RED,
+    "ORANGE":     ORANGE,
 }
 
 LIGHT_PALETTE: dict[str, str] = {
-    "BG_BASE": "#F8FAFC",
+    "BG_BASE":    "#F8FAFC",
     "BG_SURFACE": "#F1F5F9",
-    "BG_CARD": "#E2E8F0",
-    "BORDER": "#CBD5E1",
-    "MUTED": "#64748B",
-    "DIM": "#475569",
-    "TEXT": "#0F172A",
-    "GREEN": GREEN,
-    "GREEN_HOVER": "#16A34A",
-    "GREEN_PRESS": "#15803D",
-    "BLUE": BLUE,
-    "AMBER": AMBER,
-    "RED": RED,
-    "ORANGE": ORANGE,
+    "BG_CARD":    "#E2E8F0",
+    "BORDER":     "#CBD5E1",
+    "MUTED":      "#64748B",
+    "DIM":        "#475569",
+    "TEXT":       "#0F172A",
+    "GREEN":      GREEN,
+    "BLUE":       BLUE,
+    "AMBER":      AMBER,
+    "RED":        RED,
+    "ORANGE":     ORANGE,
 }
 
 # ── State badge configs ───────────────────────────────────────────────────────
 _STATE_BADGE_DARK = {
     "DISCONNECTED": ("#151A23", "#334155", "#94A3B8"),
-    "CONNECTING": ("#231A0E", "#7C4A1A", ORANGE),
-    "LOCATED": ("#0D2417", "#1E5C2E", GREEN),
-    "READ_ERROR": ("#230E0E", "#7C1F1F", RED),
-    "RESCANNING": ("#231A0E", "#7C4A1A", ORANGE),
+    "CONNECTING":   ("#231A0E", "#7C4A1A", ORANGE),
+    "LOCATED":      ("#0D2417", "#1E5C2E", GREEN),
+    "READ_ERROR":   ("#230E0E", "#7C1F1F", RED),
+    "RESCANNING":   ("#231A0E", "#7C4A1A", ORANGE),
 }
 
 _STATE_BADGE_LIGHT = {
     "DISCONNECTED": ("#E2E8F0", "#CBD5E1", "#475569"),
-    "CONNECTING": ("#FEF3C7", "#F59E0B", "#92400E"),
-    "LOCATED": ("#DCFCE7", "#86EFAC", "#166534"),
-    "READ_ERROR": ("#FEE2E2", "#FCA5A5", "#991B1B"),
-    "RESCANNING": ("#FEF3C7", "#F59E0B", "#92400E"),
+    "CONNECTING":   ("#FEF3C7", "#F59E0B", "#92400E"),
+    "LOCATED":      ("#DCFCE7", "#86EFAC", "#166534"),
+    "READ_ERROR":   ("#FEE2E2", "#FCA5A5", "#991B1B"),
+    "RESCANNING":   ("#FEF3C7", "#F59E0B", "#92400E"),
 }
 
 
@@ -97,8 +293,6 @@ class ThemeManager:
     @classmethod
     def apply(cls, app, mode: str) -> None:
         """Apply palette to app stylesheet and persist preference."""
-        if mode not in ("dark", "light"):
-            mode = "dark"
         cls._app = app
         cls._mode = mode
         cls._palette = DARK_PALETTE if mode == "dark" else LIGHT_PALETTE
@@ -118,12 +312,11 @@ class ThemeManager:
 
     @classmethod
     def c(cls, key: str) -> str:
-        """Return current palette value for key. Returns magenta on missing key."""
-        return cls._palette.get(key, "#FF00FF")
+        """Return current palette value for key."""
+        return cls._palette.get(key, "#FF00FF")  # magenta = missing key
 
     @classmethod
     def mode(cls) -> str:
-        """Return current mode string ('dark' or 'light')."""
         return cls._mode
 
 
@@ -145,8 +338,7 @@ def vital_html(key: str, val, val_color: str | None = None) -> str:
     text = val_color or ThemeManager.c("TEXT")
     return (
         f'<span style="color:{dim};font-size:10px;letter-spacing:1px;">{key}</span>'
-        f"&thinsp;"
-        f'<span style="color:{text};font-weight:700;">{val}</span>'
+        f'&thinsp;<span style="color:{text};font-weight:700;">{val}</span>'
     )
 
 
@@ -156,8 +348,7 @@ def fraction_html(key: str, cur, mx, val_color: str = GREEN) -> str:
     muted = ThemeManager.c("MUTED")
     return (
         f'<span style="color:{dim};font-size:10px;letter-spacing:1px;">{key}</span>'
-        f"&thinsp;"
-        f'<span style="color:{val_color};font-weight:700;">{cur}</span>'
+        f'&thinsp;<span style="color:{val_color};font-weight:700;">{cur}</span>'
         f'<span style="color:{muted};">/{mx}</span>'
     )
 
@@ -165,22 +356,20 @@ def fraction_html(key: str, cur, mx, val_color: str = GREEN) -> str:
 # ── QSS builder ───────────────────────────────────────────────────────────────
 def _build_qss(p: dict[str, str]) -> str:
     """Generate full application QSS from palette dict p."""
-    BG_BASE = p["BG_BASE"]
+    BG_BASE    = p["BG_BASE"]
     BG_SURFACE = p["BG_SURFACE"]
-    BG_CARD = p["BG_CARD"]
-    BORDER = p["BORDER"]
-    MUTED = p["MUTED"]
-    DIM = p["DIM"]
-    TEXT = p["TEXT"]
-    _GREEN = p["GREEN"]
-    _GREEN_HOVER = p["GREEN_HOVER"]
-    _GREEN_PRESS = p["GREEN_PRESS"]
-    _BLUE = p["BLUE"]
-    _AMBER = p["AMBER"]
-    _RED = p["RED"]
+    BG_CARD    = p["BG_CARD"]
+    BORDER     = p["BORDER"]
+    MUTED      = p["MUTED"]
+    DIM        = p["DIM"]
+    TEXT       = p["TEXT"]
+    _GREEN     = p["GREEN"]
+    _BLUE      = p["BLUE"]
+    _AMBER     = p["AMBER"]
+    _RED       = p["RED"]
 
-    # Table/tree selection tint: green tint adapted per theme
-    _SEL_BG = "#122118" if BG_BASE == "#020617" else "#DCFCE7"
+    # Table selection tint: green tint adapted per theme
+    _SEL_BG  = "#122118" if BG_BASE == "#020617" else "#DCFCE7"
     _SEL_COL = _GREEN
 
     return f"""
@@ -253,12 +442,12 @@ QPushButton#primary_btn {{
     border: none;
 }}
 QPushButton#primary_btn:hover {{
-    background-color: {_GREEN_HOVER};
+    background-color: #16A34A;
     color: {BG_BASE};
     border: none;
 }}
 QPushButton#primary_btn:pressed {{
-    background-color: {_GREEN_PRESS};
+    background-color: #15803D;
 }}
 QPushButton#primary_btn:disabled {{
     background-color: {BG_CARD};
@@ -449,9 +638,7 @@ QScrollBar::handle:vertical:hover {{
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-    background: none;
-    height: 0;
-    width: 0;
+    background: none; height: 0; width: 0;
 }}
 QScrollBar:horizontal {{
     background: {BG_SURFACE};
@@ -469,9 +656,7 @@ QScrollBar::handle:horizontal:hover {{
 }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
-    background: none;
-    height: 0;
-    width: 0;
+    background: none; height: 0; width: 0;
 }}
 QAbstractScrollArea::corner {{
     background: {BG_SURFACE};
@@ -682,5 +867,312 @@ QFrame#char_card_header {{
 """
 
 
-# Convenience alias — startup uses this before ThemeManager.apply() is called
+# Keep DARK_QSS as a convenience alias (used in gui_main.py startup before ThemeManager exists)
 DARK_QSS = _build_qss(DARK_PALETTE)
+```
+
+**Step 4: Run tests**
+
+```bash
+uv run pytest tests/test_theme.py -v
+```
+Expected: 8 passed
+
+**Step 5: Commit**
+
+```bash
+git add gui/theme.py tests/test_theme.py
+git commit -m "feat: add ThemeManager with dark/light palettes and QSS generator"
+```
+
+---
+
+### Task 3: gui_main.py — load config and apply initial theme
+
+**Files:**
+- Modify: `gui_main.py`
+
+**Step 1: No new tests needed** — startup wiring, covered by existing `test_main_window.py`
+
+**Step 2: Update `gui_main.py`**
+
+Replace the entire file:
+
+```python
+"""Entry point for the PySide6 GUI."""
+import sys
+from PySide6.QtWidgets import QApplication
+from gui.main_window import MainWindow
+from gui.theme import ThemeManager
+from gui.config import load_theme
+
+
+def main():
+    app = QApplication(sys.argv)
+    app.setApplicationName("Tthol Reader")
+    ThemeManager.apply(app, load_theme())
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
+```
+
+**Step 3: Run existing tests to confirm nothing broke**
+
+```bash
+uv run pytest tests/test_main_window.py -v
+```
+Expected: all pass
+
+**Step 4: Commit**
+
+```bash
+git add gui_main.py
+git commit -m "feat: load theme from config on startup via ThemeManager"
+```
+
+---
+
+### Task 4: main_window.py — remove inline styles + add theme toggle button
+
+**Files:**
+- Modify: `gui/main_window.py`
+
+**Step 1: Write new test**
+
+Add to `tests/test_main_window.py`:
+
+```python
+def test_main_window_has_theme_toggle_button(main_window):
+    assert hasattr(main_window, "_btn_theme")
+    assert main_window._btn_theme is not None
+
+
+def test_theme_toggle_button_label_dark(main_window):
+    from gui.theme import ThemeManager
+    ThemeManager._mode = "dark"
+    # Force label refresh
+    main_window._update_theme_btn_label()
+    assert "亮色" in main_window._btn_theme.text()
+
+
+def test_theme_toggle_button_label_light(main_window):
+    from gui.theme import ThemeManager
+    ThemeManager._mode = "light"
+    main_window._update_theme_btn_label()
+    assert "暗色" in main_window._btn_theme.text()
+```
+
+**Step 2: Run to verify failure**
+
+```bash
+uv run pytest tests/test_main_window.py::test_main_window_has_theme_toggle_button -v
+```
+Expected: `AttributeError: 'MainWindow' object has no attribute '_btn_theme'`
+
+**Step 3: Update `gui/main_window.py`**
+
+Key changes (do NOT remove existing logic, only update):
+
+a) Remove module-level constants `_CLOSE_BTN_STYLE` and `_REFRESH_BTN_STYLE` entirely.
+
+b) Update imports — remove `BORDER, DIM, GREEN, MUTED, RED` from theme import; keep only `badge_style` for CharacterPanel (which uses it internally). In `main_window.py`, no more direct color imports are needed:
+
+```python
+from gui.theme import ThemeManager
+```
+
+c) Update `_make_close_btn`: remove `btn.setStyleSheet(_CLOSE_BTN_STYLE)`, set object name instead:
+
+```python
+def _make_close_btn(self, panel: "CharacterPanel") -> QPushButton:
+    btn = QPushButton("X")
+    btn.setFixedSize(20, 20)
+    btn.setObjectName("close_btn")
+    btn.setToolTip(t("close_tab_tooltip"))
+    btn.clicked.connect(lambda: self._close_panel(panel))
+    return btn
+```
+
+d) Update refresh button — remove `setStyleSheet`, set object name:
+
+```python
+refresh_btn = QPushButton("+")
+refresh_btn.setToolTip(t("refresh_tooltip"))
+refresh_btn.setFixedSize(34, 28)
+refresh_btn.setObjectName("refresh_btn")
+refresh_btn.clicked.connect(self._on_refresh)
+```
+
+e) Update version label — remove `setStyleSheet`, set object name:
+
+```python
+version_label = QLabel(f"rev: {_get_version()}")
+version_label.setObjectName("version_label")
+version_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+self.statusBar().addPermanentWidget(version_label)
+```
+
+f) Add `_btn_theme` to nav sidebar after `nav_layout.addStretch()`:
+
+```python
+nav_layout.addStretch()
+
+self._btn_theme = QPushButton()
+self._btn_theme.setObjectName("theme_toggle_btn")
+self._btn_theme.clicked.connect(self._on_toggle_theme)
+self._update_theme_btn_label()
+nav_layout.addWidget(self._btn_theme)
+```
+
+g) Add helper method and slot:
+
+```python
+def _update_theme_btn_label(self) -> None:
+    """Set toggle button label to reflect the mode we will switch TO."""
+    if ThemeManager.mode() == "dark":
+        self._btn_theme.setText("◑ 亮色")
+    else:
+        self._btn_theme.setText("◑ 暗色")
+
+@Slot()
+def _on_toggle_theme(self):
+    ThemeManager.toggle()
+    self._update_theme_btn_label()
+```
+
+h) Update `_show_placeholder` — remove `setStyleSheet`, set object name:
+
+```python
+lbl = QLabel(t("placeholder_tab"))
+lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+lbl.setObjectName("placeholder_lbl")
+lbl.setProperty("is_placeholder", True)
+```
+
+**Step 4: Run tests**
+
+```bash
+uv run pytest tests/test_main_window.py -v
+```
+Expected: all pass including 3 new tests
+
+**Step 5: Commit**
+
+```bash
+git add gui/main_window.py tests/test_main_window.py
+git commit -m "feat: add theme toggle button to nav sidebar, remove inline styles from main_window"
+```
+
+---
+
+### Task 5: character_panel.py — remove inline styles + object names
+
+**Files:**
+- Modify: `gui/character_panel.py`
+
+**Step 1: No new tests** — visual-only changes; existing test coverage sufficient
+
+**Step 2: Update `gui/character_panel.py`**
+
+a) Update imports — remove direct color imports, keep only what's needed for CharacterPanel logic:
+
+```python
+from gui.theme import badge_style, vital_html, fraction_html, GREEN, BLUE, AMBER
+```
+(Keep `GREEN`, `BLUE`, `AMBER` — they're passed as `val_color` params to `vital_html`/`fraction_html`. These are accent constants that don't change between themes.)
+
+b) Update `hp_lbl` — remove `setStyleSheet`, set object name:
+
+```python
+hp_lbl = QLabel(t("vital_hp"))
+hp_lbl.setObjectName("vital_hp_label")
+op_layout.addWidget(hp_lbl)
+```
+
+c) Update `mp_lbl` — remove `setStyleSheet`, set object name:
+
+```python
+mp_lbl = QLabel(t("mp_filter_label"))
+mp_lbl.setObjectName("vital_mp_label")
+filter_layout.addWidget(mp_lbl)
+```
+
+d) Update `_advanced_btn` — set object name `filter_toggle_btn`, remove `setFlat`:
+
+```python
+self._advanced_btn = QPushButton(t("filter_toggle_show"))
+self._advanced_btn.setObjectName("filter_toggle_btn")
+self._advanced_btn.clicked.connect(self._on_toggle_filter)
+op_layout.addWidget(self._advanced_btn)
+```
+
+**Step 3: Run all tests**
+
+```bash
+uv run pytest -v
+```
+Expected: all pass
+
+**Step 4: Commit**
+
+```bash
+git add gui/character_panel.py
+git commit -m "feat: remove inline styles from character_panel, use QSS object names"
+```
+
+---
+
+### Task 6: Manual smoke test + close issues
+
+**Step 1: Launch GUI and verify dark theme**
+
+```bash
+uv run gui_main.py
+```
+
+Check:
+- [ ] App launches in dark mode (if no config.json, or config.json has `"theme": "dark"`)
+- [ ] Nav sidebar shows "◑ 亮色" toggle button at bottom
+- [ ] Filter toggle button `▼ 篩選` is clearly visible (TEXT color, not DIM)
+- [ ] Close tab X button and + button look correct
+
+**Step 2: Switch to light theme**
+
+Click "◑ 亮色" button.
+
+Check:
+- [ ] Background switches to slate-50 white
+- [ ] All text readable (dark slate-900)
+- [ ] `▼ 篩選` arrow clearly visible
+- [ ] Badge pills readable (LOCATED = green tint, DISCONNECTED = gray)
+- [ ] Button label changes to "◑ 暗色"
+- [ ] `config.json` created/updated with `"theme": "light"`
+
+**Step 3: Restart app**
+
+```bash
+uv run gui_main.py
+```
+
+Check:
+- [ ] App launches in light theme (persisted from config.json)
+- [ ] Toggle button shows "◑ 暗色"
+
+**Step 4: Close GitHub issues**
+
+```bash
+gh issue close 4 --repo hanshino/tthol-toolkit --comment "Fixed: filter toggle arrow (▼ 篩選) now uses TEXT color in both themes, ensuring visibility. Root cause was dark-theme contrast. Resolved alongside #5."
+gh issue close 5 --repo hanshino/tthol-toolkit --comment "Implemented: light/dark theme toggle (◑) in nav sidebar. Slate-50 base palette with slate-900 text. Preference persisted to config.json."
+```
+
+**Step 5: Final commit**
+
+```bash
+git add config.json  # if created during testing
+git commit -m "chore: add default config.json" --allow-empty
+```
+(Only if config.json should be tracked — if not, add to .gitignore instead.)

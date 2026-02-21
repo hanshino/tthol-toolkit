@@ -27,3 +27,9 @@ pointers.json
 .opencode/
 # Release toolkit (distributed in zip, not committed)
 toolkit/
+
+# Git worktrees
+.worktrees/
+
+# User preferences (generated at runtime)
+config.json
