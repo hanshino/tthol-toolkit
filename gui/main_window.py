@@ -40,15 +40,23 @@ from gui.i18n import t
 
 
 def _get_version() -> str:
-    """Return short commit hash, or 'unknown' if git is unavailable."""
+    """Return tag name if current commit is tagged, otherwise short commit hash."""
     try:
-        result = subprocess.run(
+        tag = subprocess.run(
+            ["git", "describe", "--exact-match", "--tags", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if tag.returncode == 0 and tag.stdout.strip():
+            return tag.stdout.strip()
+        rev = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             capture_output=True,
             text=True,
             timeout=2,
         )
-        return result.stdout.strip() or "unknown"
+        return rev.stdout.strip() or "unknown"
     except Exception:
         return "unknown"
 
