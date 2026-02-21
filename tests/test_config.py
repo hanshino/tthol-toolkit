@@ -28,9 +28,17 @@ def test_save_theme_writes_json(tmp_path):
     assert data["theme"] == "light"
 
 
-def test_save_theme_overwrites_existing(tmp_path):
+def test_save_theme_updates_value_on_second_call(tmp_path):
     cfg = tmp_path / "config.json"
     save_theme("light", cfg)
     save_theme("dark", cfg)
     data = json.loads(cfg.read_text(encoding="utf-8"))
     assert data["theme"] == "dark"
+
+
+def test_save_theme_succeeds_when_existing_file_corrupt(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("not json", encoding="utf-8")
+    save_theme("light", cfg)
+    data = json.loads(cfg.read_text(encoding="utf-8"))
+    assert data["theme"] == "light"

@@ -10,13 +10,16 @@ def load_theme(path: Path = _DEFAULT_PATH) -> str:
     """Return saved theme ('dark' or 'light'). Falls back to 'dark'."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return data.get("theme", "dark")
+        value = data.get("theme", "dark")
+        return value if value in ("dark", "light") else "dark"
     except Exception:
         return "dark"
 
 
 def save_theme(mode: str, path: Path = _DEFAULT_PATH) -> None:
     """Persist theme preference to config.json."""
+    if mode not in ("dark", "light"):
+        raise ValueError(f"Invalid theme: {mode!r}. Expected 'dark' or 'light'.")
     try:
         existing: dict = {}
         if path.exists():
@@ -26,5 +29,7 @@ def save_theme(mode: str, path: Path = _DEFAULT_PATH) -> None:
                 pass
         existing["theme"] = mode
         path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as e:
+        import sys
+
+        print(f"[config] Failed to save theme: {e}", file=sys.stderr)
