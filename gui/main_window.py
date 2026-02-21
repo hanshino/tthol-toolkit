@@ -54,7 +54,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(t("window_title"))
-        self.setMinimumWidth(620)
+        self.setMinimumWidth(682)
+        self.resize(880, 660)
         self._snapshot_db = SnapshotDB()
         self._panels: dict[int, CharacterPanel] = {}  # pid → panel
 
@@ -148,9 +149,7 @@ class MainWindow(QMainWindow):
     def _attach_close_btn(self, index: int, panel: "CharacterPanel"):
         """Place a custom close button on the right side of the tab at index."""
         btn = self._make_close_btn(panel)
-        self._outer_tabs.tabBar().setTabButton(
-            index, QTabBar.ButtonPosition.RightSide, btn
-        )
+        self._outer_tabs.tabBar().setTabButton(index, QTabBar.ButtonPosition.RightSide, btn)
 
     def _populate_tabs(self):
         """Detect game windows and add a tab for each new PID found."""
@@ -169,9 +168,7 @@ class MainWindow(QMainWindow):
             idx = self._outer_tabs.addTab(panel, label)
             self._attach_close_btn(idx, panel)
             panel.tab_label_changed.connect(
-                lambda name, p=panel: self._outer_tabs.setTabText(
-                    self._outer_tabs.indexOf(p), name
-                )
+                lambda name, p=panel: self._outer_tabs.setTabText(self._outer_tabs.indexOf(p), name)
             )
             self._panels[pid] = panel
             added += 1
@@ -210,9 +207,7 @@ class MainWindow(QMainWindow):
         if index == -1:
             return
         self._outer_tabs.removeTab(index)
-        pid_to_remove = next(
-            (pid for pid, p in self._panels.items() if p is panel), None
-        )
+        pid_to_remove = next((pid for pid, p in self._panels.items() if p is panel), None)
         if pid_to_remove is not None:
             del self._panels[pid_to_remove]
         panel.shutdown()
