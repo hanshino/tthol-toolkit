@@ -17,7 +17,15 @@ uv run reader.py <current_hp> [--loop]
 
 # Auto-detect (no known value needed, slower ~14s)
 uv run auto_detect.py [--loop]
+
+# Run GUI
+uv run gui_main.py
+
+# Run tests
+uv run pytest
 ```
+
+> **Important:** Always use `uv run` for all Python commands in this project. Never use `python` or `python -m` directly.
 
 ## Architecture
 
