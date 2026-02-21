@@ -22,3 +22,6 @@ pointers.json
 
 # Claude Code local config
 .claude/
+
+# Opencode local config
+.opencode/
