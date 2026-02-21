@@ -8,13 +8,14 @@ States:
     READ_ERROR    - validation failed 3x, triggers rescan
     RESCANNING    - re-running locate_character
 """
-import time
+
 import threading
 import pymem
 from PySide6.QtCore import QThread, Signal
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from reader import (
@@ -36,21 +37,22 @@ from warehouse_scan import (
     SLOT_SIZE,
 )
 
-POLL_INTERVAL = 1.0        # seconds between stat reads
-FAILURE_THRESHOLD = 3      # consecutive failures before rescan
+POLL_INTERVAL = 1.0  # seconds between stat reads
+FAILURE_THRESHOLD = 3  # consecutive failures before rescan
 
 
 class ReaderWorker(QThread):
-    state_changed = Signal(str)          # new state string
-    stats_updated = Signal(list)         # list of (name, value) tuples
-    inventory_ready = Signal(list)       # list of (item_id, qty, name)
-    warehouse_ready = Signal(list)       # list of (item_id, qty, name)
-    scan_error = Signal(str)             # human-readable error message
+    state_changed = Signal(str)  # new state string
+    stats_updated = Signal(list)  # list of (name, value) tuples
+    inventory_ready = Signal(list)  # list of (item_id, qty, name)
+    warehouse_ready = Signal(list)  # list of (item_id, qty, name)
+    scan_error = Signal(str)  # human-readable error message
 
     def __init__(self, pid: int, parent=None):
         super().__init__(parent)
         self._pid = pid
         self._hp_value = None
+        self._offset_filters = None
         self._stop_event = threading.Event()
         self._scan_inventory = False
         self._scan_warehouse = False
@@ -61,9 +63,10 @@ class ReaderWorker(QThread):
     # ------------------------------------------------------------------
     # Public API (called from main thread)
     # ------------------------------------------------------------------
-    def connect(self, hp_value: int):
-        """Start the worker with a known HP value."""
+    def connect(self, hp_value: int, offset_filters=None):
+        """Start the worker with a known HP value and optional offset filters."""
         self._hp_value = hp_value
+        self._offset_filters = offset_filters
         self._stop_event.clear()
         if not self.isRunning():
             self.start()
@@ -115,7 +118,9 @@ class ReaderWorker(QThread):
             # --- Poll character stats ---
             try:
                 fields = read_all_fields(pm, hp_addr, self._display_fields)
-                score = verify_structure(pm, hp_addr, self._knowledge['character_structure']['fields'])
+                score = verify_structure(
+                    pm, hp_addr, self._knowledge["character_structure"]["fields"]
+                )
 
                 if score < 0.8:
                     failure_count += 1
@@ -168,7 +173,7 @@ class ReaderWorker(QThread):
 
     def _locate(self, pm):
         try:
-            return locate_character(pm, self._hp_value, self._knowledge)
+            return locate_character(pm, self._hp_value, self._knowledge, self._offset_filters)
         except Exception as e:
             self.scan_error.emit(f"Scan failed: {e}")
             return None
