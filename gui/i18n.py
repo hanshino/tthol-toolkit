@@ -23,6 +23,11 @@ _STRINGS: dict[str, str] = {
     "relocate": "重新定位",
     "state_disconnected": "● 未連線",
     "enter_valid_hp": "請輸入有效的血量值",
+    "filter_toggle_show": "+ 進階",
+    "filter_toggle_hide": "▲ 進階",
+    "mp_filter_label": "真氣",
+    "mp_filter_placeholder": "選填",
+    "enter_valid_mp": "真氣篩選值必須為正整數",
     # ── Character panel — vitals strip ───────────────────────────────────
     "vital_lv": "等級",
     "vital_hp": "血量",
