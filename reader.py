@@ -474,7 +474,10 @@ def main():
     args = sys.argv[2:]
     i = 0
     while i < len(args):
-        if args[i] == "--filter" and i + 1 < len(args):
+        if args[i] == "--filter":
+            if i + 1 >= len(args):
+                print("[X] --filter requires an argument (e.g. --filter 等級=7)")
+                raise SystemExit(1)
             raw_filters.append(args[i + 1])
             i += 2
         else:
