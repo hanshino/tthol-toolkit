@@ -28,7 +28,7 @@ jobs:
       - name: Download Python 3.11.9 embeddable
         shell: powershell
         run: |
-          curl -L "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -o python-embed.zip
+          curl.exe -L "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -o python-embed.zip
           New-Item -ItemType Directory -Path "toolkit\python" -Force | Out-Null
           Expand-Archive -Path "python-embed.zip" -DestinationPath "toolkit\python" -Force
           Remove-Item python-embed.zip
@@ -38,7 +38,7 @@ jobs:
         run: |
           (Get-Content "toolkit\python\python311._pth") -replace '#import site', 'import site' |
             Set-Content "toolkit\python\python311._pth"
-          curl -L "https://bootstrap.pypa.io/get-pip.py" -o get-pip.py
+          curl.exe -L "https://bootstrap.pypa.io/get-pip.py" -o get-pip.py
           toolkit\python\python.exe get-pip.py --quiet
           Remove-Item get-pip.py
 
@@ -73,7 +73,7 @@ jobs:
             Where-Object { $_.name -like "PortableGit-*-64-bit.7z.exe" } |
             Select-Object -First 1
           Write-Host "Downloading $($asset.name)"
-          curl -L $asset.browser_download_url -o PortableGit.exe
+          curl.exe -L $asset.browser_download_url -o PortableGit.exe
           New-Item -ItemType Directory -Path "toolkit\git" -Force | Out-Null
           7z x PortableGit.exe -o"toolkit\git" -y | Out-Null
           Remove-Item PortableGit.exe
