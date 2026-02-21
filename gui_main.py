@@ -1,14 +1,16 @@
 """Entry point for the PySide6 GUI."""
+
 import sys
 from PySide6.QtWidgets import QApplication
 from gui.main_window import MainWindow
-from gui.theme import DARK_QSS
+from gui.theme import ThemeManager
+from gui.config import load_theme
 
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Tthol Reader")
-    app.setStyleSheet(DARK_QSS)
+    ThemeManager.apply(app, load_theme())
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
