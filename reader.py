@@ -100,7 +100,11 @@ def resolve_filters(filters, knowledge):
     Exits with error if a field name is not found in the knowledge base.
     """
     fields = knowledge["character_structure"]["fields"]
-    name_to_offset = {info["name"]: int(offset_str) for offset_str, info in fields.items()}
+    name_to_offset = {
+        info["name"]: int(offset_str)
+        for offset_str, info in fields.items()
+        if info["name"] != "未知"
+    }
     result = {}
     for name, value in filters.items():
         if name not in name_to_offset:

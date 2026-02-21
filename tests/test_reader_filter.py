@@ -50,3 +50,11 @@ def test_resolve_filters_unknown_field_raises():
     knowledge = load_knowledge()
     with pytest.raises(SystemExit):
         resolve_filters({"不存在欄位": 1}, knowledge)
+
+
+def test_resolve_filters_unknown_name_raises():
+    from reader import resolve_filters, load_knowledge
+
+    knowledge = load_knowledge()
+    with pytest.raises(SystemExit):
+        resolve_filters({"未知": 1}, knowledge)
