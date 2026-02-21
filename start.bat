@@ -13,6 +13,7 @@ if %errorlevel% neq 0 (
 :: ── Paths ─────────────────────────────────────────────────────
 set "_root=%~dp0"
 set "PATH=%_root%toolkit\python;%_root%toolkit\python\Scripts;%_root%toolkit\git\cmd;%PATH%"
+set "PYTHONPATH=%_root%"
 
 cd /d "%_root%"
 
