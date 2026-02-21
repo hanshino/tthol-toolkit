@@ -84,6 +84,9 @@ def parse_filters(filter_args):
             print(f"[X] Invalid --filter format '{item}', expected field=value")
             raise SystemExit(1)
         name, raw = item.split("=", 1)
+        if not name:
+            print(f"[X] Invalid --filter format '{item}', field name cannot be empty")
+            raise SystemExit(1)
         try:
             result[name] = int(raw)
         except ValueError:

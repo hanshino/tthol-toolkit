@@ -19,3 +19,17 @@ def test_parse_filters_invalid_value_raises():
 
     with pytest.raises(SystemExit):
         parse_filters(["等級=abc"])
+
+
+def test_parse_filters_no_equals_raises():
+    from reader import parse_filters
+
+    with pytest.raises(SystemExit):
+        parse_filters(["等級abc"])
+
+
+def test_parse_filters_empty_name_raises():
+    from reader import parse_filters
+
+    with pytest.raises(SystemExit):
+        parse_filters(["=7"])
