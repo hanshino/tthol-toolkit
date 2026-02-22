@@ -190,12 +190,18 @@ class LauncherWindow(QWidget):
         self._status.setText("Launching...")
         subprocess.Popen(
             [sys.executable, str(Path(__file__).parent.parent / "gui_main.py")],
-            creationflags=0x00000008,  # DETACHED_PROCESS — survives launcher exit on Windows
+            creationflags=subprocess.DETACHED_PROCESS,
             close_fds=True,
         )
         self._worker.quit()
         self._worker.wait()
         self.close()
+
+    def closeEvent(self, event) -> None:
+        if self._worker.isRunning():
+            self._worker.quit()
+            self._worker.wait()
+        super().closeEvent(event)
 
     def _on_failure(self, message: str) -> None:
         self._bar.setRange(0, 1)
