@@ -37,8 +37,11 @@ class UpdateWorker(QThread):
     failed = Signal(str)  # fatal error message (pip install failed)
 
     def run(self) -> None:
-        self._run_git()
-        self._run_pip()
+        try:
+            self._run_git()
+            self._run_pip()
+        except Exception as exc:
+            self.failed.emit(f"Unexpected error: {exc}")
 
     # ── git ──────────────────────────────────────────────────────────────────
 
