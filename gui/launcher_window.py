@@ -6,7 +6,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtGui import QFont, QIcon
+from PySide6.QtWidgets import (
+    QLabel,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 _SKIP_PREFIXES = (
@@ -111,3 +120,82 @@ class UpdateWorker(QThread):
             return
 
         self.finished.emit()
+
+
+class LauncherWindow(QWidget):
+    """Small update-progress window shown before the main GUI launches."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("Tthol Reader")
+        self.setFixedSize(460, 220)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowTitleHint)
+
+        icon_path = Path(__file__).parent.parent / "icon.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+
+        self._build_ui()
+        self._start_worker()
+
+    # ── UI ───────────────────────────────────────────────────────────────────
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 12)
+        layout.setSpacing(8)
+
+        self._status = QLabel("Starting...")
+        self._status.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self._bar = QProgressBar()
+        self._bar.setRange(0, 0)  # indeterminate (marquee)
+        self._bar.setTextVisible(False)
+        self._bar.setFixedHeight(6)
+
+        self._log = QPlainTextEdit()
+        self._log.setReadOnly(True)
+        self._log.setMaximumBlockCount(200)
+        self._log.setFixedHeight(100)
+        mono = QFont("Consolas", 8)
+        mono.setStyleHint(QFont.StyleHint.Monospace)
+        self._log.setFont(mono)
+
+        layout.addWidget(self._status)
+        layout.addWidget(self._bar)
+        layout.addWidget(self._log)
+
+    # ── Worker wiring ─────────────────────────────────────────────────────────
+
+    def _start_worker(self) -> None:
+        self._worker = UpdateWorker()
+        self._worker.line_ready.connect(self._append_log)
+        self._worker.status_changed.connect(self._status.setText)
+        self._worker.finished.connect(self._on_success)
+        self._worker.failed.connect(self._on_failure)
+        self._worker.start()
+
+    def _append_log(self, line: str) -> None:
+        self._log.appendPlainText(line)
+        self._log.verticalScrollBar().setValue(self._log.verticalScrollBar().maximum())
+
+    def _on_success(self) -> None:
+        self._bar.setRange(0, 1)
+        self._bar.setValue(1)
+        self._status.setText("Launching...")
+        # Launch main GUI as detached process so it survives launcher exit
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).parent.parent / "gui_main.py")],
+            close_fds=True,
+        )
+        self.close()
+
+    def _on_failure(self, message: str) -> None:
+        self._bar.setRange(0, 1)
+        self._bar.setValue(0)
+        self._status.setText("Error — cannot start")
+        self._append_log(f"\nERROR: {message}")
+        # Add a close button so user can dismiss
+        btn = QPushButton("Close")
+        btn.clicked.connect(self.close)
+        self.layout().addWidget(btn)
