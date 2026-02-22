@@ -8,7 +8,6 @@ _SKIP_PREFIXES = (
     "Downloading ",
     "Using cached ",
     "Obtaining ",
-    "  Downloading",
 )
 
 

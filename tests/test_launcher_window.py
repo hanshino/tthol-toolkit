@@ -34,3 +34,11 @@ def test_skips_downloading_line():
 def test_strips_trailing_whitespace():
     result = format_pip_line("Successfully installed psutil-7.2.2   \n")
     assert result == "Successfully installed psutil-7.2.2"
+
+
+def test_skips_using_cached_line():
+    assert format_pip_line("Using cached psutil-7.2.2-cp311-win32.whl") is None
+
+
+def test_skips_obtaining_line():
+    assert format_pip_line("Obtaining file:///some/path") is None
