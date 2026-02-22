@@ -21,6 +21,7 @@ cd /d "%_root%"
 if %errorlevel% neq 0 (
     echo Installing PySide6, please wait...
     "%_root%toolkit\python\python.exe" -m pip install PySide6
+    "%_root%toolkit\python\python.exe" -m pip show PySide6 >nul 2>&1
     if %errorlevel% neq 0 (
         echo.
         echo ERROR: Failed to install PySide6. Cannot start.
