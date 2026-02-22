@@ -128,7 +128,7 @@ class LauncherWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Tthol Reader")
-        self.setFixedSize(460, 220)
+        self.setFixedSize(460, 260)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowTitleHint)
 
         icon_path = Path(__file__).parent.parent / "icon.png"
@@ -165,6 +165,11 @@ class LauncherWindow(QWidget):
         layout.addWidget(self._bar)
         layout.addWidget(self._log)
 
+        self._close_btn = QPushButton("Close")
+        self._close_btn.clicked.connect(self.close)
+        self._close_btn.setVisible(False)
+        layout.addWidget(self._close_btn)
+
     # ── Worker wiring ─────────────────────────────────────────────────────────
 
     def _start_worker(self) -> None:
@@ -183,11 +188,13 @@ class LauncherWindow(QWidget):
         self._bar.setRange(0, 1)
         self._bar.setValue(1)
         self._status.setText("Launching...")
-        # Launch main GUI as detached process so it survives launcher exit
         subprocess.Popen(
             [sys.executable, str(Path(__file__).parent.parent / "gui_main.py")],
+            creationflags=0x00000008,  # DETACHED_PROCESS — survives launcher exit on Windows
             close_fds=True,
         )
+        self._worker.quit()
+        self._worker.wait()
         self.close()
 
     def _on_failure(self, message: str) -> None:
@@ -195,7 +202,6 @@ class LauncherWindow(QWidget):
         self._bar.setValue(0)
         self._status.setText("Error — cannot start")
         self._append_log(f"\nERROR: {message}")
-        # Add a close button so user can dismiss
-        btn = QPushButton("Close")
-        btn.clicked.connect(self.close)
-        self.layout().addWidget(btn)
+        self._worker.quit()
+        self._worker.wait()
+        self._close_btn.setVisible(True)
