@@ -42,7 +42,7 @@ class UpdateWorker(QThread):
 
     line_ready = Signal(str)  # a single line to append to the log
     status_changed = Signal(str)  # short status label text
-    finished = Signal()  # all steps succeeded
+    update_done = Signal()  # all steps succeeded
     failed = Signal(str)  # fatal error message (pip install failed)
 
     def run(self) -> None:
@@ -119,7 +119,7 @@ class UpdateWorker(QThread):
             self.failed.emit("pip install failed. Cannot start the application.")
             return
 
-        self.finished.emit()
+        self.update_done.emit()
 
 
 class LauncherWindow(QWidget):
@@ -176,7 +176,7 @@ class LauncherWindow(QWidget):
         self._worker = UpdateWorker()
         self._worker.line_ready.connect(self._append_log)
         self._worker.status_changed.connect(self._status.setText)
-        self._worker.finished.connect(self._on_success)
+        self._worker.update_done.connect(self._on_success)
         self._worker.failed.connect(self._on_failure)
         self._worker.start()
 
