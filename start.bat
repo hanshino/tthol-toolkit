@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableDelayedExpansion
+setlocal
 
 :: ── UAC elevation ─────────────────────────────────────────────────────────
 :: If not running as admin, re-launch with elevation and exit.
