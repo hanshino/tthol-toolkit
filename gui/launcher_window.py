@@ -188,11 +188,21 @@ class LauncherWindow(QWidget):
         self._bar.setRange(0, 1)
         self._bar.setValue(1)
         self._status.setText("Launching...")
-        subprocess.Popen(
-            [sys.executable, str(Path(__file__).parent.parent / "gui_main.py")],
-            creationflags=subprocess.DETACHED_PROCESS,
-            close_fds=True,
-        )
+        # Explicitly redirect stdout/stderr to DEVNULL.
+        # pythonw.exe has no console, so its handles are invalid.
+        # Without this, gui_main.py inherits those invalid handles and crashes silently.
+        gui_path = Path(__file__).parent.parent / "gui_main.py"
+        try:
+            subprocess.Popen(
+                [sys.executable, str(gui_path)],
+                creationflags=subprocess.DETACHED_PROCESS,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
+        except Exception as exc:
+            self._on_failure(f"Failed to launch application: {exc}")
+            return
         self._worker.quit()
         self._worker.wait()
         self.close()
