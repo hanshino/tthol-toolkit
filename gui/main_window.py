@@ -192,6 +192,29 @@ class MainWindow(QMainWindow):
         btn = self._make_close_btn(panel)
         self._outer_tabs.tabBar().setTabButton(index, QTabBar.ButtonPosition.RightSide, btn)
 
+    def _sort_tabs(self):
+        """Sort character tabs alphabetically by label; placeholder stays untouched."""
+        count = self._outer_tabs.count()
+        if count <= 1:
+            return
+        tab_bar = self._outer_tabs.tabBar()
+        char_tabs = [
+            (i, self._outer_tabs.tabText(i))
+            for i in range(count)
+            if not (
+                self._outer_tabs.widget(i) and self._outer_tabs.widget(i).property("is_placeholder")
+            )
+        ]
+        if len(char_tabs) <= 1:
+            return
+        sorted_tabs = sorted(char_tabs, key=lambda x: x[1])
+        for target_pos, (_, label) in enumerate(sorted_tabs):
+            for current_pos in range(self._outer_tabs.count()):
+                if self._outer_tabs.tabText(current_pos) == label:
+                    if current_pos != target_pos:
+                        tab_bar.moveTab(current_pos, target_pos)
+                    break
+
     def _populate_tabs(self):
         """Detect game windows and add a tab for each new PID found."""
         windows = detect_game_windows()
@@ -209,10 +232,15 @@ class MainWindow(QMainWindow):
             idx = self._outer_tabs.addTab(panel, label)
             self._attach_close_btn(idx, panel)
             panel.tab_label_changed.connect(
-                lambda name, p=panel: self._outer_tabs.setTabText(self._outer_tabs.indexOf(p), name)
+                lambda name, p=panel: (
+                    self._outer_tabs.setTabText(self._outer_tabs.indexOf(p), name),
+                    self._sort_tabs(),
+                )
             )
             self._panels[pid] = panel
             added += 1
+        if added > 0:
+            self._sort_tabs()
         if windows and added == 0:
             self.statusBar().showMessage(t("no_new_windows"), 2000)
 
