@@ -129,6 +129,15 @@ class CharacterPanel(QWidget):
         self._mp_input.setValidator(QIntValidator(0, 2_147_483_647))
         filter_layout.addWidget(self._mp_input)
 
+        lv_lbl = QLabel(t("lv_filter_label"))
+        filter_layout.addWidget(lv_lbl)
+
+        self._lv_input = QLineEdit()
+        self._lv_input.setPlaceholderText(t("lv_filter_placeholder"))
+        self._lv_input.setMaximumWidth(80)
+        self._lv_input.setValidator(QIntValidator(1, 2_147_483_647))
+        filter_layout.addWidget(self._lv_input)
+
         filter_layout.addStretch()
 
         self._filter_frame = filter_frame
@@ -308,21 +317,32 @@ class CharacterPanel(QWidget):
         self.snapshot_saved.emit()
 
     def _build_offset_filters(self):
-        """Read MP input and return resolved offset_filters dict, or None."""
+        """Read MP and Level inputs and return resolved offset_filters dict, or None."""
+        named_filters = {}
+
         mp_text = self._mp_input.text().strip()
-        if not mp_text:
+        if mp_text:
+            try:
+                named_filters["真氣"] = int(mp_text)
+            except ValueError:
+                self.status_message.emit(t("enter_valid_mp"), 3000)
+                return None
+
+        lv_text = self._lv_input.text().strip()
+        if lv_text:
+            try:
+                named_filters["等級"] = int(lv_text)
+            except ValueError:
+                self.status_message.emit(t("enter_valid_lv"), 3000)
+                return None
+
+        if not named_filters:
             return None
-        # QIntValidator only enforces on submit; text() may be intermediate (e.g. "-")
-        try:
-            mp_val = int(mp_text)
-        except ValueError:
-            self.status_message.emit(t("enter_valid_mp"), 3000)
-            return None
+
         knowledge = self._worker._knowledge
         try:
-            return resolve_filters({"真氣": mp_val}, knowledge)
+            return resolve_filters(named_filters, knowledge)
         except SystemExit:
-            self.status_message.emit(t("enter_valid_mp"), 3000)
             return None
 
     def _flash_hp_input(self):

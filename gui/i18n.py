@@ -31,6 +31,9 @@ _STRINGS: dict[str, str] = {
     "mp_filter_label": "真氣",
     "mp_filter_placeholder": "選填",
     "enter_valid_mp": "真氣篩選值必須為正整數",
+    "lv_filter_label": "等級",
+    "lv_filter_placeholder": "選填",
+    "enter_valid_lv": "等級篩選值必須為正整數",
     # ── Character panel — state badge ────────────────────────────────────
     "state_DISCONNECTED": "● 未連線",
     "state_CONNECTING": "● 掃描中",
