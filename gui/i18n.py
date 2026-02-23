@@ -34,6 +34,8 @@ _STRINGS: dict[str, str] = {
     "lv_filter_label": "等級",
     "lv_filter_placeholder": "選填",
     "enter_valid_lv": "等級篩選值必須為正整數",
+    "compat_mode_label": "相容模式",
+    "compat_mode_tooltip": "勾選後，對血量 = 最大血量的角色放寬驗證條件。\n適用於完全滿血且可能觸發誤判過濾的角色。",
     # ── Character panel — state badge ────────────────────────────────────
     "state_DISCONNECTED": "● 未連線",
     "state_CONNECTING": "● 掃描中",

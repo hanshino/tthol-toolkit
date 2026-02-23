@@ -118,9 +118,15 @@ def resolve_filters(filters, knowledge):
 # ============================================================
 # 定位角色結構
 # ============================================================
-def locate_character(pm, hp_value, knowledge, offset_filters=None):
+def locate_character(pm, hp_value, knowledge, offset_filters=None, compat_mode=False):
     """Scan memory for HP value, return best candidate with highest score.
+
     offset_filters: dict of {offset: expected_int_value} — candidate rejected if any mismatch.
+    compat_mode: when True, also attempts a second scan with a 4-byte-shifted struct layout.
+                 Some characters (observed on unequipped chars) have their struct stored with
+                 max_HP at offset 0 and current_HP at offset +4 instead of the normal order.
+                 In that case locate_character returns struct_base (= found_addr - 4) so that
+                 all knowledge.json offsets are applied correctly from struct_base.
     """
     if offset_filters is None:
         offset_filters = {}
@@ -155,6 +161,35 @@ def locate_character(pm, hp_value, knowledge, offset_filters=None):
         except Exception:
             pass
 
+    # Compat fallback: scan for hp_value at offset +4 from struct_base (shifted layout).
+    # Only attempted when compat_mode is True and normal scan found no valid candidates.
+    if compat_mode and not candidates:
+        for base, size in regions:
+            try:
+                buffer = pm.read_bytes(base, size)
+                offset = 0
+                while True:
+                    pos = buffer.find(target_bytes, offset)
+                    if pos == -1:
+                        break
+                    # hp_value is at addr = struct_base + 4 (shifted by 4 bytes)
+                    if pos % 4 == 0 and pos >= 4:
+                        struct_base = base + pos - 4
+                        score = verify_structure_shifted(pm, struct_base, fields)
+                        if score >= 0.8:
+                            try:
+                                passes = all(
+                                    pm.read_int(struct_base + off) == val
+                                    for off, val in offset_filters.items()
+                                )
+                            except Exception:
+                                passes = False
+                            if passes:
+                                candidates.append((struct_base, score))
+                    offset = pos + 1
+            except Exception:
+                pass
+
     if not candidates:
         return None
 
@@ -162,8 +197,11 @@ def locate_character(pm, hp_value, knowledge, offset_filters=None):
     return candidates[0][0]
 
 
-def verify_structure(pm, hp_addr, fields):
-    """Validate if address matches character struct with strict checks."""
+def verify_structure(pm, hp_addr, fields, skip_seq_check=False):
+    """Validate if address matches character struct with strict checks.
+
+    skip_seq_check: unused, kept for API compatibility.
+    """
     try:
         # Read key fields
         hp = pm.read_int(hp_addr + 0)
@@ -211,17 +249,77 @@ def verify_structure(pm, hp_addr, fields):
                 penalties += 1
 
         # Detect sequential number pattern (false positive indicator)
-        # Check if values are suspiciously sequential
         try:
             vals = [pm.read_int(hp_addr + off) for off in [0, 4, 8, 12, 24, 28]]
             diffs = [abs(vals[i + 1] - vals[i]) for i in range(len(vals) - 1)]
-            # If most differences are small (< 10), likely a sequential pattern
             if sum(1 for d in diffs if d < 10) >= 4:
                 penalties += 3
         except:
             pass
 
         # Apply penalties
+        score -= penalties * 0.1
+        return max(0.0, score)
+
+    except Exception:
+        return 0.0
+
+
+def verify_structure_shifted(pm, struct_base, fields):
+    """Validate a 4-byte-shifted character struct layout.
+
+    In this rare layout (observed on unequipped characters), the struct stores
+    max values before current values for HP and MP:
+      struct_base + 0  = max_HP   (normally current_HP)
+      struct_base + 4  = current_HP (normally max_HP)
+      struct_base + 8  = max_MP
+      struct_base + 12 = current_MP
+    All other field offsets (level, attributes, weight, coords) are unchanged.
+    """
+    try:
+        hp_max = pm.read_int(struct_base + 0)  # swapped: max before current
+        hp = pm.read_int(struct_base + 4)  # swapped: current at +4
+        mp_max = pm.read_int(struct_base + 8)  # swapped
+        mp = pm.read_int(struct_base + 12)  # swapped
+        weight = pm.read_int(struct_base + 24)
+        weight_max = pm.read_int(struct_base + 28)
+        level = pm.read_int(struct_base - 36)
+
+        # Hard constraints
+        if not (1 <= hp <= hp_max <= 999999):
+            return 0.0
+        if not (0 <= mp <= mp_max <= 999999):
+            return 0.0
+        if not (0 <= weight <= weight_max <= 999999):
+            return 0.0
+        if not (1 <= level <= 200):
+            return 0.0
+
+        score = 1.0
+        penalties = 0
+
+        # Soft checks — same offsets from struct_base as normal layout
+        for offset, _, min_val, max_val in [
+            (-96, "外功", 0, 500),
+            (-88, "根骨", 0, 500),
+            (-80, "技巧", 0, 500),
+            (44, "魅力值", 0, 500),
+        ]:
+            try:
+                val = pm.read_int(struct_base + offset)
+                if not (min_val <= val <= max_val):
+                    penalties += 1
+            except:
+                penalties += 1
+
+        for offset in [416, 420]:
+            try:
+                coord = pm.read_int(struct_base + offset)
+                if not (-1 <= coord <= 10000):
+                    penalties += 1
+            except:
+                penalties += 1
+
         score -= penalties * 0.1
         return max(0.0, score)
 

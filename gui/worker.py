@@ -25,6 +25,7 @@ from reader import (
     get_display_fields,
     load_knowledge,
     verify_structure,
+    verify_structure_shifted,
     locate_inventory,
     find_inventory_start,
     read_inventory,
@@ -53,6 +54,7 @@ class ReaderWorker(QThread):
         self._pid = pid
         self._hp_value = None
         self._offset_filters = None
+        self._compat_mode = False
         self._stop_event = threading.Event()
         self._scan_inventory = False
         self._scan_warehouse = False
@@ -63,10 +65,11 @@ class ReaderWorker(QThread):
     # ------------------------------------------------------------------
     # Public API (called from main thread)
     # ------------------------------------------------------------------
-    def connect(self, hp_value: int, offset_filters=None):
+    def connect(self, hp_value: int, offset_filters=None, compat_mode: bool = False):
         """Start the worker with a known HP value and optional offset filters."""
         self._hp_value = hp_value
         self._offset_filters = offset_filters
+        self._compat_mode = compat_mode
         self._stop_event.clear()
         if not self.isRunning():
             self.start()
@@ -118,9 +121,11 @@ class ReaderWorker(QThread):
             # --- Poll character stats ---
             try:
                 fields = read_all_fields(pm, hp_addr, self._display_fields)
-                score = verify_structure(
-                    pm, hp_addr, self._knowledge["character_structure"]["fields"]
-                )
+                struct_fields = self._knowledge["character_structure"]["fields"]
+                if self._compat_mode:
+                    score = verify_structure_shifted(pm, hp_addr, struct_fields)
+                else:
+                    score = verify_structure(pm, hp_addr, struct_fields)
 
                 if score < 0.8:
                     failure_count += 1
@@ -179,7 +184,13 @@ class ReaderWorker(QThread):
 
     def _locate(self, pm):
         try:
-            return locate_character(pm, self._hp_value, self._knowledge, self._offset_filters)
+            return locate_character(
+                pm,
+                self._hp_value,
+                self._knowledge,
+                self._offset_filters,
+                compat_mode=self._compat_mode,
+            )
         except Exception as e:
             self.scan_error.emit(f"Scan failed: {e}")
             return None

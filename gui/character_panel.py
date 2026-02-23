@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QCheckBox,
     QTabWidget,
     QFrame,
 )
@@ -49,7 +50,7 @@ class CharacterPanel(QWidget):
         self._pid = pid
         self._hwnd = hwnd  # reserved for Phase 2 OCR
         self._snapshot_db = snapshot_db
-        self._pending_hp: tuple[int, dict | None] | None = None
+        self._pending_hp: tuple[int, dict | None, bool] | None = None
         self._current_character: str = ""
         self._last_inventory: list[dict] = []
         self._last_warehouse: list[dict] = []
@@ -140,6 +141,10 @@ class CharacterPanel(QWidget):
 
         filter_layout.addStretch()
 
+        self._compat_checkbox = QCheckBox(t("compat_mode_label"))
+        self._compat_checkbox.setToolTip(t("compat_mode_tooltip"))
+        filter_layout.addWidget(self._compat_checkbox)
+
         self._filter_frame = filter_frame
         self._filter_frame.setVisible(False)
         root.addWidget(self._filter_frame)
@@ -197,7 +202,11 @@ class CharacterPanel(QWidget):
             self.status_message.emit(t("enter_valid_hp"), 3000)
             return
         self._connect_btn.setEnabled(False)
-        self._worker.connect(int(hp_text), offset_filters=self._build_offset_filters())
+        self._worker.connect(
+            int(hp_text),
+            offset_filters=self._build_offset_filters(),
+            compat_mode=self._compat_checkbox.isChecked(),
+        )
 
     @Slot()
     def _on_toggle_filter(self):
@@ -215,7 +224,11 @@ class CharacterPanel(QWidget):
         if not hp_text.isdigit():
             self.status_message.emit(t("enter_valid_hp"), 3000)
             return
-        self._pending_hp = (int(hp_text), self._build_offset_filters())
+        self._pending_hp = (
+            int(hp_text),
+            self._build_offset_filters(),
+            self._compat_checkbox.isChecked(),
+        )
         self._relocate_btn.setEnabled(False)
         self._worker.stop()
 
@@ -226,9 +239,9 @@ class CharacterPanel(QWidget):
         self._relocate_btn.setEnabled(state == "LOCATED")
         if state == "DISCONNECTED":
             if self._pending_hp is not None:
-                hp, offset_filters = self._pending_hp
+                hp, offset_filters, compat = self._pending_hp
                 self._pending_hp = None
-                self._worker.connect(hp, offset_filters=offset_filters)
+                self._worker.connect(hp, offset_filters=offset_filters, compat_mode=compat)
             else:
                 self._connect_btn.setEnabled(True)
                 # If we were previously located (had a character), the disconnect
