@@ -102,13 +102,17 @@ class SnapshotDB:
             ")"
         ).fetchall()
 
-        # Build item_id -> name map from tthol.sqlite
+        # Build item_id -> (name, type) maps from tthol.sqlite
         name_map: dict[int, str] = {}
+        type_map: dict[int, str] = {}
         if ITEM_NAME_DB.exists():
             try:
                 with sqlite3.connect(str(ITEM_NAME_DB)) as name_con:
-                    for r in name_con.execute("SELECT id, name FROM items"):
+                    name_con.text_factory = lambda b: b.decode("utf-8", errors="replace")
+                    for r in name_con.execute("SELECT id, name, type FROM items"):
                         name_map[r[0]] = r[1]
+                        if r[2]:
+                            type_map[r[0]] = r[2]
             except sqlite3.OperationalError:
                 pass
 
@@ -132,6 +136,7 @@ class SnapshotDB:
                         "item_id": item["item_id"],
                         "qty": item["qty"],
                         "name": name_map.get(item["item_id"], "???"),
+                        "item_type": type_map.get(item["item_id"], ""),
                         "account": acct,
                     }
                 )
@@ -140,9 +145,7 @@ class SnapshotDB:
         # snapshot_rows is already MAX(id) per (character, source), so the
         # "newest" character within an account is the one with the largest scanned_at
         # Build: account -> character with the latest warehouse snapshot
-        acct_warehouse_latest: dict[
-            str, tuple[str, str]
-        ] = {}  # account -> (character, scanned_at)
+        acct_warehouse_latest: dict[str, tuple[str, str]] = {}  # account -> (character, scanned_at)
         for snap in snapshot_rows:
             if snap["source"] != "warehouse":
                 continue
@@ -153,9 +156,7 @@ class SnapshotDB:
             if cur is None or snap["scanned_at"] > cur[1]:
                 acct_warehouse_latest[acct] = (snap["character"], snap["scanned_at"])
 
-        warehouse_winners: set[str] = {
-            char for char, _ in acct_warehouse_latest.values()
-        }
+        warehouse_winners: set[str] = {char for char, _ in acct_warehouse_latest.values()}
 
         filtered = []
         for r in result:
@@ -174,9 +175,7 @@ class SnapshotDB:
     def delete_character(self, character: str) -> None:
         """Delete all snapshots and account assignment for a character."""
         self._con.execute("DELETE FROM snapshots WHERE character=?", (character,))
-        self._con.execute(
-            "DELETE FROM character_accounts WHERE character=?", (character,)
-        )
+        self._con.execute("DELETE FROM character_accounts WHERE character=?", (character,))
         self._con.commit()
 
     def list_all_snapshots(self, character: str) -> list[dict]:
@@ -204,9 +203,7 @@ class SnapshotDB:
 
     def list_accounts(self) -> list[dict]:
         """Return all accounts as list of {id, name}."""
-        rows = self._con.execute(
-            "SELECT id, name FROM accounts ORDER BY name"
-        ).fetchall()
+        rows = self._con.execute("SELECT id, name FROM accounts ORDER BY name").fetchall()
         return [{"id": r["id"], "name": r["name"]} for r in rows]
 
     def create_account(self, name: str) -> int:
@@ -216,9 +213,7 @@ class SnapshotDB:
             self._con.commit()
             return cur.lastrowid
         except sqlite3.IntegrityError:
-            row = self._con.execute(
-                "SELECT id FROM accounts WHERE name=?", (name,)
-            ).fetchone()
+            row = self._con.execute("SELECT id FROM accounts WHERE name=?", (name,)).fetchone()
             return row["id"]
 
     def set_character_account(self, character: str, account_id: int) -> None:
@@ -242,9 +237,7 @@ class SnapshotDB:
 
     def remove_character_account(self, character: str) -> None:
         """Remove a character's account assignment."""
-        self._con.execute(
-            "DELETE FROM character_accounts WHERE character=?", (character,)
-        )
+        self._con.execute("DELETE FROM character_accounts WHERE character=?", (character,))
         self._con.commit()
 
     def list_characters(self) -> list[dict]:

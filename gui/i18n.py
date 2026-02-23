@@ -91,6 +91,7 @@ _STRINGS: dict[str, str] = {
     "mgr_col_qty": "數量",
     "mgr_col_source": "來源",
     "mgr_col_snapshot_time": "記錄時間",
+    "mgr_col_type": "類型",
     "mgr_col_total_qty": "總數量",
     "mgr_col_details": "明細",
     "char_count": "{n} 個角色",

@@ -41,6 +41,7 @@ def _src_label(source: str) -> str:
 class InventoryManagerTab(QWidget):
     ITEM_COLUMNS = [
         t("mgr_col_name"),
+        t("mgr_col_type"),
         t("mgr_col_item_id"),
         t("mgr_col_total_qty"),
         t("mgr_col_details"),
@@ -244,13 +245,14 @@ class InventoryManagerTab(QWidget):
                 aggregated[iid] = {
                     "item_id": iid,
                     "name": r["name"],
+                    "item_type": r.get("item_type", ""),
                     "total_qty": 0,
                     "rows": [],
                 }
             aggregated[iid]["total_qty"] += r["qty"]
             aggregated[iid]["rows"].append(r)
 
-        items_sorted = sorted(aggregated.values(), key=lambda x: x["name"])
+        items_sorted = sorted(aggregated.values(), key=lambda x: (x["item_type"], x["name"]))
 
         self._tree.clear()
         total_qty = 0
@@ -260,26 +262,22 @@ class InventoryManagerTab(QWidget):
 
             parent = QTreeWidgetItem(self._tree)
             parent.setText(0, item["name"])
-            parent.setText(1, str(item["item_id"]))
-            parent.setText(2, str(item["total_qty"]))
-            parent.setText(3, t("char_count", n=char_count))
-            parent.setTextAlignment(
-                1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            )
-            parent.setTextAlignment(
-                2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            )
+            parent.setText(1, item["item_type"])
+            parent.setText(2, str(item["item_id"]))
+            parent.setText(3, str(item["total_qty"]))
+            parent.setText(4, t("char_count", n=char_count))
+            parent.setTextAlignment(2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            parent.setTextAlignment(3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
             for r in sorted(item["rows"], key=lambda x: x["character"]):
                 child = QTreeWidgetItem(parent)
                 child.setText(0, r["character"])
                 child.setText(1, "")
-                child.setText(2, str(r["qty"]))
-                child.setText(3, f"{_src_label(r['source'])} · {r['scanned_at']}")
+                child.setText(2, "")
+                child.setText(3, str(r["qty"]))
+                child.setText(4, f"{_src_label(r['source'])} · {r['scanned_at']}")
                 child.setTextAlignment(
-                    2, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                 )
 
-        self._footer.setText(
-            t("summary_kinds_total", kinds=len(items_sorted), total=total_qty)
-        )
+        self._footer.setText(t("summary_kinds_total", kinds=len(items_sorted), total=total_qty))
