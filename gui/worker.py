@@ -30,6 +30,7 @@ from reader import (
     find_inventory_start,
     read_inventory,
     load_item_db,
+    locate_map_name,
 )
 from warehouse_scan import (
     locate_all_slot_arrays,
@@ -144,7 +145,10 @@ class ReaderWorker(QThread):
                         failure_count = 0
                 else:
                     failure_count = 0
-                    self.stats_updated.emit([("角色名稱", char_name)] + fields)
+                    map_name = locate_map_name(pm)
+                    self.stats_updated.emit(
+                        [("角色名稱", char_name), ("地圖名稱", map_name)] + fields
+                    )
 
             except Exception:
                 failure_count += 1

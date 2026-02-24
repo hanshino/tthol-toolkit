@@ -334,6 +334,82 @@ NAME_OFFSET = -228
 NAME_MAX_BYTES = 32
 
 
+def locate_map_name(pm):
+    """Scan heap for the current map name string.
+
+    Map struct pattern (offsets from string start):
+      [-4]  = 40 (0x28) — consistent across maps
+      [0]   = Big5 encoded map name (2-8 Chinese characters)
+      [+N]  = 0x00 terminator
+      [+N+1..+N+4] = 0xCDCDCDCD (uninitialized heap padding)
+
+    Returns the decoded map name string, or empty string if not found.
+    """
+    regions = get_memory_regions(pm.process_handle)
+    marker_before = b"\x28\x00\x00\x00"  # 40 as little-endian int32
+
+    for base, size in regions:
+        if base < 0x10000000 or base > 0x40000000:
+            continue
+        try:
+            data = pm.read_bytes(base, size)
+        except Exception:
+            continue
+
+        i = 0
+        while i < len(data) - 24:
+            # Look for the [-4]=40 marker
+            idx = data.find(marker_before, i)
+            if idx == -1:
+                break
+            i = idx + 1
+
+            str_start = idx + 4
+            if str_start + 4 >= len(data):
+                continue
+
+            # First two bytes must be a valid Big5 lead/trail pair
+            h = data[str_start]
+            l = data[str_start + 1]
+            if not (0xA1 <= h <= 0xF9 and 0x40 <= l <= 0xFE):
+                continue
+
+            # Read the full Big5 string (up to 16 bytes = 8 chars)
+            null_pos = data.find(b"\x00", str_start, str_start + 17)
+            if null_pos < str_start + 2:
+                continue
+            name_bytes = data[str_start:null_pos]
+            if len(name_bytes) % 2 != 0:
+                continue
+
+            # All bytes must be valid Big5 pairs
+            if not all(
+                0xA1 <= name_bytes[j] <= 0xF9 and 0x40 <= name_bytes[j + 1] <= 0xFE
+                for j in range(0, len(name_bytes), 2)
+            ):
+                continue
+
+            # Must be followed by 0xCDCDCDCD (uninitialized heap)
+            after = null_pos + 1
+            if after + 4 > len(data):
+                continue
+            if data[after : after + 4] != b"\xcd\xcd\xcd\xcd":
+                continue
+
+            # Preceding 8 bytes must not be cdcd/fdfd (not freed/uninitialized)
+            if idx >= 8:
+                pre = data[idx - 8 : idx]
+                if b"\xcd\xcd" in pre or b"\xfd\xfd" in pre:
+                    continue
+
+            try:
+                return name_bytes.decode("big5")
+            except Exception:
+                continue
+
+    return ""
+
+
 def read_character_name(pm, hp_addr):
     """Read null-terminated Big5 character name at HP_ADDR + NAME_OFFSET."""
     try:
@@ -360,7 +436,7 @@ def read_all_fields(pm, hp_addr, display_fields):
     return result
 
 
-def format_status(fields_data, char_name=""):
+def format_status(fields_data, char_name="", map_name=""):
     """Format character status as string."""
     lines = []
     if char_name:
@@ -404,8 +480,11 @@ def format_status(fields_data, char_name=""):
     lines.append(
         f"  Lv.{level}  HP: {hp}/{hp_max}  MP: {mp}/{mp_max}  Weight: {weight}/{weight_max}"
     )
+    map_str = map_name if map_name else "?"
     if coord_x is not None and coord_y is not None:
-        lines.append(f"  Pos: ({coord_x}, {coord_y})")
+        lines.append(f"  Map: {map_str}  Pos: ({coord_x}, {coord_y})")
+    else:
+        lines.append(f"  Map: {map_str}")
     lines.append("  Stats: " + "  ".join(f"{n}:{v}" for n, v in stats))
     lines.append("  Combat: " + "  ".join(f"{n}:{v}" for n, v in combat))
     return "\n".join(lines)
@@ -612,8 +691,9 @@ def main():
 
     # Read character status
     char_name = read_character_name(pm, hp_addr)
+    map_name = locate_map_name(pm)
     fields_data = read_all_fields(pm, hp_addr, display_fields)
-    print(format_status(fields_data, char_name))
+    print(format_status(fields_data, char_name, map_name))
 
     # Inventory
     if show_inventory:
@@ -645,7 +725,8 @@ def main():
         try:
             while True:
                 fields_data = read_all_fields(pm, hp_addr, display_fields)
-                status = format_status(fields_data, char_name)
+                map_name = locate_map_name(pm)
+                status = format_status(fields_data, char_name, map_name)
                 line_count = status.count("\n") + 1
                 sys.stdout.write(f"\r\033[{line_count}A{status}\n")
                 sys.stdout.flush()

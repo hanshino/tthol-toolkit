@@ -270,12 +270,14 @@ class CharacterPanel(QWidget):
         lv = data.get("等級", "---")
         x = data.get("X座標", "---")
         y = data.get("Y座標", "---")
+        map_name = data.get("地圖名稱", "")
 
         self._vitals_labels["Lv"].setText(vital_html(t("vital_lv"), lv))
         self._vitals_labels["HP"].setText(fraction_html(t("vital_hp"), hp, hp_max, GREEN))
         self._vitals_labels["MP"].setText(fraction_html(t("vital_mp"), mp, mp_max, BLUE))
         self._vitals_labels["Weight"].setText(fraction_html(t("vital_wt"), wt, wt_max, AMBER))
-        self._vitals_labels["Pos"].setText(vital_html(t("vital_pos"), f"({x}, {y})"))
+        pos_str = f"{map_name} ({x}, {y})" if map_name else f"({x}, {y})"
+        self._vitals_labels["Pos"].setText(vital_html(t("vital_pos"), pos_str))
 
         self._status_tab.update_stats(fields)
 
