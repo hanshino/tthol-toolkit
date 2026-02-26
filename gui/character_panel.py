@@ -192,21 +192,35 @@ class CharacterPanel(QWidget):
         self._inventory_tab.save_requested.connect(self._on_inventory_save)
         self._warehouse_tab.save_requested.connect(self._on_warehouse_save)
 
+        # Auto-connect using stable pointer chain (no HP input needed)
+        QTimer.singleShot(100, self._auto_connect)
+
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
     @Slot()
-    def _on_connect(self):
-        hp_text = self._hp_input.text().strip()
-        if not hp_text.isdigit():
-            self.status_message.emit(t("enter_valid_hp"), 3000)
-            return
+    def _auto_connect(self):
+        """Auto-connect using stable pointer chain — no HP input needed."""
         self._connect_btn.setEnabled(False)
         self._worker.connect(
-            int(hp_text),
             offset_filters=self._build_offset_filters(),
             compat_mode=self._compat_checkbox.isChecked(),
         )
+
+    @Slot()
+    def _on_connect(self):
+        hp_text = self._hp_input.text().strip()
+        if hp_text and hp_text.isdigit():
+            # Manual HP provided — use it
+            self._connect_btn.setEnabled(False)
+            self._worker.connect(
+                int(hp_text),
+                offset_filters=self._build_offset_filters(),
+                compat_mode=self._compat_checkbox.isChecked(),
+            )
+        else:
+            # No HP — retry auto-connect via pointer chain
+            self._auto_connect()
 
     @Slot()
     def _on_toggle_filter(self):
@@ -244,12 +258,10 @@ class CharacterPanel(QWidget):
                 self._worker.connect(hp, offset_filters=offset_filters, compat_mode=compat)
             else:
                 self._connect_btn.setEnabled(True)
-                # If we were previously located (had a character), the disconnect
-                # likely means an account switch — clear HP input and highlight it
-                # so the user knows to enter the new character's HP value.
-                if self._current_character:
-                    self._hp_input.clear()
-                    self._flash_hp_input()
+                self._connect_btn.setText(t("retry_scan"))
+        elif state == "LOCATED":
+            self._connect_btn.setText(t("connect"))
+            self._connect_btn.setEnabled(False)
 
     @Slot(list)
     def _on_stats_updated(self, fields: list):

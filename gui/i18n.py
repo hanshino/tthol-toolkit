@@ -21,6 +21,7 @@ _STRINGS: dict[str, str] = {
     "hp_input_placeholder": "此視窗角色的當前血量",
     "hp_input_tooltip": "請輸入此分頁對應遊戲視窗中角色的當前血量。\n若填入其他視窗或其他角色的血量，將無法定位。",
     "connect": "開始讀取",
+    "retry_scan": "重新掃描",
     "relocate": "重新定位",
     "relocate_tooltip": "角色重新上線或切換帳號後，重新掃描記憶體定位",
     "enter_valid_hp": "請輸入有效的血量值",
@@ -39,6 +40,7 @@ _STRINGS: dict[str, str] = {
     # ── Character panel — state badge ────────────────────────────────────
     "state_DISCONNECTED": "● 未連線",
     "state_CONNECTING": "● 掃描中",
+    "state_WAITING": "● 等待登入",
     "state_LOCATED": "● 已定位",
     "state_READ_ERROR": "● 讀取錯誤",
     "state_RESCANNING": "● 重新掃描",

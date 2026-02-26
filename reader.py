@@ -15,6 +15,34 @@ import time
 
 
 # ============================================================
+# Stable pointer chain (updated after game patches via find_stable_chain.py)
+# CE notation: [[[[0x007F6810]+0x128]+0x68]+0x140]
+# ============================================================
+PLAYER_HP_CHAIN_BASE = 0x007F6810
+PLAYER_HP_CHAIN_OFFSETS = [0x128, 0x68, 0x140]
+
+
+def read_hp_from_player_chain(pm):
+    """Read current HP value via the stable cross-restart pointer chain.
+
+    Returns HP as int, or None if the chain is broken.
+    """
+    try:
+        addr = PLAYER_HP_CHAIN_BASE
+        for off in PLAYER_HP_CHAIN_OFFSETS:
+            ptr = struct.unpack("<I", pm.read_bytes(addr, 4))[0]
+            if ptr == 0 or ptr > 0x7FFFFFFF:
+                return None
+            addr = ptr + off
+        hp = pm.read_int(addr)
+        if hp <= 0 or hp > 500000:
+            return None
+        return hp
+    except Exception:
+        return None
+
+
+# ============================================================
 # 記憶體掃描基礎設施
 # ============================================================
 class MEMORY_BASIC_INFORMATION(ctypes.Structure):

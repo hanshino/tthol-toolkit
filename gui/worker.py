@@ -31,6 +31,7 @@ from reader import (
     read_inventory,
     load_item_db,
     locate_map_name,
+    read_hp_from_player_chain,
 )
 from warehouse_scan import (
     locate_all_slot_arrays,
@@ -41,6 +42,8 @@ from warehouse_scan import (
 
 POLL_INTERVAL = 1.0  # seconds between stat reads
 FAILURE_THRESHOLD = 3  # consecutive failures before rescan
+LOCATE_RETRY_INTERVAL = 3.0  # seconds between locate retries
+LOCATE_MAX_RETRIES = 10  # give up after this many retries (~30s)
 
 
 class ReaderWorker(QThread):
@@ -66,8 +69,8 @@ class ReaderWorker(QThread):
     # ------------------------------------------------------------------
     # Public API (called from main thread)
     # ------------------------------------------------------------------
-    def connect(self, hp_value: int, offset_filters=None, compat_mode: bool = False):
-        """Start the worker with a known HP value and optional offset filters."""
+    def connect(self, hp_value: int = None, offset_filters=None, compat_mode: bool = False):
+        """Start the worker. hp_value is optional — the stable pointer chain is tried first."""
         self._hp_value = hp_value
         self._offset_filters = offset_filters
         self._compat_mode = compat_mode
@@ -88,10 +91,6 @@ class ReaderWorker(QThread):
     # Thread entry point
     # ------------------------------------------------------------------
     def run(self):
-        if self._hp_value is None:
-            self.scan_error.emit("HP value not set, call connect(hp_value) first")
-            self.state_changed.emit("DISCONNECTED")
-            return
         self.state_changed.emit("CONNECTING")
 
         pm = self._connect_process()
@@ -99,7 +98,19 @@ class ReaderWorker(QThread):
             self.state_changed.emit("DISCONNECTED")
             return
 
-        hp_addr = self._locate(pm)
+        # Retry loop: player may not have logged in yet
+        hp_addr = None
+        for attempt in range(LOCATE_MAX_RETRIES + 1):
+            hp_addr = self._locate(pm, silent=True)
+            if hp_addr is not None:
+                break
+            if self._stop_event.is_set():
+                self.state_changed.emit("DISCONNECTED")
+                return
+            if attempt == 0:
+                self.state_changed.emit("WAITING")
+            self._stop_event.wait(LOCATE_RETRY_INTERVAL)
+
         if hp_addr is None:
             self.state_changed.emit("DISCONNECTED")
             return
@@ -186,7 +197,30 @@ class ReaderWorker(QThread):
             self.scan_error.emit(f"Cannot connect to PID {self._pid}: {e}")
             return None
 
-    def _locate(self, pm):
+    def _locate(self, pm, silent=False):
+        # Primary: read HP from stable pointer chain, then scan for flat struct
+        try:
+            hp_from_chain = read_hp_from_player_chain(pm)
+            if hp_from_chain is not None:
+                addr = locate_character(
+                    pm,
+                    hp_from_chain,
+                    self._knowledge,
+                    self._offset_filters,
+                    compat_mode=self._compat_mode,
+                )
+                if addr is not None:
+                    return addr
+        except Exception:
+            pass
+
+        # Fallback: manual HP value provided by user
+        if self._hp_value is None:
+            if not silent:
+                self.scan_error.emit(
+                    "Cannot locate character — try entering your current HP value manually"
+                )
+            return None
         try:
             return locate_character(
                 pm,
@@ -196,7 +230,8 @@ class ReaderWorker(QThread):
                 compat_mode=self._compat_mode,
             )
         except Exception as e:
-            self.scan_error.emit(f"Scan failed: {e}")
+            if not silent:
+                self.scan_error.emit(f"Scan failed: {e}")
             return None
 
     def _do_inventory_scan(self, pm):
