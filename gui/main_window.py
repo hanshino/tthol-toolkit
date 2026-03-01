@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QFrame,
     QButtonGroup,
+    QDialog,
 )
 import subprocess
 
@@ -114,6 +115,11 @@ class MainWindow(QMainWindow):
         nav_layout.addWidget(self._btn_data_mgmt)
 
         nav_layout.addStretch()
+
+        self._btn_about = QPushButton(t("nav_about"))
+        self._btn_about.setObjectName("nav_btn")
+        self._btn_about.clicked.connect(self._on_about)
+        nav_layout.addWidget(self._btn_about)
 
         self._btn_theme = QPushButton()
         self._btn_theme.setObjectName("theme_toggle_btn")
@@ -298,6 +304,34 @@ class MainWindow(QMainWindow):
             self._btn_theme.setText("◑ 亮色")
         else:
             self._btn_theme.setText("◑ 暗色")
+
+    @Slot()
+    def _on_about(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle(t("nav_about"))
+        dlg.setFixedWidth(360)
+        layout = QVBoxLayout(dlg)
+
+        version = _get_version()
+        info_html = (
+            f"<h3>{t('window_title')}</h3>"
+            f"<p>Version: {version}</p>"
+            "<hr>"
+            '<p><b>GitHub:</b> <a href="https://github.com/hanshino">hanshino</a></p>'
+            "<p><b>Discord:</b> hanshino17</p>"
+            '<p><b>Email:</b> <a href="mailto:c0952199517@gmail.com">c0952199517@gmail.com</a></p>'
+        )
+        label = QLabel(info_html)
+        label.setOpenExternalLinks(True)
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+
+        close_btn = QPushButton("OK")
+        close_btn.clicked.connect(dlg.accept)
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        dlg.exec()
 
     @Slot()
     def _on_toggle_theme(self):

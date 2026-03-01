@@ -120,6 +120,7 @@ _STRINGS: dict[str, str] = {
     "new_account_placeholder": "帳號名稱",
     # ── Data management tab ───────────────────────────────────────────────────────
     "nav_data_mgmt": "資料管理",
+    "nav_about": "關於",
     "mgmt_characters_header": "角色列表",
     "mgmt_accounts_header": "帳號列表",
     "mgmt_select_character": "請選擇一個角色",
