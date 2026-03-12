@@ -16,9 +16,9 @@ import time
 
 # ============================================================
 # Stable pointer chain (updated after game patches via find_stable_chain.py)
-# CE notation: [[[[0x007F6810]+0x128]+0x68]+0x140]
+# CE notation: [[[[0x007F7810]+0x128]+0x68]+0x140]
 # ============================================================
-PLAYER_HP_CHAIN_BASE = 0x007F6810
+PLAYER_HP_CHAIN_BASE = 0x007F7810
 PLAYER_HP_CHAIN_OFFSETS = [0x128, 0x68, 0x140]
 
 
