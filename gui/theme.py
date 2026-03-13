@@ -681,6 +681,132 @@ QFrame#char_card_header {{
     border-radius: 8px 8px 0 0;
     padding: 0 4px;
 }}
+
+/* ── Auto-click tab ─────────────────────────────────────────── */
+QPushButton#merchant_btn {{
+    min-width: 44px;
+    min-height: 32px;
+    font-weight: 600;
+    font-size: 11pt;
+}}
+QPushButton#merchant_btn:checked {{
+    background-color: {_GREEN};
+    color: {BG_BASE};
+    border-color: {_GREEN};
+    font-weight: 700;
+}}
+QPushButton#ac_start_btn {{
+    background-color: {_GREEN};
+    color: {BG_BASE};
+    font-weight: 700;
+    border: none;
+    padding: 6px 24px;
+}}
+QPushButton#ac_start_btn:hover {{
+    background-color: {_GREEN_HOVER};
+    color: {BG_BASE};
+}}
+QPushButton#ac_start_btn:disabled {{
+    background-color: {BG_CARD};
+    color: {MUTED};
+    border: 1px solid {BG_CARD};
+}}
+QPushButton#ac_stop_btn {{
+    background-color: {_RED};
+    color: {BG_BASE};
+    font-weight: 700;
+    border: none;
+    padding: 6px 24px;
+}}
+QPushButton#ac_stop_btn:hover {{
+    background-color: #DC2626;
+    color: {BG_BASE};
+}}
+QPushButton#ac_stop_btn:disabled {{
+    background-color: {BG_CARD};
+    color: {MUTED};
+    border: 1px solid {BG_CARD};
+}}
+QLabel#ac_status_key {{
+    color: {DIM};
+    font-size: 10px;
+    letter-spacing: 1px;
+    font-weight: 600;
+}}
+QLabel#ac_status_value {{
+    color: {TEXT};
+    font-weight: 700;
+}}
+
+/* ── Auto-click log ─────────────────────────────────────────── */
+QTextEdit#ac_log {{
+    background-color: {BG_SURFACE};
+    color: {DIM};
+    border: 1px solid {BG_CARD};
+    border-radius: 6px;
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 9pt;
+    padding: 4px;
+}}
+
+/* ── QRadioButton ───────────────────────────────────────────── */
+QRadioButton {{
+    color: {TEXT};
+    spacing: 6px;
+}}
+QRadioButton::indicator {{
+    width: 14px;
+    height: 14px;
+    border: 2px solid {BORDER};
+    border-radius: 8px;
+    background-color: {BG_SURFACE};
+}}
+QRadioButton::indicator:checked {{
+    border-color: {_GREEN};
+    background-color: {_GREEN};
+}}
+QRadioButton::indicator:hover {{
+    border-color: {_GREEN};
+}}
+
+/* ── QSpinBox ───────────────────────────────────────────────── */
+QSpinBox, QDoubleSpinBox {{
+    background-color: {BG_SURFACE};
+    color: {TEXT};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-height: 26px;
+}}
+QSpinBox:focus, QDoubleSpinBox:focus {{
+    border-color: {_GREEN};
+}}
+/* SpinBox: hide up/down buttons, input-only style */
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+    width: 0; height: 0; border: none;
+}}
+
+/* ── QSlider (horizontal) ───────────────────────────────────── */
+QSlider::groove:horizontal {{
+    background: {BG_CARD};
+    height: 6px;
+    border-radius: 3px;
+}}
+QSlider::handle:horizontal {{
+    background: {_GREEN};
+    width: 16px;
+    height: 16px;
+    margin: -5px 0;
+    border-radius: 8px;
+}}
+QSlider::handle:horizontal:hover {{
+    background: {_GREEN_HOVER};
+}}
+QSlider::sub-page:horizontal {{
+    background: {_GREEN};
+    border-radius: 3px;
+}}
 """
 
 

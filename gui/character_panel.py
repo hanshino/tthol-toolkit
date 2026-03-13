@@ -22,6 +22,8 @@ from gui.worker import ReaderWorker
 from gui.status_tab import StatusTab
 from gui.inventory_tab import InventoryTab
 from gui.warehouse_tab import WarehouseTab
+from gui.auto_click_tab import AutoClickTab
+from gui.fake_active import FakeActiveKeeper
 from gui.snapshot_db import SnapshotDB
 from gui.theme import badge_style, vital_html, fraction_html, GREEN, BLUE, AMBER
 from gui.i18n import t
@@ -54,6 +56,8 @@ class CharacterPanel(QWidget):
         self._current_character: str = ""
         self._last_inventory: list[dict] = []
         self._last_warehouse: list[dict] = []
+
+        self._fake_active = FakeActiveKeeper()
 
         self._worker = ReaderWorker(pid=pid, parent=self)
         self._worker.state_changed.connect(self._on_state_changed)
@@ -181,14 +185,17 @@ class CharacterPanel(QWidget):
         self._status_tab = StatusTab()
         self._inventory_tab = InventoryTab()
         self._warehouse_tab = WarehouseTab()
+        self._auto_click_tab = AutoClickTab(hwnd=hwnd)
 
         self._tabs.addTab(self._status_tab, t("tab_status"))
         self._tabs.addTab(self._inventory_tab, t("tab_inventory"))
         self._tabs.addTab(self._warehouse_tab, t("tab_warehouse"))
+        self._tabs.addTab(self._auto_click_tab, t("tab_auto_click"))
         root.addWidget(self._tabs)
 
         self._inventory_tab.scan_requested.connect(self._on_inventory_scan)
         self._warehouse_tab.scan_requested.connect(self._on_warehouse_scan)
+        self._auto_click_tab.status_message.connect(self.status_message)
         self._inventory_tab.save_requested.connect(self._on_inventory_save)
         self._warehouse_tab.save_requested.connect(self._on_warehouse_save)
 
@@ -262,6 +269,7 @@ class CharacterPanel(QWidget):
         elif state == "LOCATED":
             self._connect_btn.setText(t("connect"))
             self._connect_btn.setEnabled(False)
+            self._fake_active.start(self._hwnd)
 
     @Slot(list)
     def _on_stats_updated(self, fields: list):
@@ -378,7 +386,9 @@ class CharacterPanel(QWidget):
         QTimer.singleShot(1500, lambda: self._hp_input.setStyleSheet(""))
 
     def shutdown(self):
-        """Stop the worker thread. Call before removing this panel."""
+        """Stop the worker thread, auto-click timer, and fake active hook."""
+        self._fake_active.stop()
+        self._auto_click_tab.shutdown()
         self._worker.stop()
         if not self._worker.wait(5000):  # 5-second timeout
             self._worker.terminate()  # last resort if worker is stuck

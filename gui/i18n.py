@@ -124,6 +124,22 @@ _STRINGS: dict[str, str] = {
     "mgmt_characters_header": "角色列表",
     "mgmt_accounts_header": "帳號列表",
     "mgmt_select_character": "請選擇一個角色",
+    # ── Auto-click tab ──────────────────────────────────────────────────────────
+    "tab_auto_click": "自動培養",
+    "ac_target": "培養對象",
+    "ac_mode": "收取模式",
+    "ac_mode_collect_destroy": "全部收下 + 全部銷毀",
+    "ac_mode_destroy_only": "全部銷毀",
+    "ac_parameters": "參數設定",
+    "ac_click_duration": "點擊持續",
+    "ac_test_click": "測試點擊",
+    "ac_max_rounds": "最大輪數",
+    "ac_start": "開始",
+    "ac_stop": "停止",
+    "ac_status": "執行狀態",
+    "ac_round": "輪數",
+    "ac_clicks": "點擊",
+    "ac_total": "總計",
 }
 
 
