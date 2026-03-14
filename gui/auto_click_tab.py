@@ -1,6 +1,7 @@
 """Auto-click tab for automated hero summoning."""
 
 import ctypes
+import ctypes.wintypes
 import time
 from enum import Enum, auto
 
@@ -29,17 +30,21 @@ WM_LBUTTONDOWN = 0x0201
 WM_LBUTTONUP = 0x0202
 MK_LBUTTON = 0x0001
 
-# Game coordinates in 1200x900 DPI-scaled space (150% DPI)
-# PySide6 marks the process as DPI-aware, so PostMessage needs physical pixels.
+# Reference coordinate space: 800x600 (game's logical resolution).
+# At click time, coordinates are scaled to the actual client rect size
+# so clicks work at any DPI and any window size.
+REF_WIDTH = 800
+REF_HEIGHT = 600
+
 MERCHANT_COORDS = [
-    (250, 500),  # Merchant 1
-    (425, 500),  # Merchant 2
-    (600, 500),  # Merchant 3
-    (775, 500),  # Merchant 4
-    (950, 500),  # Merchant 5
+    (167, 333),  # Merchant 1
+    (283, 333),  # Merchant 2
+    (400, 333),  # Merchant 3
+    (517, 333),  # Merchant 4
+    (633, 333),  # Merchant 5
 ]
-COLLECT_ALL_COORD = (968, 265)
-DESTROY_ALL_COORD = (968, 314)
+COLLECT_ALL_COORD = (645, 177)
+DESTROY_ALL_COORD = (645, 209)
 
 # Click spam interval (ms) — how fast clicks are sent during merchant phase
 CLICK_SPAM_INTERVAL = 100
@@ -56,21 +61,38 @@ class State(Enum):
     CLICKING_BUTTONS = auto()
 
 
-def background_click(hwnd: int, x: int, y: int) -> None:
-    """Single background click with 50ms delay between down/up."""
+def _scale_coord(hwnd: int, ref_x: int, ref_y: int) -> tuple[int, int]:
+    """Scale reference 800x600 coordinates to the actual client rect size."""
+    rect = ctypes.wintypes.RECT()
+    user32.GetClientRect(hwnd, ctypes.byref(rect))
+    actual_w = rect.right - rect.left
+    actual_h = rect.bottom - rect.top
+    if actual_w <= 0 or actual_h <= 0:
+        return ref_x, ref_y
+    x = int(ref_x * actual_w / REF_WIDTH)
+    y = int(ref_y * actual_h / REF_HEIGHT)
+    return x, y
+
+
+def background_click(hwnd: int, ref_x: int, ref_y: int) -> None:
+    """Single background click with 50ms delay between down/up.
+
+    ref_x, ref_y are in 800x600 reference space; scaled to actual window size.
+    """
     if not hwnd:
         return
+    x, y = _scale_coord(hwnd, ref_x, ref_y)
     lparam = (y << 16) | (x & 0xFFFF)
     user32.PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lparam)
     time.sleep(0.05)
     user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam)
 
 
-def background_double_click(hwnd: int, x: int, y: int) -> None:
+def background_double_click(hwnd: int, ref_x: int, ref_y: int) -> None:
     """Double click for UI buttons that need two click pairs to trigger."""
-    background_click(hwnd, x, y)
+    background_click(hwnd, ref_x, ref_y)
     time.sleep(0.05)
-    background_click(hwnd, x, y)
+    background_click(hwnd, ref_x, ref_y)
 
 
 class AutoClickTab(QWidget):
