@@ -1,5 +1,8 @@
 """Item Overview tab: shows latest snapshots for all characters."""
 
+import csv
+from datetime import datetime
+
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -15,6 +18,8 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QScrollArea,
     QFrame,
+    QMenu,
+    QFileDialog,
 )
 from PySide6.QtCore import Qt
 
@@ -100,6 +105,13 @@ class InventoryManagerTab(QWidget):
         self._view_group.setExclusive(True)
         self._view_group.addButton(self._btn_by_char)
         self._view_group.addButton(self._btn_by_item)
+
+        self._btn_export = QPushButton(t("export_csv"))
+        export_menu = QMenu(self)
+        export_menu.addAction(t("export_detail"), self._export_detail_csv)
+        export_menu.addAction(t("export_summary"), self._export_summary_csv)
+        self._btn_export.setMenu(export_menu)
+        filter_bar.addWidget(self._btn_export)
 
         layout.addLayout(filter_bar)
 
@@ -281,3 +293,97 @@ class InventoryManagerTab(QWidget):
                 )
 
         self._footer.setText(t("summary_kinds_total", kinds=len(items_sorted), total=total_qty))
+
+    # ------------------------------------------------------------------
+    # CSV export
+    # ------------------------------------------------------------------
+
+    def _export_detail_csv(self):
+        """Export all item data as one row per character × item."""
+        date_str = datetime.now().strftime("%Y%m%d")
+        path, _ = QFileDialog.getSaveFileName(
+            self, t("export_detail"), f"tthol_detail_{date_str}.csv", "CSV (*.csv)"
+        )
+        if not path:
+            return
+
+        rows = sorted(self._all_rows, key=lambda r: (r["character"], r["source"], r["name"]))
+
+        with open(path, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                [
+                    t("mgr_col_character"),
+                    t("account_label"),
+                    t("mgr_col_source"),
+                    t("mgr_col_item_id"),
+                    t("mgr_col_name"),
+                    t("mgr_col_type"),
+                    t("mgr_col_qty"),
+                    t("mgr_col_snapshot_time"),
+                ]
+            )
+            for r in rows:
+                writer.writerow(
+                    [
+                        r["character"],
+                        r["account"] or "",
+                        _src_label(r["source"]),
+                        r["item_id"],
+                        r["name"],
+                        r.get("item_type", ""),
+                        r["qty"],
+                        r["scanned_at"],
+                    ]
+                )
+
+        self._footer.setText(t("export_done", path=path))
+
+    def _export_summary_csv(self):
+        """Export aggregated item totals, one row per item."""
+        date_str = datetime.now().strftime("%Y%m%d")
+        path, _ = QFileDialog.getSaveFileName(
+            self, t("export_summary"), f"tthol_summary_{date_str}.csv", "CSV (*.csv)"
+        )
+        if not path:
+            return
+
+        aggregated: dict[int, dict] = {}
+        for r in self._all_rows:
+            iid = r["item_id"]
+            if iid not in aggregated:
+                aggregated[iid] = {
+                    "item_id": iid,
+                    "name": r["name"],
+                    "item_type": r.get("item_type", ""),
+                    "total_qty": 0,
+                    "characters": set(),
+                }
+            aggregated[iid]["total_qty"] += r["qty"]
+            aggregated[iid]["characters"].add(r["character"])
+
+        items = sorted(aggregated.values(), key=lambda x: (x["item_type"], x["name"]))
+
+        with open(path, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                [
+                    t("mgr_col_item_id"),
+                    t("mgr_col_name"),
+                    t("mgr_col_type"),
+                    t("mgr_col_total_qty"),
+                    t("mgr_col_char_count"),
+                ]
+            )
+            for item in items:
+                writer.writerow(
+                    [
+                        item["item_id"],
+                        item["name"],
+                        item["item_type"],
+                        item["total_qty"],
+                        len(item["characters"]),
+                    ]
+                )
+
+        self._footer.setText(t("export_done", path=path))

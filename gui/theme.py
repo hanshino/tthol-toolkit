@@ -319,6 +319,22 @@ QPushButton#filter_toggle_btn:hover {{
     color: {_GREEN};
 }}
 
+/* ── Menus ──────────────────────────────────────────────────────── */
+QMenu {{
+    background-color: {BG_SURFACE};
+    color: {TEXT};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    padding: 4px 0;
+}}
+QMenu::item {{
+    padding: 6px 20px;
+}}
+QMenu::item:selected {{
+    background-color: {BG_CARD};
+    color: {_GREEN};
+}}
+
 /* ── Line Edit ───────────────────────────────────────────────────── */
 QLineEdit {{
     background-color: {BG_SURFACE};

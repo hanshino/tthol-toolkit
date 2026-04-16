@@ -104,6 +104,11 @@ _STRINGS: dict[str, str] = {
     "char_count": "{n} 個角色",
     "summary_kinds_total": "{kinds} 種 · 共 {total} 個",
     "footer_items": "共 {n} 筆",
+    "export_csv": "匯出 CSV",
+    "export_detail": "匯出明細",
+    "export_summary": "匯出彙總",
+    "export_done": "已匯出至 {path}",
+    "mgr_col_char_count": "持有角色數",
     # ── Snapshot management (shared by DataManagementTab and CharacterCard) ─────
     "account_label": "所屬帳號",
     "no_account": "未設定",
