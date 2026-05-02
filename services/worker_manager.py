@@ -12,11 +12,13 @@ from services.api_types import (
 )
 from services.char_session import CharSession
 from services.process_detector import find_tthol_processes
+from services.snapshot_db import SnapshotDB
 
 
 class WorkerManager:
-    def __init__(self) -> None:
+    def __init__(self, snapshot_db: SnapshotDB | None = None) -> None:
         self._sessions: dict[int, CharSession] = {}
+        self._db = snapshot_db
 
     def list_characters(self) -> list[Character]:
         procs = find_tthol_processes()
@@ -78,5 +80,12 @@ class WorkerManager:
         pass
 
     def save_snapshot(self, pid: int, source: str) -> SaveSnapshotResult:
-        # Wired in Task 21
-        return SaveSnapshotResult(saved=False)
+        if self._db is None:
+            return SaveSnapshotResult(saved=False)
+        sess = self._sessions.get(pid)
+        if sess is None or not sess.name:
+            return SaveSnapshotResult(saved=False)
+        items_payload = sess._latest_inv if source == "inventory" else sess._latest_wh
+        items = [{"item_id": i.item_id, "qty": i.quantity} for i in items_payload]
+        saved = self._db.save_snapshot(character=sess.name, source=source, items=items)
+        return SaveSnapshotResult(saved=saved)
