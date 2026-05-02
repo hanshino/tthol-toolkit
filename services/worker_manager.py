@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 
 from services.api_types import (
@@ -11,6 +12,7 @@ from services.api_types import (
     WorldSnapshot,
 )
 from services.char_session import CharSession
+from services.events import WorldStream
 from services.process_detector import find_tthol_processes
 from services.snapshot_db import SnapshotDB
 
@@ -89,3 +91,17 @@ class WorkerManager:
         items = [{"item_id": i.item_id, "qty": i.quantity} for i in items_payload]
         saved = self._db.save_snapshot(character=sess.name, source=source, items=items)
         return SaveSnapshotResult(saved=saved)
+
+    async def run_tick_loop(self, stream: WorldStream, interval: float = 1.5) -> None:
+        """Coroutine: every `interval` seconds, publish current WorldSnapshot.
+
+        Must run on the same event loop as the /ws/world handler — asyncio.Queue
+        and asyncio.Lock used inside WorldStream are loop-bound. app.py wires this
+        via loop.create_task on the uvicorn server loop.
+        """
+        while True:
+            try:
+                await stream.publish(self.world_snapshot())
+            except Exception as e:  # pragma: no cover
+                print(f"[tick_loop] publish error: {e}")
+            await asyncio.sleep(interval)
