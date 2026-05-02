@@ -33,3 +33,6 @@ toolkit/
 
 # User preferences (generated at runtime)
 config.json
+
+# Generated CSV exports (regenerated on demand)
+exports/tthol_*.csv
