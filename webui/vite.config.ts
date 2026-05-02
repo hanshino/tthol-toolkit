@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 
 let backendPort = '5173';
 try {
-  backendPort = readFileSync('../.omc/.dev-port', 'utf-8').trim();
+  const raw = readFileSync('../.omc/.dev-port', 'utf-8').trim();
+  if (/^\d+$/.test(raw)) backendPort = raw;
 } catch {}
 const backend = `http://127.0.0.1:${backendPort}`;
 
