@@ -53,6 +53,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.style.setProperty('--tt-warn', t.warn);
     root.style.setProperty('--tt-bad', t.bad);
     root.style.setProperty('--tt-seal', t.seal);
+    root.style.setProperty('--tt-grid', t.grid);
     root.style.setProperty('--tt-font', FONT_STACKS[font]);
     root.style.setProperty('--tt-font-serif', FONT_STACKS['中文襯線']);
     root.style.setProperty('--tt-font-mono',

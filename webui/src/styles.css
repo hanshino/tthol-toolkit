@@ -1,4 +1,25 @@
-html, body, #root { margin: 0; height: 100%; background: #0c0a08; color: #e8dcc8; }
+:root {
+  --tt-bg: #14100e;
+  --tt-panel: #1c1815;
+  --tt-raised: #241e1a;
+  --tt-line: #3a2f28;
+  --tt-line-soft: #2a221d;
+  --tt-text: #e8dcc8;
+  --tt-dim: #a89880;
+  --tt-mute: #6b5e4e;
+  --tt-accent: #c83838;
+  --tt-accent-dim: #8a2828;
+  --tt-gold: #c9a866;
+  --tt-ok: #7ca858;
+  --tt-warn: #d4a142;
+  --tt-bad: #c83838;
+  --tt-seal: #a02828;
+  --tt-grid: rgba(200, 56, 56, 0.05);
+  --tt-font: "Noto Sans TC", "Source Han Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --tt-font-serif: "Noto Serif TC", "Source Han Serif TC", "Songti TC", "PMingLiU", serif;
+  --tt-font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+}
+html, body, #root { margin: 0; height: 100%; background: var(--tt-bg); color: var(--tt-text); }
 * { box-sizing: border-box; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
