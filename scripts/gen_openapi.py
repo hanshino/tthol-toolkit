@@ -19,7 +19,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from services.api import build_app
+from services.api import build_app  # noqa: E402  (needs sys.path tweak above)
 
 
 def main() -> int:
