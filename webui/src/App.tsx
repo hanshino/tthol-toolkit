@@ -4,12 +4,13 @@ import { useLiveChars } from './hooks/useLiveChars';
 import { Dashboard } from './pages/Dashboard';
 import { Treasury } from './pages/Treasury';
 import { Snapshots } from './pages/Snapshots';
+import { CharDetail } from './pages/CharDetail';
 import { ThemeProvider } from './theme/ThemeProvider';
 import type { CharacterRow } from './api/types';
 
 export function App() {
   const [page, setPage] = useState<PageKey>('dashboard');
-  const [, setSelected] = useState<CharacterRow | null>(null);
+  const [selected, setSelected] = useState<CharacterRow | null>(null);
   const snap = useLiveChars();
   const linked = snap.chars.filter(c => c.link === 'ok').length;
 
@@ -23,7 +24,9 @@ export function App() {
           )}
           {page === 'treasury'  && <Treasury />}
           {page === 'snapshots' && <Snapshots />}
-          {page === 'detail'    && <div style={{ padding: 24 }}>CharDetail placeholder</div>}
+          {page === 'detail' && selected && (
+            <CharDetail char={selected} onBack={() => setPage('dashboard')} />
+          )}
         </main>
       </div>
     </ThemeProvider>
