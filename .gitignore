@@ -40,6 +40,7 @@ exports/tthol_*.csv
 # WebUI build artifacts
 webui/node_modules/
 webui/dist/
+webui/src/**/*.js
 
 # OMC dev server port file
 .omc/.dev-port
