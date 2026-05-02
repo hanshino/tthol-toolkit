@@ -3,10 +3,12 @@ Removed in Phase 5 once real worker manager is plumbed in.
 """
 
 from services.api_types import (
+    Account,
     AutoClickStatus,
     Character,
     CharacterRow,
     Position,
+    SnapshotRow,
     Vitals,
     WorldSnapshot,
 )
@@ -47,3 +49,31 @@ def mock_world() -> WorldSnapshot:
             ),
         ],
     )
+
+
+def mock_snapshots() -> list[SnapshotRow]:
+    return [
+        SnapshotRow(
+            snapshot_id=1,
+            character_name="無塵",
+            account_id=1,
+            source="inventory",
+            saved_at="2026-04-01T10:00:00",
+            item_count=24,
+        ),
+        SnapshotRow(
+            snapshot_id=2,
+            character_name="風清揚",
+            account_id=2,
+            source="warehouse",
+            saved_at="2026-04-02T11:00:00",
+            item_count=42,
+        ),
+    ]
+
+
+def mock_accounts() -> list[Account]:
+    return [
+        Account(account_id=1, name="主帳", character_count=3),
+        Account(account_id=2, name="練功號", character_count=4),
+    ]
