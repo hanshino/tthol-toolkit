@@ -41,6 +41,7 @@ exports/tthol_*.csv
 webui/node_modules/
 webui/dist/
 webui/src/**/*.js
+webui/openapi.json
 
 # OMC dev server port file
 .omc/.dev-port

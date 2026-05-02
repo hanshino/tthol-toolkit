@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "gen-types": "openapi-typescript http://127.0.0.1:$(cat ../.omc/.dev-port)/openapi.json -o src/api/types.ts"
+    "gen-types": "openapi-typescript openapi.json -o src/api/schema.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
