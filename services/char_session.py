@@ -55,7 +55,7 @@ class CharSession:
     def link(self) -> Literal["ok", "weak", "lost"]:
         if self._state == "LOCATED":
             return "ok"
-        if self._state in ("CONNECTING", "RESCANNING", "READ_ERROR"):
+        if self._state in ("CONNECTING", "WAITING", "RESCANNING", "READ_ERROR"):
             return "weak"
         return "lost"
 
