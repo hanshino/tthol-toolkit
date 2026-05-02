@@ -9,7 +9,9 @@
 
 ## 1. Summary
 
-Replace the existing PySide6/Qt UI (`gui/`, `gui_main.py`, `launcher.py`, `gui/launcher_window.py`) with a **pywebview + React + Vite** stack. Keep the entire Python memory layer unchanged. The redesign collapses three nav levels into two, renames technical surfaces with a wuxia-themed vocabulary, and introduces a multi-character live monitoring dashboard as the primary surface.
+Replace the existing PySide6/Qt UI (`gui/`, `gui_main.py`, `launcher.py`, `gui/launcher_window.py`) with a **pywebview + React + Vite + FastAPI** stack. Keep the entire Python memory layer unchanged. The redesign collapses three nav levels into two, renames technical surfaces with a wuxia-themed vocabulary, and introduces a multi-character live monitoring dashboard as the primary surface.
+
+JS↔Python communication is **HTTP + WebSocket over localhost** (real IPC) — `pywebview` is used purely as the window host, not as a JS bridge.
 
 **This is a destructive replacement** — the old `gui/` directory is deleted. Git is the only safety net (per user request).
 
@@ -47,26 +49,40 @@ Replace the existing PySide6/Qt UI (`gui/`, `gui_main.py`, `launcher.py`, `gui/l
 │  - On failure: show error, allow run-anyway  │
 └──────────────────────────────────────────────┘
                         ↓
-┌──────────────────────────────────────────────┐
-│ app.py (main process)                        │
-│                                              │
-│  ┌──────────────────┐    ┌────────────────┐ │
-│  │ Python services  │ ←→ │ pywebview API  │ │
-│  │  - PymemSession  │    │  (js_api class)│ │
-│  │  - WorkerManager │    │                │ │
-│  │  - SnapshotDB    │    │                │ │
-│  │  - AutoClickMgr  │    │                │ │
-│  └──────────────────┘    └────────────────┘ │
-│           ↑                       ↓          │
-│           └───── pywebview window ───────┐   │
-│                  loads frontend dist/     │  │
-│                  React renders UI         │  │
-└──────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│ app.py (main process)                                │
+│                                                      │
+│  ┌────────────────────────────────────────────────┐  │
+│  │ uvicorn (daemon thread, 127.0.0.1:<random>)    │  │
+│  │  ┌──────────────────────────────────────────┐  │  │
+│  │  │ FastAPI                                  │  │  │
+│  │  │  - /             (static webui/dist)     │  │  │
+│  │  │  - /api/*        (REST endpoints)        │  │  │
+│  │  │  - /ws/world     (live snapshot push)    │  │  │
+│  │  │  - /openapi.json (TS type generation)    │  │  │
+│  │  └──────────────────────────────────────────┘  │  │
+│  │                       ↕                          │  │
+│  │  ┌──────────────────────────────────────────┐  │  │
+│  │  │ services/                                │  │  │
+│  │  │  - WorkerManager (per-PID)               │  │  │
+│  │  │  - SnapshotDB                            │  │  │
+│  │  │  - AutoClickManager                      │  │  │
+│  │  │  - process_detector / fake_active        │  │  │
+│  │  └──────────────────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                      │
+│  pywebview window (main thread)                      │
+│    loads http://127.0.0.1:<random>/                  │
+│    React fetches /api/* and subscribes to /ws/world  │
+└──────────────────────────────────────────────────────┘
 ```
 
-- **Single Python process** owns memory access + a pywebview window.
-- **No HTTP / no IPC protocol** — frontend calls `await window.pywebview.api.<method>()` directly. Returns are JSON-serializable.
-- **Push from Python → JS** via `window.evaluate_js("window._tthol.push(...)")` for live updates (alternative: JS polls every 1.5s — see §5).
+- **Single Python process**. uvicorn runs in a daemon thread; pywebview owns the main thread for its event loop.
+- **Real IPC over localhost**: frontend uses `fetch('/api/...')` and `new WebSocket('/ws/world')`. Backend is a normal FastAPI app — testable with `curl`, `httpx`, OpenAPI viewers, no UI required.
+- **Random port** via `socket.bind(('127.0.0.1', 0))` to avoid collisions; port is interpolated into the URL pywebview opens.
+- **Bind to 127.0.0.1 only** — never accessible from network.
+- **WebSocket `/ws/world`** pushes one `WorldSnapshot` per worker tick (~1.5s). Polling `GET /api/world` is kept as a fallback for first paint and reconnect.
+- **Native OS calls** (focus game window via Win32, file dialogs) live in regular `/api/*` endpoints — Python has the full Win32 surface; pywebview is only the renderer host.
 
 ### 3.2 Repository layout (after migration)
 
@@ -80,7 +96,8 @@ E:/workspace/tthol-memory/
   deep_pointer_scan.py    ← unchanged
   knowledge.json          ← unchanged
   tthol.sqlite            ← unchanged (new map/mob tables added later)
-  pyproject.toml          ← deps changed: drop pyside6/pytest-qt, add pywebview
+  pyproject.toml          ← deps changed: drop pyside6/pytest-qt; add pywebview,
+                            fastapi, uvicorn[standard], websockets, httpx (test only)
 
   services/               ← NEW: extracted business logic
     __init__.py
@@ -89,13 +106,21 @@ E:/workspace/tthol-memory/
     auto_click.py         ← moved from gui/auto_click_tab.py (logic only)
     fake_active.py        ← moved from gui/fake_active.py
     process_detector.py   ← moved from gui/process_detector.py
-    api.py                ← NEW: pywebview js_api facade
+    api/                  ← NEW: FastAPI routers
+      __init__.py         ←   builds the FastAPI app, mounts /api + /ws + static
+      characters.py       ←   /api/characters/*
+      snapshots.py        ←   /api/snapshots/*
+      accounts.py         ←   /api/accounts/*
+      autoclick.py        ←   /api/characters/{pid}/autoclick/*
+      export.py           ←   /api/export/*
+      world_ws.py         ←   /ws/world WebSocket handler
     api_types.py          ← NEW: Pydantic models (single source of truth for shapes)
-    events.py             ← NEW: pub/sub for live updates → JS (deferred)
+    events.py             ← NEW: in-process pubsub feeding /ws/world
     char_session.py       ← NEW: per-PID worker session state
 
   scripts/                ← NEW
-    gen_types.py          ← Pydantic models → webui/src/api/types.ts
+    gen_types.sh          ← `openapi-typescript http://127.0.0.1:<port>/openapi.json
+                            -o webui/src/api/types.ts` (run via npm script)
 
   webui/                  ← NEW: frontend source
     package.json
@@ -106,8 +131,8 @@ E:/workspace/tthol-memory/
       main.tsx
       App.tsx
       api/
-        client.ts          ← thin wrapper over window.pywebview.api
-        types.ts           ← TypeScript types matching Python dataclasses
+        client.ts          ← thin fetch/WebSocket wrapper, base URL from window.location
+        types.ts           ← generated from /openapi.json (do not hand-edit)
       theme/
         tokens.ts          ← from prototype themes.jsx
         ThemeProvider.tsx
@@ -146,61 +171,65 @@ E:/workspace/tthol-memory/
     test_snapshot_db.py   ← updated for relocated module path
     test_main_window.py   ← DELETED (Qt-specific)
     test_*.py             ← Qt-coupled tests deleted; pure-logic tests kept
-    test_api.py           ← NEW: js_api method shape contracts
+    test_api.py           ← NEW: FastAPI route contracts via httpx.AsyncClient
+    test_world_ws.py      ← NEW: /ws/world frame shape + tick delivery
+    test_events.py        ← NEW: WorldStream pubsub backpressure
 ```
 
 **Deleted:** entire `gui/` directory, `gui_main.py`, `launcher.py`, `requirements.txt` (uv only now).
 
 ---
 
-## 4. JS-Python API surface (`services/api.py`)
+## 4. HTTP / WebSocket API surface
 
-The pywebview `js_api` class. All methods return JSON-serializable structures matching `webui/src/api/types.ts`.
+Pydantic models in `services/api_types.py` are the single source of truth for request/response shapes. FastAPI auto-generates `/openapi.json`; `openapi-typescript` consumes it during `npm run build` to produce `webui/src/api/types.ts`. Drift between Python models and TS types is caught at frontend build time.
 
-**Types are co-defined**: Pydantic models in `services/api_types.py` are the single source of truth. A small `scripts/gen_types.py` runs during `npm run build` to emit `webui/src/api/types.ts` from those models so the JS side is type-checked. Tables below reference the Pydantic model names; the exact field shapes are produced during the writing-plans phase, not pre-decided here.
+All endpoints under `/api/*`. WebSocket under `/ws/*`. Same uvicorn instance also serves `webui/dist/` at `/`.
 
 ### 4.1 Discovery / lifecycle
-| Method | Returns | Notes |
-|--------|---------|-------|
-| `list_characters()` | `Character[]` | All known game windows; one per PID |
-| `connect(pid: int, hp: int \| None, options: ConnectOptions)` | `{ ok: bool, error?: str }` | Manual reconnect; `hp` optional (auto-chain first) |
-| `disconnect(pid: int)` | `{ ok: bool }` | |
-| `relocate(pid: int, hp: int)` | `{ ok: bool, error?: str }` | Re-scan after game restart |
-| `focus_window(pid: int)` | `{ ok: bool }` | Bring game window forward (Win32) |
+| Method + Path | Body | Response | Notes |
+|---|---|---|---|
+| `GET /api/characters` | — | `Character[]` | All known game windows; one per PID |
+| `POST /api/characters/{pid}/connect` | `ConnectRequest` | `ConnectResult` | Manual reconnect; `hp` optional (auto-chain first) |
+| `POST /api/characters/{pid}/disconnect` | — | `{ ok: bool }` | |
+| `POST /api/characters/{pid}/relocate` | `{ hp: int }` | `ConnectResult` | Re-scan after game restart |
+| `POST /api/characters/{pid}/focus` | — | `{ ok: bool }` | Bring game window forward (Win32) |
 
 ### 4.2 Live data
-| Method | Returns | Notes |
-|--------|---------|-------|
-| `snapshot_state()` | `WorldSnapshot` | All chars + their latest stats. Frontend polls 1.5s. |
-| `get_character_detail(pid: int)` | `CharacterDetail` | Stats + last-known inventory + auto-click status |
+| Method + Path | Body | Response | Notes |
+|---|---|---|---|
+| `GET /api/world` | — | `WorldSnapshot` | First paint and WS-reconnect fallback |
+| `GET /api/characters/{pid}` | — | `CharacterDetail` | Stats + last-known inventory + auto-click status |
+| `WS /ws/world` | — | stream of `WorldSnapshot` | Server pushes one frame per worker tick (~1.5s) |
 
 ### 4.3 Inventory / warehouse / snapshots
-| Method | Returns | Notes |
-|--------|---------|-------|
-| `scan_inventory(pid: int)` | `Item[]` | Triggers worker scan, blocks ~1s |
-| `scan_warehouse(pid: int)` | `Item[]` | Same |
-| `save_snapshot(pid: int, source: 'inventory' \| 'warehouse')` | `{ saved: bool }` | False if no diff |
-| `list_snapshots(filter?: SnapshotFilter)` | `SnapshotRow[]` | For 帳房 + 留影 |
-| `delete_snapshot(snapshot_id: int)` | `{ ok: bool }` | |
-| `delete_character(name: str)` | `{ ok: bool }` | |
-| `list_accounts()` | `Account[]` | |
-| `set_character_account(name: str, account_id: int \| null)` | `{ ok: bool }` | |
-| `create_account(name: str)` | `Account` | |
-| `export_csv(mode: 'detail' \| 'summary', path: str)` | `{ rows: int }` | Path picked via pywebview file dialog (separate call) |
+| Method + Path | Body | Response | Notes |
+|---|---|---|---|
+| `POST /api/characters/{pid}/inventory/scan` | — | `Item[]` | Triggers worker scan, blocks ~1s |
+| `POST /api/characters/{pid}/warehouse/scan` | — | `Item[]` | Same |
+| `POST /api/snapshots` | `{ pid, source }` | `{ saved: bool, snapshot_id?: int }` | `saved=false` if no diff vs prev |
+| `GET /api/snapshots` | query: `SnapshotFilter` | `SnapshotRow[]` | For 帳房 + 留影 |
+| `DELETE /api/snapshots/{id}` | — | `{ ok: bool }` | |
+| `DELETE /api/characters/by-name/{name}` | — | `{ ok: bool }` | |
+| `GET /api/accounts` | — | `Account[]` | |
+| `POST /api/accounts` | `{ name }` | `Account` | |
+| `PUT /api/characters/by-name/{name}/account` | `{ account_id: int \| null }` | `{ ok: bool }` | |
+| `POST /api/export/csv` | `{ mode: 'detail' \| 'summary' }` | `{ rows: int, path: str }` | Writes to `exports/<timestamp>.csv`; frontend opens it via Win32 `os.startfile` through a separate `POST /api/open-path` call |
 
 ### 4.4 Auto-click
-| Method | Returns | Notes |
-|--------|---------|-------|
-| `autoclick_start(pid: int, config: AutoClickConfig)` | `{ ok: bool }` | |
-| `autoclick_stop(pid: int)` | `{ ok: bool }` | |
-| `autoclick_test(pid: int, merchant_idx: int)` | `{ ok: bool }` | Single test click |
-| `autoclick_status(pid: int)` | `AutoClickStatus` | Embedded in `WorldSnapshot` too |
+| Method + Path | Body | Response | Notes |
+|---|---|---|---|
+| `POST /api/characters/{pid}/autoclick/start` | `AutoClickConfig` | `{ ok: bool }` | |
+| `POST /api/characters/{pid}/autoclick/stop` | — | `{ ok: bool }` | |
+| `POST /api/characters/{pid}/autoclick/test` | `{ merchant_idx: int }` | `{ ok: bool }` | Single test click |
+| `GET /api/characters/{pid}/autoclick/status` | — | `AutoClickStatus` | Also embedded in `WorldSnapshot` |
 
-### 4.5 Push-to-JS (optional, deferred behind a flag)
+### 4.5 Live push details (`/ws/world`)
 
-Default v1: **JS polls** `snapshot_state()` every 1.5s. Simpler, no event subscription bookkeeping.
-
-If polling proves too laggy, add `app.window.evaluate_js("window._tthol.onTick(...)")` from a Python `events.py` pubsub. Defer until measured.
+- One connection per pywebview window (frontend opens it on mount, retries on close)
+- Server side: a single `events.WorldStream` pubsub. Every WorkerManager tick emits one `WorldSnapshot`; the WebSocket handler forwards each frame to subscribed clients
+- Backpressure: if a client falls behind, drop oldest frame (snapshots are idempotent — only "latest" matters)
+- Client reconnect: on close, frontend issues `GET /api/world` once, then reopens WS
 
 ---
 
@@ -287,13 +316,21 @@ When `link === 'lost'`, the dashboard row dims to `opacity: 0.45` and stat value
 
 ### 8.1 Dev workflow
 ```
-# Frontend
+# Terminal 1 — backend (uvicorn auto-reload + pywebview window)
+uv run app.py --dev
+#  - uvicorn binds 127.0.0.1:<random> with reload=True
+#  - pywebview window points to http://127.0.0.1:5173 (Vite)
+#  - Vite proxies /api and /ws to the uvicorn port (vite.config.ts)
+
+# Terminal 2 — frontend
 cd webui
 npm install          # one-time
-npm run dev          # Vite dev server on http://localhost:5173
+npm run dev          # Vite dev server on http://localhost:5173 with HMR
 
-# In another terminal:
-uv run app.py --dev  # pywebview window points to http://localhost:5173 with hot reload
+# One-time after backend starts: regenerate TS types
+cd webui && npm run gen-types
+#  - hits http://127.0.0.1:<port>/openapi.json via openapi-typescript
+#  - port is written to .omc/.dev-port by app.py for the script to read
 ```
 
 ### 8.2 Production
@@ -301,7 +338,10 @@ uv run app.py --dev  # pywebview window points to http://localhost:5173 with hot
 cd webui
 npm run build        # outputs webui/dist/
 
-uv run app.py        # pywebview loads webui/dist/index.html via file://
+uv run app.py
+#  - uvicorn binds 127.0.0.1:<random>
+#  - FastAPI mounts webui/dist/ at /
+#  - pywebview opens http://127.0.0.1:<random>/
 ```
 
 ### 8.3 End-user distribution (deferred — out of v1 spec scope)
@@ -314,15 +354,15 @@ Current: end users `git pull` and run via `bootstrap.py`. PyInstaller bundle is 
 This is the high-level order; the detailed implementation plan (writing-plans skill) will break it down further.
 
 1. **Set up `webui/`** with Vite + React + TypeScript scaffolding, port the prototype assets (themes, primitives, mock data) verbatim
-2. **Build `services/api.py`** with all js_api methods returning mock data (frontend dev unblocked)
+2. **Build `services/api_types.py` + `services/api/`** FastAPI routers returning mock data (frontend dev unblocked); confirm `/openapi.json` shape and TS type generation pipeline (`npm run gen-types`)
 3. **Move pure-logic services** out of `gui/` into `services/` (`snapshot_db`, `worker`, `auto_click`, `fake_active`, `process_detector`)
-4. **Replace mock with real data** in `services/api.py` — wire to relocated services
-5. **Build `app.py`** that opens pywebview window, instantiates `Api`, loads `webui/dist/` (or dev server)
+4. **Replace mocks with real data** in `services/api/*` routers — wire to relocated services; build `services/events.py` WorldStream and `/ws/world` handler
+5. **Build `app.py`**: bind random localhost port, start uvicorn in daemon thread, open pywebview window pointed at `http://127.0.0.1:<port>/`, hook window-close to `server.should_exit = True`
 6. **Build `bootstrap.py`** + splash HTML
 7. **Delete `gui/`, `gui_main.py`, `launcher.py`, `requirements.txt`**
-8. **Update `pyproject.toml`** (drop pyside6/pytest-qt, add pywebview)
-9. **Rewrite test suite** for new module paths; delete Qt-coupled tests
-10. **Verify**: 7+ char dashboard live updates, scan inventory/warehouse, save snapshot, auto-click start/stop, char detail pages, 留影 list
+8. **Update `pyproject.toml`**: drop `pyside6` and `pytest-qt`; add `pywebview`, `fastapi`, `uvicorn[standard]`, `websockets`, and `httpx` (test only)
+9. **Rewrite test suite** for new module paths; delete Qt-coupled tests; add FastAPI contract + WebSocket tests
+10. **Verify**: 7+ char dashboard live updates over `/ws/world`, scan inventory/warehouse, save snapshot, auto-click start/stop, char detail pages, 留影 list
 
 ---
 
@@ -337,8 +377,9 @@ This is the high-level order; the detailed implementation plan (writing-plans sk
 - All `pytest-qt` tests (`test_main_window.py`, anything that imports `PySide6` or `pytestqt`)
 
 ### 10.3 What's added
-- `test_api.py` — contract tests on `services/api.py`: each method returns a Pydantic model from `services/api_types.py` and `model_dump()` is asserted against fixture JSON. The TypeScript types in `webui/src/api/types.ts` are generated from the same Pydantic models (see §4) so drift is caught at build time, not runtime.
-- `test_event_dispatch.py` — if push-to-JS is added, validate ordering and dedup
+- `test_api.py` — FastAPI contract tests using `httpx.AsyncClient` against the in-process app: each endpoint returns a Pydantic model from `services/api_types.py` and `model_dump()` is asserted against fixture JSON. No server boot needed (FastAPI's ASGI test client). The TypeScript types in `webui/src/api/types.ts` are generated from `/openapi.json` (see §4), so contract drift surfaces at frontend build time.
+- `test_world_ws.py` — WebSocket test: connect, force a tick, assert one `WorldSnapshot` frame received and shape valid.
+- `test_events.py` — pubsub backpressure: ensure slow subscribers drop oldest frames, fast subscribers receive every tick.
 
 ### 10.4 Frontend tests
 - v1: none (Vite build success + manual smoke test). Vitest scaffolding kept available but no required tests in v1.
@@ -351,12 +392,15 @@ This is the high-level order; the detailed implementation plan (writing-plans sk
 | Risk | Mitigation |
 |------|-----------|
 | pywebview's WebView2 backend is missing on Win10 (rare in 2026) | Bootstrap detects, links user to MS download |
-| 7+ chars × 1.5s polling is too heavy for memory reads | If profiling shows >100ms per snapshot, switch to push-from-Python with shared snapshot built once per tick |
-| User's Big5 char names contain rare codepoints that JSON-serialize wrong | Force `ensure_ascii=False, encoding='utf-8'` everywhere; existing `reader.py` already handles Big5→str |
-| `auto_click` Win32 `PostMessageW` runs on the main thread → blocks UI | Keep in worker thread (current pattern); only the public start/stop crosses to API |
-| Frontend file:// origin can't `import()` from CDN | Bundle React/Babel into Vite's output; no runtime CDN |
+| Port collision on `127.0.0.1` | Use `socket.bind(('127.0.0.1', 0))` to grab a random ephemeral port; never hardcode |
+| uvicorn thread keeps process alive after window close | pywebview `on_window_close` event triggers `server.should_exit = True`; daemon thread also dies on main exit |
+| WebSocket disconnects on laptop sleep / VPN flap | Frontend retries with exponential backoff; falls back to `GET /api/world` poll until WS reopens |
+| 7+ chars × 1.5s tick is too heavy for memory reads | Single `WorkerManager` builds one shared `WorldSnapshot` per tick; WS broadcasts the same frame to all subscribers |
+| User's Big5 char names contain rare codepoints that JSON-serialize wrong | FastAPI's default `JSONResponse` uses `ensure_ascii=False` via `json.dumps` overrides — verified; existing `reader.py` already handles Big5→str |
+| `auto_click` Win32 `PostMessageW` blocks on main thread | Keep in worker thread (current pattern); endpoints just enqueue start/stop |
 | 留影 diff feature gets demanded mid-build | Out-of-scope; defer to v1.1 |
 | 行止 SQLite schema changes after API is locked | Map/mob types live behind a single `services/maps.py` module; UI shows placeholder until schema is delivered |
+| Antivirus / firewall flags localhost server | `127.0.0.1` bind (not `0.0.0.0`) avoids most heuristics; if flagged, README documents exception |
 
 ---
 
