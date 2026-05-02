@@ -74,3 +74,10 @@ def detect_game_windows() -> list[tuple[int, int, str]]:
         hwnd = _hwnd_for_pid(pid)
         result.append((pid, hwnd, f"視窗 {i}"))
     return result
+
+
+def find_tthol_processes() -> list[dict]:
+    """Return list of {pid, hwnd, label} dicts for tthola.dat processes."""
+    return [
+        {"pid": pid, "hwnd": hwnd, "label": label} for pid, hwnd, label in detect_game_windows()
+    ]
