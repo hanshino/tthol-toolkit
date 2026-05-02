@@ -1,11 +1,12 @@
 import type { CSSProperties, ReactNode } from 'react';
 
 export function Panel({
-  title, children, style,
-}: { title?: ReactNode; children: ReactNode; style?: CSSProperties }) {
+  title, children, style, id,
+}: { title?: ReactNode; children: ReactNode; style?: CSSProperties; id?: string }) {
   return (
-    <section style={{
-      background: 'var(--tt-panel)', border: '1px solid var(--tt-line)', padding: 14, ...style,
+    <section id={id} style={{
+      padding: 14, ...style,
+      background: 'var(--tt-panel)', border: '1px solid var(--tt-line)',
     }}>
       {title && (
         <header style={{

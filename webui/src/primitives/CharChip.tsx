@@ -21,5 +21,10 @@ export function CharChip({
       }}>{String(idx + 1).padStart(2, '0')}</span>
     );
   }
-  return <span style={{ color: 'var(--tt-dim)', fontSize: 12 }}>{name}</span>;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', height: size,
+      color: 'var(--tt-dim)', fontSize: 12,
+    }}>{name}</span>
+  );
 }
