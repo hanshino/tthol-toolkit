@@ -1,0 +1,47 @@
+import { LinkDot, Seal } from '../primitives';
+
+export type PageKey = 'dashboard' | 'treasury' | 'snapshots' | 'detail';
+
+export function TopNav({
+  page, onNav, linkedCount, totalCount,
+}: { page: PageKey; onNav: (k: PageKey) => void; linkedCount: number; totalCount: number }) {
+  const tabs: { k: PageKey; n: string }[] = [
+    { k: 'dashboard', n: '江湖一覽' },
+    { k: 'treasury',  n: '帳房' },
+    { k: 'snapshots', n: '留影' },
+  ];
+  const ts = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+  return (
+    <header style={{
+      display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center',
+      padding: '10px 18px', borderBottom: '1px solid var(--tt-line)', background: 'var(--tt-panel)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <Seal size={32}>御</Seal>
+        <div>
+          <div style={{ fontFamily: 'var(--tt-font-serif)', fontSize: 16, fontWeight: 600, letterSpacing: 4 }}>御心鑒</div>
+          <div style={{ fontSize: 10, color: 'var(--tt-mute)', letterSpacing: 2 }}>tthol memory reader · v0.7.2</div>
+        </div>
+      </div>
+      <nav style={{ display: 'flex' }}>
+        {tabs.map(t => {
+          const active = page === t.k || (page === 'detail' && t.k === 'dashboard');
+          return (
+            <button key={t.k} onClick={() => onNav(t.k)} style={{
+              padding: '8px 22px', fontFamily: 'var(--tt-font-serif)', fontSize: 14,
+              letterSpacing: 4, fontWeight: 600,
+              background: active ? 'var(--tt-bg)' : 'transparent',
+              color: active ? 'var(--tt-text)' : 'var(--tt-dim)',
+              border: '1px solid ' + (active ? 'var(--tt-line)' : 'transparent'),
+              borderBottom: 'none', cursor: 'pointer',
+            }}>{t.n}</button>
+          );
+        })}
+      </nav>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 14, fontSize: 11, color: 'var(--tt-dim)', fontFamily: 'var(--tt-font-mono)' }}>
+        <span><LinkDot status="ok" size={6} /> {linkedCount}/{totalCount} 已連</span>
+        <span style={{ color: 'var(--tt-mute)' }}>{ts}</span>
+      </div>
+    </header>
+  );
+}
