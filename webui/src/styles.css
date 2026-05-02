@@ -1,0 +1,7 @@
+html, body, #root { margin: 0; height: 100%; background: #0c0a08; color: #e8dcc8; }
+* { box-sizing: border-box; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.06); }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.12); }
+input::placeholder { color: #6b5e4e; }

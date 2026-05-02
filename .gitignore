@@ -36,3 +36,10 @@ config.json
 
 # Generated CSV exports (regenerated on demand)
 exports/tthol_*.csv
+
+# WebUI build artifacts
+webui/node_modules/
+webui/dist/
+
+# OMC dev server port file
+.omc/.dev-port
