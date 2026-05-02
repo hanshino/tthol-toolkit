@@ -3,6 +3,7 @@ import { TopNav, type PageKey } from './components/TopNav';
 import { useLiveChars } from './hooks/useLiveChars';
 import { Dashboard } from './pages/Dashboard';
 import { Treasury } from './pages/Treasury';
+import { Snapshots } from './pages/Snapshots';
 import { ThemeProvider } from './theme/ThemeProvider';
 import type { CharacterRow } from './api/types';
 
@@ -21,7 +22,7 @@ export function App() {
             <Dashboard chars={snap.chars} onPick={(c) => { setSelected(c); setPage('detail'); }} />
           )}
           {page === 'treasury'  && <Treasury />}
-          {page === 'snapshots' && <div style={{ padding: 24 }}>Snapshots placeholder</div>}
+          {page === 'snapshots' && <Snapshots />}
           {page === 'detail'    && <div style={{ padding: 24 }}>CharDetail placeholder</div>}
         </main>
       </div>
