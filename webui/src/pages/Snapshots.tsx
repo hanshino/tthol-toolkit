@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get } from '../api/client';
+import type { SnapshotRow } from '../api/types';
 import { Panel } from '../primitives';
-
-interface SnapshotRow {
-  snapshot_id: number; character_name: string; account_id: number | null;
-  source: 'inventory' | 'warehouse'; saved_at: string; item_count: number;
-}
 
 export function Snapshots() {
   const [rows, setRows] = useState<SnapshotRow[]>([]);

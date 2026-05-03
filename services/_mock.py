@@ -1,6 +1,4 @@
-"""Mock data for routers when no live services are wired.
-Removed in Phase 5 once real worker manager is plumbed in.
-"""
+"""Mock data for routers when no live services are wired (dev fallback)."""
 
 from services.api_types import (
     Account,

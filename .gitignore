@@ -43,5 +43,6 @@ webui/dist/
 webui/src/**/*.js
 webui/openapi.json
 
-# OMC dev server port file
-.omc/.dev-port
+# OMC working state (keep shared skills under version control)
+**/.omc/*
+!.omc/skills/

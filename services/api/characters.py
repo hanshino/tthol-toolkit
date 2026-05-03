@@ -11,6 +11,7 @@ from services.api_types import (
     ConnectResult,
     Item,
     OkResponse,
+    RelocateRequest,
     WorldSnapshot,
 )
 
@@ -89,11 +90,11 @@ async def disconnect_char(pid: int, request: Request) -> OkResponse:
 
 
 @router.post("/characters/{pid}/relocate", response_model=ConnectResult)
-async def relocate_char(pid: int, body: dict, request: Request) -> ConnectResult:
+async def relocate_char(pid: int, body: RelocateRequest, request: Request) -> ConnectResult:
     wm = request.app.state.services.get("worker_manager")
     if wm is None:
         return ConnectResult(ok=True)
-    return wm.relocate(pid, body.get("hp"))
+    return wm.relocate(pid, body.hp)
 
 
 @router.post("/characters/{pid}/focus", response_model=OkResponse)

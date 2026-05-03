@@ -131,6 +131,10 @@ class ConnectResult(_Base):
     hp_addr: int | None = None
 
 
+class RelocateRequest(_Base):
+    hp: int | None = None
+
+
 # ---- Snapshots / accounts ------------------------------------------------
 
 

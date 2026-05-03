@@ -1,22 +1,25 @@
 import { useState } from 'react';
 import { post } from '../../api/client';
+import type { Item } from '../../api/types';
 import { Panel } from '../../primitives';
 
-interface Item { item_id: number; name: string; quantity: number; source: 'inventory' | 'warehouse'; }
+type Source = Item['source'];
 
 export function ItemsTab({ pid }: { pid: number }) {
   const [items, setItems] = useState<Item[]>([]);
-  const [filter, setFilter] = useState<'all' | 'inventory' | 'warehouse'>('all');
+  const [filter, setFilter] = useState<Source | 'all'>('all');
 
-  const scanInventory = () => post<Item[]>(`/api/characters/${pid}/inventory/scan`).then(items => setItems(prev => [...prev.filter(i => i.source !== 'inventory'), ...items]));
-  const scanWarehouse = () => post<Item[]>(`/api/characters/${pid}/warehouse/scan`).then(items => setItems(prev => [...prev.filter(i => i.source !== 'warehouse'), ...items]));
+  const scan = (source: Source) =>
+    post<Item[]>(`/api/characters/${pid}/${source}/scan`).then(fresh =>
+      setItems(prev => [...prev.filter(i => i.source !== source), ...fresh]),
+    );
 
   const visible = items.filter(i => filter === 'all' || i.source === filter);
   return (
     <Panel title="行囊 / 庫房">
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <button className="is-primary" onClick={scanInventory}>掃描行囊</button>
-        <button className="is-primary" onClick={scanWarehouse}>掃描庫房</button>
+        <button className="is-primary" onClick={() => scan('inventory')}>掃描行囊</button>
+        <button className="is-primary" onClick={() => scan('warehouse')}>掃描庫房</button>
         <span style={{ flex: 1 }} />
         {(['all', 'inventory', 'warehouse'] as const).map(f => (
           <button
