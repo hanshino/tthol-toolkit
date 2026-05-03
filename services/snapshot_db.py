@@ -13,12 +13,34 @@ checksum is SHA256 of the canonical items JSON string.
 import hashlib
 import json
 import sqlite3
-import threading
 from datetime import datetime
 from pathlib import Path
 
 ITEM_NAME_DB = Path(__file__).parent.parent / "tthol.sqlite"
 DEFAULT_DB = Path(__file__).parent.parent / "tthol_inventory.db"
+
+_ITEM_MAPS_CACHE: tuple[dict[int, str], dict[int, str]] | None = None
+
+
+def _load_item_maps() -> tuple[dict[int, str], dict[int, str]]:
+    """Load (id->name, id->type) from tthol.sqlite once per process."""
+    global _ITEM_MAPS_CACHE
+    if _ITEM_MAPS_CACHE is not None:
+        return _ITEM_MAPS_CACHE
+    name_map: dict[int, str] = {}
+    type_map: dict[int, str] = {}
+    try:
+        with sqlite3.connect(str(ITEM_NAME_DB)) as name_con:
+            name_con.text_factory = lambda b: b.decode("utf-8", errors="replace")
+            for r in name_con.execute("SELECT id, name, type FROM items"):
+                name_map[r[0]] = r[1]
+                if r[2]:
+                    type_map[r[0]] = r[2]
+    except sqlite3.OperationalError:
+        pass
+    _ITEM_MAPS_CACHE = (name_map, type_map)
+    return _ITEM_MAPS_CACHE
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
@@ -53,14 +75,11 @@ def _checksum(canonical: str) -> str:
 class SnapshotDB:
     def __init__(self, path: str | None = None):
         db_path = path or str(DEFAULT_DB)
-        # check_same_thread=False because uvicorn handlers run on a different
-        # thread than the one that constructed this object. _lock serializes
-        # access so the underlying connection is never used concurrently.
+        # check_same_thread=False: uvicorn dispatches handlers on worker threads.
         self._con = sqlite3.connect(db_path, check_same_thread=False)
         self._con.row_factory = sqlite3.Row
         self._con.executescript(SCHEMA)
         self._con.commit()
-        self._lock = threading.Lock()
 
     def close(self):
         self._con.close()
@@ -107,19 +126,7 @@ class SnapshotDB:
             ")"
         ).fetchall()
 
-        # Build item_id -> (name, type) maps from tthol.sqlite
-        name_map: dict[int, str] = {}
-        type_map: dict[int, str] = {}
-        if ITEM_NAME_DB.exists():
-            try:
-                with sqlite3.connect(str(ITEM_NAME_DB)) as name_con:
-                    name_con.text_factory = lambda b: b.decode("utf-8", errors="replace")
-                    for r in name_con.execute("SELECT id, name, type FROM items"):
-                        name_map[r[0]] = r[1]
-                        if r[2]:
-                            type_map[r[0]] = r[2]
-            except sqlite3.OperationalError:
-                pass
+        name_map, type_map = _load_item_maps()
 
         # Load account assignments
         acct_rows = self._con.execute(

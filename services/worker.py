@@ -42,10 +42,11 @@ from warehouse_scan import (
     walk_back_to_start,
 )
 
-POLL_INTERVAL = 3.0  # seconds between stat reads
-FAILURE_THRESHOLD = 3  # consecutive failures before rescan
-LOCATE_RETRY_INTERVAL = 3.0  # seconds between locate retries
-LOCATE_MAX_RETRIES = 10  # give up after this many retries (~30s)
+POLL_INTERVAL = 3.0
+FAILURE_THRESHOLD = 3
+LOCATE_RETRY_INTERVAL = 3.0
+LOCATE_MAX_RETRIES = 10
+MAP_RESCAN_EVERY = 5  # locate_map_name walks the heap; cache between polls
 
 
 class ReaderWorker(threading.Thread):
@@ -100,13 +101,6 @@ class ReaderWorker(threading.Thread):
     def request_warehouse(self) -> None:
         self._scan_warehouse = True
 
-    # Backwards-compatible aliases (mirror gui/worker.py method names) ------
-    def request_inventory_scan(self) -> None:
-        self._scan_inventory = True
-
-    def request_warehouse_scan(self) -> None:
-        self._scan_warehouse = True
-
     def stop(self) -> None:
         self._stop_event.set()
 
@@ -121,7 +115,6 @@ class ReaderWorker(threading.Thread):
             self._cb_state("DISCONNECTED")
             return
 
-        # Retry loop: player may not have logged in yet
         hp_addr = None
         for attempt in range(LOCATE_MAX_RETRIES + 1):
             hp_addr = self._locate(pm, silent=True)
@@ -141,22 +134,21 @@ class ReaderWorker(threading.Thread):
         self._cb_state("LOCATED")
         char_name = read_character_name(pm, hp_addr)
         failure_count = 0
+        struct_fields = self._knowledge["character_structure"]["fields"]
+        map_name = ""
+        map_tick = 0
 
         while not self._stop_event.is_set():
-            # --- Handle inventory scan request ---
             if self._scan_inventory:
                 self._scan_inventory = False
                 self._do_inventory_scan(pm)
 
-            # --- Handle warehouse scan request ---
             if self._scan_warehouse:
                 self._scan_warehouse = False
                 self._do_warehouse_scan(pm)
 
-            # --- Poll character stats ---
             try:
                 fields = read_all_fields(pm, hp_addr, self._display_fields)
-                struct_fields = self._knowledge["character_structure"]["fields"]
                 if self._compat_mode:
                     score = verify_structure_shifted(pm, hp_addr, struct_fields)
                 else:
@@ -177,15 +169,18 @@ class ReaderWorker(threading.Thread):
                         self._cb_state("LOCATED")
                         char_name = read_character_name(pm, hp_addr)
                         failure_count = 0
+                        map_name = ""
+                        map_tick = 0
                 else:
                     failure_count = 0
-                    map_name = locate_map_name(pm)
+                    if map_tick % MAP_RESCAN_EVERY == 0 or not map_name:
+                        map_name = locate_map_name(pm)
+                    map_tick += 1
                     self._cb_stats([("角色名稱", char_name), ("地圖名稱", map_name)] + fields)
 
             except Exception:
                 failure_count += 1
                 if failure_count >= FAILURE_THRESHOLD:
-                    # Try re-connecting process first
                     self._cb_state("READ_ERROR")
                     pm = self._connect_process()
                     if pm is None:
@@ -202,10 +197,11 @@ class ReaderWorker(threading.Thread):
                     self._cb_state("LOCATED")
                     char_name = read_character_name(pm, hp_addr)
                     failure_count = 0
+                    map_name = ""
+                    map_tick = 0
 
             self._stop_event.wait(POLL_INTERVAL)
 
-        # Emit DISCONNECTED when loop exits cleanly (stop() was called)
         self._cb_state("DISCONNECTED")
 
     # ------------------------------------------------------------------

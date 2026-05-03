@@ -1,9 +1,18 @@
+import { useMemo } from 'react';
 import type { CharacterRow } from '../api/types';
 import { Bar, LinkDot, Panel, StatNum } from '../primitives';
 
 export function Dashboard({
   chars, onPick,
 }: { chars: CharacterRow[]; onPick: (c: CharacterRow) => void }) {
+  const lowHp = useMemo(
+    () => chars.filter(c => c.vitals.hp_max > 0 && c.vitals.hp / c.vitals.hp_max < 0.3),
+    [chars],
+  );
+  const autoclicking = useMemo(
+    () => chars.filter(c => c.autoclick.running),
+    [chars],
+  );
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16, padding: 16 }}>
       <Panel title="江湖一覽">
@@ -38,18 +47,18 @@ export function Dashboard({
       </Panel>
       <div style={{ display: 'grid', gap: 16, gridTemplateRows: 'auto auto' }}>
         <Panel title="警示">
-          {chars.filter(c => c.vitals.hp / c.vitals.hp_max < 0.3).length === 0
+          {lowHp.length === 0
             ? <span style={{ color: 'var(--tt-mute)', fontSize: 12 }}>無</span>
-            : chars.filter(c => c.vitals.hp / c.vitals.hp_max < 0.3).map(c => (
+            : lowHp.map(c => (
                 <div key={c.pid} style={{ fontSize: 12, color: 'var(--tt-bad)' }}>
                   {c.name} 氣血偏低
                 </div>
               ))}
         </Panel>
         <Panel title="輔助執行">
-          {chars.filter(c => c.autoclick.running).length === 0
+          {autoclicking.length === 0
             ? <span style={{ color: 'var(--tt-mute)', fontSize: 12 }}>未啟用</span>
-            : chars.filter(c => c.autoclick.running).map(c => (
+            : autoclicking.map(c => (
                 <div key={c.pid} style={{ fontSize: 12 }}>{c.name}</div>
               ))}
         </Panel>
