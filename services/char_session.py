@@ -16,6 +16,37 @@ from services.api_types import (
 )
 from services.worker import ReaderWorker
 
+# Worker emits stats with raw Chinese labels from knowledge.json + the two
+# string keys "角色名稱" / "地圖名稱". Translate to English snake_case so the
+# Pydantic API models can consume them.
+_FIELD_MAP: dict[str, str] = {
+    "角色名稱": "name",
+    "地圖名稱": "map_name",
+    "等級": "level",
+    "血量": "hp",
+    "最大血量": "hp_max",
+    "真氣": "mp",
+    "最大真氣": "mp_max",
+    "負重": "weight",
+    "最大負重": "weight_max",
+    "X座標": "x",
+    "Y座標": "y",
+    "外功": "waigong",
+    "內力": "neili",
+    "根骨": "genggu",
+    "身法": "shenfa",
+    "技巧": "jiqiao",
+    "玄學": "xuanxue",
+    "物攻": "wugong",
+    "物攻(基礎?)": "wugong_base",
+    "內勁": "neijing",
+    "防禦": "fangyu",
+    "護勁": "huji",
+    "命中": "mingzhong",
+    "閃躲": "shanduo",
+    "魅力值": "charm",
+}
+
 
 class CharSession:
     def __init__(self, pid: int) -> None:
@@ -26,6 +57,8 @@ class CharSession:
         self._latest_stats: dict[str, int] = {}
         self._latest_inv: list[Item] = []
         self._latest_wh: list[Item] = []
+        self._inv_seq: int = 0
+        self._wh_seq: int = 0
         self._lock = threading.Lock()
         self._worker = ReaderWorker(
             pid=pid,
@@ -128,9 +161,15 @@ class CharSession:
 
     def _on_stats(self, rows: list[tuple[str, int]]) -> None:
         with self._lock:
-            self._latest_stats = dict(rows)
-            if "name" in self._latest_stats:
-                self.name = str(self._latest_stats["name"])
+            translated: dict[str, int] = {}
+            for label, value in rows:
+                key = _FIELD_MAP.get(label)
+                if key is not None:
+                    translated[key] = value
+            self._latest_stats = translated
+            name = translated.get("name")
+            if isinstance(name, str) and name:
+                self.name = name
 
     def _on_inv(self, items: list[tuple[int, int, str]]) -> None:
         with self._lock:
@@ -138,6 +177,7 @@ class CharSession:
                 Item(item_id=iid, name=name, quantity=qty, source="inventory")
                 for iid, qty, name in items
             ]
+            self._inv_seq += 1
 
     def _on_wh(self, items: list[tuple[int, int, str]]) -> None:
         with self._lock:
@@ -145,3 +185,4 @@ class CharSession:
                 Item(item_id=iid, name=name, quantity=qty, source="warehouse")
                 for iid, qty, name in items
             ]
+            self._wh_seq += 1

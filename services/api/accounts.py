@@ -16,7 +16,16 @@ async def list_accounts(request: Request) -> list[Account]:
     db = request.app.state.services.get("snapshot_db")
     if db is None:
         return mock_accounts()
-    return db.list_accounts()
+    rows = db.list_accounts()
+    counts = {r["account_id"]: r["count"] for r in db.account_character_counts()}
+    return [
+        Account(
+            account_id=r["id"],
+            name=r["name"],
+            character_count=counts.get(r["id"], 0),
+        )
+        for r in rows
+    ]
 
 
 @router.post("/accounts", response_model=Account)
@@ -24,7 +33,8 @@ async def create_account(body: CreateAccountRequest, request: Request) -> Accoun
     db = request.app.state.services.get("snapshot_db")
     if db is None:
         return Account(account_id=99, name=body.name, character_count=0)
-    return db.create_account(body.name)
+    acct_id = db.create_account(body.name)
+    return Account(account_id=acct_id, name=body.name, character_count=0)
 
 
 @router.put("/characters/by-name/{name}/account", response_model=OkResponse)

@@ -11,20 +11,23 @@ def test_callbacks_update_state():
     sess._on_state("LOCATED")
     sess._on_stats(
         [
-            ("level", 20),
-            ("hp", 100),
-            ("hp_max", 120),
-            ("mp", 50),
-            ("mp_max", 60),
-            ("weight", 30),
-            ("weight_max", 200),
-            ("x", 1),
-            ("y", 2),
+            ("角色名稱", "無塵"),
+            ("等級", 20),
+            ("血量", 100),
+            ("最大血量", 120),
+            ("真氣", 50),
+            ("最大真氣", 60),
+            ("負重", 30),
+            ("最大負重", 200),
+            ("X座標", 1),
+            ("Y座標", 2),
         ]
     )
-    sess.name = "無塵"
     sess.sect = "少林"
     row = sess.row()
     assert row is not None
     assert row.link == "ok"
+    assert row.name == "無塵"
     assert row.vitals.hp == 100
+    assert row.vitals.hp_max == 120
+    assert row.position.x == 1

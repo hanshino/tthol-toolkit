@@ -198,6 +198,75 @@ class ExportCsvResult(_Base):
     path: str
 
 
+# ---- Treasury / 帳房 ---------------------------------------------------
+
+
+class TreasurySummary(_Base):
+    total_kinds: int
+    total_qty: int
+    on_person: int
+    in_warehouse: int
+
+
+class TreasuryHolder(_Base):
+    character: str
+    source: Literal["inventory", "warehouse"]
+    account: str | None = None
+    qty: int
+
+
+class TreasuryItem(_Base):
+    item_id: int
+    name: str
+    item_type: str = ""
+    total_qty: int
+    on_person: int
+    in_warehouse: int
+    holders: list[TreasuryHolder]
+
+
+# ---- Map / 行止 ---------------------------------------------------------
+
+
+class StageInfo(_Base):
+    stage_id: int
+    name: str
+
+
+class MapMonster(_Base):
+    npc_id: int
+    name: str | None = None
+    level: int | None = None
+    hp: int | None = None
+    count: int
+    drop_money_min: int | None = None
+    drop_money_max: int | None = None
+    drop_exp: int | None = None
+
+
+class SpawnPoint(_Base):
+    npc_id: int
+    name: str | None = None
+    x: int
+    y: int
+    distance: int | None = None  # Chebyshev distance from player position, if available
+
+
+class MapWarp(_Base):
+    dst_stage_id: int
+    dst_name: str | None = None
+    dst_tag: int | None = None
+
+
+class MapInfo(_Base):
+    stage: StageInfo
+    player_x: int | None = None
+    player_y: int | None = None
+    monsters: list[MapMonster] = []
+    warps: list[MapWarp] = []
+    nearby: list[SpawnPoint] = []
+
+
 # ---- Generic -------------------------------------------------------------
 
 

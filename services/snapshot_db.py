@@ -13,6 +13,7 @@ checksum is SHA256 of the canonical items JSON string.
 import hashlib
 import json
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -52,10 +53,14 @@ def _checksum(canonical: str) -> str:
 class SnapshotDB:
     def __init__(self, path: str | None = None):
         db_path = path or str(DEFAULT_DB)
-        self._con = sqlite3.connect(db_path)
+        # check_same_thread=False because uvicorn handlers run on a different
+        # thread than the one that constructed this object. _lock serializes
+        # access so the underlying connection is never used concurrently.
+        self._con = sqlite3.connect(db_path, check_same_thread=False)
         self._con.row_factory = sqlite3.Row
         self._con.executescript(SCHEMA)
         self._con.commit()
+        self._lock = threading.Lock()
 
     def close(self):
         self._con.close()
@@ -178,6 +183,59 @@ class SnapshotDB:
         self._con.execute("DELETE FROM character_accounts WHERE character=?", (character,))
         self._con.commit()
 
+    def list_snapshots(
+        self,
+        account_id: int | None = None,
+        character_name: str | None = None,
+        source: str | None = None,
+        days: int | None = None,
+    ) -> list[dict]:
+        """Return snapshot rows shaped for the API SnapshotRow model.
+
+        Each dict: {snapshot_id, character_name, account_id, source, saved_at, item_count}
+        """
+        sql = (
+            "SELECT s.id AS snapshot_id, s.character AS character_name, "
+            "ca.account_id AS account_id, s.source AS source, "
+            "s.scanned_at AS saved_at, s.items AS items "
+            "FROM snapshots s "
+            "LEFT JOIN character_accounts ca ON ca.character = s.character "
+            "WHERE 1=1"
+        )
+        params: list = []
+        if account_id is not None:
+            sql += " AND ca.account_id = ?"
+            params.append(account_id)
+        if character_name is not None:
+            sql += " AND s.character = ?"
+            params.append(character_name)
+        if source is not None:
+            sql += " AND s.source = ?"
+            params.append(source)
+        if days is not None:
+            sql += " AND s.scanned_at >= datetime('now', ?)"
+            params.append(f"-{int(days)} days")
+        sql += " ORDER BY s.id DESC"
+
+        rows = self._con.execute(sql, params).fetchall()
+        out = []
+        for r in rows:
+            try:
+                item_count = len(json.loads(r["items"]))
+            except (json.JSONDecodeError, TypeError):
+                item_count = 0
+            out.append(
+                {
+                    "snapshot_id": r["snapshot_id"],
+                    "character_name": r["character_name"],
+                    "account_id": r["account_id"],
+                    "source": r["source"],
+                    "saved_at": r["saved_at"],
+                    "item_count": item_count,
+                }
+            )
+        return out
+
     def list_all_snapshots(self, character: str) -> list[dict]:
         """
         Return all snapshots for a character, newest first.
@@ -205,6 +263,13 @@ class SnapshotDB:
         """Return all accounts as list of {id, name}."""
         rows = self._con.execute("SELECT id, name FROM accounts ORDER BY name").fetchall()
         return [{"id": r["id"], "name": r["name"]} for r in rows]
+
+    def account_character_counts(self) -> list[dict]:
+        """Return [{account_id, count}] of characters per account."""
+        rows = self._con.execute(
+            "SELECT account_id, COUNT(*) AS c FROM character_accounts GROUP BY account_id"
+        ).fetchall()
+        return [{"account_id": r["account_id"], "count": r["c"]} for r in rows]
 
     def create_account(self, name: str) -> int:
         """Create a new account, return its id. Returns existing id if name already exists."""

@@ -1,6 +1,7 @@
+import asyncio
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from services._mock import mock_chars, mock_world
 from services.api_types import (
@@ -8,9 +9,12 @@ from services.api_types import (
     CharacterDetail,
     ConnectRequest,
     ConnectResult,
+    Item,
     OkResponse,
     WorldSnapshot,
 )
+
+SCAN_TIMEOUT = 15.0  # seconds
 
 router = APIRouter(prefix="/api", tags=["characters"])
 
@@ -99,3 +103,48 @@ async def focus_window(pid: int, request: Request) -> OkResponse:
         return OkResponse(ok=True)
     wm.focus(pid)
     return OkResponse(ok=True)
+
+
+async def _wait_for_seq(sess, attr: str, before: int, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if getattr(sess, attr) > before:
+            return True
+        await asyncio.sleep(0.1)
+    return False
+
+
+@router.post("/characters/{pid}/inventory/scan", response_model=list[Item])
+async def scan_inventory(pid: int, request: Request) -> list[Item]:
+    wm = request.app.state.services.get("worker_manager")
+    if wm is None:
+        return []
+    sess = wm._sessions.get(pid)
+    if sess is None:
+        raise HTTPException(status_code=404, detail=f"No active session for pid {pid}")
+    before = sess._inv_seq
+    if not wm.request_inventory_scan(pid):
+        raise HTTPException(status_code=404, detail=f"No active session for pid {pid}")
+    advanced = await _wait_for_seq(sess, "_inv_seq", before, SCAN_TIMEOUT)
+    if not advanced:
+        raise HTTPException(status_code=504, detail="Inventory scan timed out")
+    return wm.latest_inventory(pid)
+
+
+@router.post("/characters/{pid}/warehouse/scan", response_model=list[Item])
+async def scan_warehouse(pid: int, request: Request) -> list[Item]:
+    wm = request.app.state.services.get("worker_manager")
+    if wm is None:
+        return []
+    sess = wm._sessions.get(pid)
+    if sess is None:
+        raise HTTPException(status_code=404, detail=f"No active session for pid {pid}")
+    before = sess._wh_seq
+    if not wm.request_warehouse_scan(pid):
+        raise HTTPException(status_code=404, detail=f"No active session for pid {pid}")
+    advanced = await _wait_for_seq(sess, "_wh_seq", before, SCAN_TIMEOUT)
+    if not advanced:
+        raise HTTPException(
+            status_code=504, detail="Warehouse scan timed out (open warehouse UI in game first)"
+        )
+    return wm.latest_warehouse(pid)

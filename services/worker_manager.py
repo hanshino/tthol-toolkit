@@ -4,11 +4,15 @@ import asyncio
 import time
 
 from services.api_types import (
+    AutoClickStatus,
     Character,
     CharacterDetail,
+    CharacterRow,
     ConnectRequest,
     ConnectResult,
+    Position,
     SaveSnapshotResult,
+    Vitals,
     WorldSnapshot,
 )
 from services.char_session import CharSession
@@ -18,9 +22,17 @@ from services.snapshot_db import SnapshotDB
 
 
 class WorkerManager:
-    def __init__(self, snapshot_db: SnapshotDB | None = None) -> None:
+    def __init__(
+        self,
+        snapshot_db: SnapshotDB | None = None,
+        autoclick_manager=None,
+    ) -> None:
         self._sessions: dict[int, CharSession] = {}
         self._db = snapshot_db
+        self._autoclick = autoclick_manager
+
+    def set_autoclick_manager(self, mgr) -> None:
+        self._autoclick = mgr
 
     def list_characters(self) -> list[Character]:
         procs = find_tthol_processes()
@@ -40,11 +52,26 @@ class WorkerManager:
         return out
 
     def world_snapshot(self) -> WorldSnapshot:
+        procs = find_tthol_processes()
+        live_pids = {p["pid"] for p in procs}
+
+        for pid in live_pids:
+            sess = self._sessions.get(pid)
+            if sess is None:
+                sess = CharSession(pid)
+                self._sessions[pid] = sess
+                sess.start()
+
+        for dead_pid in list(self._sessions.keys() - live_pids):
+            self._sessions.pop(dead_pid).stop()
+
         rows = []
-        for sess in self._sessions.values():
-            r = sess.row()
-            if r is not None:
-                rows.append(r)
+        for pid in live_pids:
+            sess = self._sessions[pid]
+            r = sess.row() or _placeholder_row(pid, sess.link)
+            if self._autoclick is not None:
+                r = r.model_copy(update={"autoclick": self._autoclick.status(pid)})
+            rows.append(r)
         return WorldSnapshot(chars=rows, server_ts=time.time())
 
     def character_detail(self, pid: int) -> CharacterDetail:
@@ -66,6 +93,28 @@ class WorkerManager:
         sess = self._sessions.pop(pid, None)
         if sess:
             sess.stop()
+
+    def request_inventory_scan(self, pid: int) -> bool:
+        sess = self._sessions.get(pid)
+        if sess is None:
+            return False
+        sess.request_inventory()
+        return True
+
+    def request_warehouse_scan(self, pid: int) -> bool:
+        sess = self._sessions.get(pid)
+        if sess is None:
+            return False
+        sess.request_warehouse()
+        return True
+
+    def latest_inventory(self, pid: int) -> list:
+        sess = self._sessions.get(pid)
+        return list(sess._latest_inv) if sess else []
+
+    def latest_warehouse(self, pid: int) -> list:
+        sess = self._sessions.get(pid)
+        return list(sess._latest_wh) if sess else []
 
     def relocate(self, pid: int, hp: int) -> ConnectResult:
         sess = self._sessions.get(pid)
@@ -92,7 +141,7 @@ class WorkerManager:
         saved = self._db.save_snapshot(character=sess.name, source=source, items=items)
         return SaveSnapshotResult(saved=saved)
 
-    async def run_tick_loop(self, stream: WorldStream, interval: float = 1.5) -> None:
+    async def run_tick_loop(self, stream: WorldStream, interval: float = 3.0) -> None:
         """Coroutine: every `interval` seconds, publish current WorldSnapshot.
 
         Must run on the same event loop as the /ws/world handler — asyncio.Queue
@@ -105,3 +154,16 @@ class WorkerManager:
             except Exception as e:  # pragma: no cover
                 print(f"[tick_loop] publish error: {e}")
             await asyncio.sleep(interval)
+
+
+def _placeholder_row(pid: int, link: str) -> CharacterRow:
+    return CharacterRow(
+        pid=pid,
+        name="(連線中)",
+        sect="",
+        link=link,  # type: ignore[arg-type]
+        level=0,
+        vitals=Vitals(hp=0, hp_max=0, mp=0, mp_max=0, weight=0, weight_max=0),
+        position=Position(map_name=None, x=0, y=0),
+        autoclick=AutoClickStatus(running=False),
+    )

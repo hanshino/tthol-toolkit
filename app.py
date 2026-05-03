@@ -33,10 +33,11 @@ def _pick_port() -> int:
 
 def _build_services(dev: bool) -> dict:
     db = SnapshotDB()
+    autoclick = AutoClickManager()
     return {
-        "worker_manager": WorkerManager(snapshot_db=db),
+        "worker_manager": WorkerManager(snapshot_db=db, autoclick_manager=autoclick),
         "snapshot_db": db,
-        "autoclick_manager": AutoClickManager(),
+        "autoclick_manager": autoclick,
     }
 
 
@@ -60,6 +61,9 @@ def _serve(app, port: int) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dev", action="store_true", help="point window at Vite dev server")
+    parser.add_argument(
+        "--devtools", action="store_true", help="open webview devtools (right-click → Inspect)"
+    )
     args = parser.parse_args()
 
     services = _build_services(args.dev)
@@ -91,7 +95,7 @@ def main() -> int:
 
     target_url = "http://127.0.0.1:5173" if args.dev else f"http://127.0.0.1:{port}"
     webview.create_window("御心鑒", target_url, width=1440, height=900)
-    webview.start()
+    webview.start(debug=args.devtools or args.dev)
     return 0
 
 
