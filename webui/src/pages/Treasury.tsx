@@ -99,7 +99,26 @@ function ItemHeader() {
   );
 }
 
+type HolderGroup = { character: string; on_person: number; in_warehouse: number };
+
+function groupHolders(holders: TreasuryItem['holders']): HolderGroup[] {
+  const map = new Map<string, HolderGroup>();
+  for (const h of holders) {
+    let g = map.get(h.character);
+    if (!g) {
+      g = { character: h.character, on_person: 0, in_warehouse: 0 };
+      map.set(h.character, g);
+    }
+    if (h.source === 'warehouse') g.in_warehouse += h.qty;
+    else g.on_person += h.qty;
+  }
+  return [...map.values()].sort(
+    (a, b) => (b.on_person + b.in_warehouse) - (a.on_person + a.in_warehouse),
+  );
+}
+
 function ItemRow({ item }: { item: TreasuryItem }) {
+  const groups = useMemo(() => groupHolders(item.holders), [item.holders]);
   return (
     <div style={{
       display: 'grid', gridTemplateColumns: '1.5fr 80px 60px 60px 60px 1.5fr',
@@ -112,11 +131,16 @@ function ItemRow({ item }: { item: TreasuryItem }) {
       <span style={{ textAlign: 'right', fontFamily: 'var(--tt-font-mono)' }}>{item.on_person}</span>
       <span style={{ textAlign: 'right', fontFamily: 'var(--tt-font-mono)', color: 'var(--tt-dim)' }}>{item.in_warehouse}</span>
       <span style={{ textAlign: 'right', fontFamily: 'var(--tt-font-mono)', color: 'var(--tt-gold)' }}>{item.total_qty}</span>
-      <span style={{ color: 'var(--tt-dim)', fontSize: 11 }}>
-        {item.holders.map((h, i) => (
-          <span key={`${h.character}-${h.source}-${i}`} style={{ marginRight: 8 }}>
-            {h.character}
-            <span style={{ color: 'var(--tt-mute)' }}>·{h.source === 'warehouse' ? '庫' : '身'}×{h.qty}</span>
+      <span style={{ color: 'var(--tt-dim)', fontSize: 11, display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
+        {groups.map((g) => (
+          <span key={g.character} style={{ whiteSpace: 'nowrap' }}>
+            {g.character}
+            {g.on_person > 0 && (
+              <span style={{ color: 'var(--tt-mute)' }}> 身×{g.on_person}</span>
+            )}
+            {g.in_warehouse > 0 && (
+              <span style={{ color: 'var(--tt-mute)' }}> 庫×{g.in_warehouse}</span>
+            )}
           </span>
         ))}
       </span>

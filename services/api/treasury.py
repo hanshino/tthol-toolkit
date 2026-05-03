@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Request
 
 from services.api_types import TreasuryHolder, TreasuryItem, TreasurySummary
@@ -7,7 +6,10 @@ router = APIRouter(prefix="/api/treasury", tags=["treasury"])
 
 
 def _aggregate(rows: list[dict]) -> dict[int, dict]:
-    """Group latest-snapshot rows by item_id; sum qty, collect holders."""
+    """Group latest-snapshot rows by item_id; sum qty, merge holders by
+    (character, source, account) so multiple inventory slots collapse into
+    one entry per holder.
+    """
     by_id: dict[int, dict] = {}
     for r in rows:
         iid = r["item_id"]
@@ -20,7 +22,7 @@ def _aggregate(rows: list[dict]) -> dict[int, dict]:
                 "total_qty": 0,
                 "on_person": 0,
                 "in_warehouse": 0,
-                "holders": [],
+                "_holders": {},
             }
             by_id[iid] = bucket
         qty = r["qty"]
@@ -29,14 +31,15 @@ def _aggregate(rows: list[dict]) -> dict[int, dict]:
             bucket["in_warehouse"] += qty
         else:
             bucket["on_person"] += qty
-        bucket["holders"].append(
-            TreasuryHolder(
-                character=r["character"],
-                source=r["source"],
-                account=r.get("account"),
-                qty=qty,
-            )
-        )
+        key = (r["character"], r["source"], r.get("account"))
+        bucket["_holders"][key] = bucket["_holders"].get(key, 0) + qty
+
+    for bucket in by_id.values():
+        merged = bucket.pop("_holders")
+        bucket["holders"] = [
+            TreasuryHolder(character=ch, source=src, account=acct, qty=q)
+            for (ch, src, acct), q in merged.items()
+        ]
     return by_id
 
 
