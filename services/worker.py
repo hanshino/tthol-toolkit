@@ -42,7 +42,7 @@ from warehouse_scan import (
     walk_back_to_start,
 )
 
-POLL_INTERVAL = 1.0  # seconds between stat reads
+POLL_INTERVAL = 3.0  # seconds between stat reads
 FAILURE_THRESHOLD = 3  # consecutive failures before rescan
 LOCATE_RETRY_INTERVAL = 3.0  # seconds between locate retries
 LOCATE_MAX_RETRIES = 10  # give up after this many retries (~30s)
