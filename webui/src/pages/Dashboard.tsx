@@ -39,22 +39,27 @@ export function Dashboard({
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPick(c); }}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '24px 80px 1fr 60px 100px 100px 100px 80px 88px',
-                gap: 12, alignItems: 'center', padding: 12,
+                gridTemplateColumns: '24px minmax(0, 1fr) 40px 88px 88px 88px 72px 72px',
+                gap: 10, alignItems: 'center', padding: 12,
                 background: 'var(--tt-raised)', border: '1px solid var(--tt-line-soft)',
                 color: 'var(--tt-text)', cursor: 'pointer', textAlign: 'left',
                 opacity: c.link === 'lost' ? 0.65 : 1,
               }}
             >
               <LinkDot status={c.link} />
-              <span style={{ fontFamily: 'var(--tt-font-serif)', letterSpacing: 2 }}>{c.name}</span>
-              <span style={{ color: 'var(--tt-dim)', fontSize: 12 }}>{c.sect} · pid {c.pid}</span>
+              <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
+                <span style={{ fontFamily: 'var(--tt-font-serif)', letterSpacing: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                <span style={{ color: 'var(--tt-dim)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {c.sect ? `${c.sect} · ` : ''}pid {c.pid}
+                </span>
+              </div>
               <StatNum value={c.level} />
               <VitalCell tone="hp" v={c.vitals.hp} m={c.vitals.hp_max} />
               <VitalCell tone="mp" v={c.vitals.mp} m={c.vitals.mp_max} />
               <VitalCell tone="weight" v={c.vitals.weight} m={c.vitals.weight_max} />
-              <span style={{ fontSize: 11, color: 'var(--tt-mute)', fontFamily: 'var(--tt-font-mono)' }}>
-                {c.position.map_name ?? '—'} {c.position.x},{c.position.y}
+              <span style={{ fontSize: 11, color: 'var(--tt-mute)', fontFamily: 'var(--tt-font-mono)', display: 'grid', gap: 2, minWidth: 0 }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.position.map_name ?? '—'}</span>
+                <span>{c.position.x},{c.position.y}</span>
               </span>
               {c.link === 'lost' ? (
                 <button
@@ -100,11 +105,11 @@ function Header() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '24px 80px 1fr 60px 100px 100px 100px 80px 88px',
-      gap: 12, padding: '6px 12px', fontSize: 11, color: 'var(--tt-mute)',
+      gridTemplateColumns: '24px minmax(0, 1fr) 40px 88px 88px 88px 72px 72px',
+      gap: 10, padding: '6px 12px', fontSize: 11, color: 'var(--tt-mute)',
       letterSpacing: 2, borderBottom: '1px solid var(--tt-line-soft)',
     }}>
-      <span /> <span>名</span> <span>門派</span> <span>等級</span>
+      <span /> <span>名 · 門派</span> <span>等級</span>
       <span>氣血</span> <span>內力</span> <span>負重</span> <span>方位</span> <span />
     </div>
   );

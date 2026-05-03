@@ -94,7 +94,7 @@ def main() -> int:
             time.sleep(0.05)
 
     target_url = "http://127.0.0.1:5173" if args.dev else f"http://127.0.0.1:{port}"
-    webview.create_window("御心鑒", target_url, width=1440, height=900)
+    webview.create_window("御心鑒", target_url, width=1024, height=768)
     webview.start(debug=args.devtools or args.dev)
     return 0
 
