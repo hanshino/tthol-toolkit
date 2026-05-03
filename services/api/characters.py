@@ -97,6 +97,20 @@ async def relocate_char(pid: int, body: RelocateRequest, request: Request) -> Co
     return wm.relocate(pid, body.hp)
 
 
+@router.post("/characters/{pid}/rescan", response_model=ConnectResult)
+async def rescan_char(pid: int, request: Request) -> ConnectResult:
+    """Rebuild the session for a PID so locate can run again.
+
+    Used when a tthola.dat process exists but locate retries timed out before the
+    user logged into a character — the worker thread is dead and there is no
+    automatic restart path.
+    """
+    wm = request.app.state.services.get("worker_manager")
+    if wm is None:
+        return ConnectResult(ok=True)
+    return wm.rescan(pid)
+
+
 @router.post("/characters/{pid}/focus", response_model=OkResponse)
 async def focus_window(pid: int, request: Request) -> OkResponse:
     wm = request.app.state.services.get("worker_manager")

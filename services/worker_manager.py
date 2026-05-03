@@ -126,6 +126,24 @@ class WorkerManager:
         self._sessions[pid] = new_sess
         return ConnectResult(ok=True)
 
+    def rescan(self, pid: int) -> ConnectResult:
+        """Rebuild the session so a dead worker (locate retries exhausted) can try again.
+
+        Used by the manual "重新偵測" UI button when a process appears before the
+        user has logged into a character — the initial locate window times out and
+        the worker thread exits, leaving the session permanently DISCONNECTED.
+        """
+        live_pids = {p["pid"] for p in find_tthol_processes()}
+        if pid not in live_pids:
+            return ConnectResult(ok=False, error="Process not running")
+        old = self._sessions.pop(pid, None)
+        if old is not None:
+            old.stop()
+        new_sess = CharSession(pid)
+        self._sessions[pid] = new_sess
+        new_sess.start()
+        return ConnectResult(ok=True)
+
     def focus(self, pid: int) -> None:
         # Win32 SetForegroundWindow — TODO Task 21+
         pass

@@ -35,3 +35,30 @@ def test_list_characters_returns_processes(mock_find):
     assert len(chars) == 2
     assert chars[0].pid == 1234
     assert chars[0].link == "lost"
+
+
+@patch("services.worker_manager.CharSession")
+@patch("services.worker_manager.find_tthol_processes")
+def test_rescan_replaces_dead_session(mock_find, mock_sess_cls):
+    mock_find.return_value = [{"pid": 4242}]
+    wm = WorkerManager()
+    old_sess = mock_sess_cls.return_value
+    wm._sessions[4242] = old_sess
+    new_sess = type(old_sess)()
+    mock_sess_cls.return_value = new_sess
+
+    result = wm.rescan(4242)
+
+    assert result.ok is True
+    old_sess.stop.assert_called_once()
+    assert wm._sessions[4242] is new_sess
+    new_sess.start.assert_called_once_with()
+
+
+@patch("services.worker_manager.find_tthol_processes")
+def test_rescan_rejects_dead_pid(mock_find):
+    mock_find.return_value = []
+    wm = WorkerManager()
+    result = wm.rescan(9999)
+    assert result.ok is False
+    assert "not running" in (result.error or "").lower()
