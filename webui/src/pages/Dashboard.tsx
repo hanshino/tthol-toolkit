@@ -1,13 +1,9 @@
 import type { CharacterRow } from '../api/types';
 import { Bar, LinkDot, Panel, StatNum } from '../primitives';
-import { useTheme } from '../theme/ThemeProvider';
 
 export function Dashboard({
   chars, onPick,
 }: { chars: CharacterRow[]; onPick: (c: CharacterRow) => void }) {
-  const { density } = useTheme();
-  const rowPad = density === 'compact' ? 8 : density === 'comfy' ? 16 : 12;
-
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16, padding: 16 }}>
       <Panel title="江湖一覽">
@@ -20,7 +16,7 @@ export function Dashboard({
               style={{
                 display: 'grid',
                 gridTemplateColumns: '24px 80px 1fr 60px 100px 100px 100px 80px',
-                gap: 12, alignItems: 'center', padding: rowPad,
+                gap: 12, alignItems: 'center', padding: 12,
                 background: 'var(--tt-raised)', border: '1px solid var(--tt-line-soft)',
                 color: 'var(--tt-text)', cursor: 'pointer', textAlign: 'left',
                 opacity: c.link === 'lost' ? 0.45 : 1,

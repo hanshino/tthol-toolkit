@@ -140,6 +140,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/inventory/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan Inventory */
+        post: operations["scan_inventory_api_characters__pid__inventory_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/warehouse/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan Warehouse */
+        post: operations["scan_warehouse_api_characters__pid__warehouse_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/snapshots": {
         parameters: {
             query?: never;
@@ -306,6 +340,57 @@ export interface paths {
         put?: never;
         /** Export Csv */
         post: operations["export_csv_api_export_csv_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maps/by-name/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Map By Name */
+        get: operations["map_by_name_api_maps_by_name__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/treasury/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Treasury Summary */
+        get: operations["treasury_summary_api_treasury_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/treasury/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Treasury Items */
+        get: operations["treasury_items_api_treasury_items_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -518,6 +603,57 @@ export interface components {
              */
             source: "inventory" | "warehouse";
         };
+        /** MapInfo */
+        MapInfo: {
+            stage: components["schemas"]["StageInfo"];
+            /** Player X */
+            player_x?: number | null;
+            /** Player Y */
+            player_y?: number | null;
+            /**
+             * Monsters
+             * @default []
+             */
+            monsters: components["schemas"]["MapMonster"][];
+            /**
+             * Warps
+             * @default []
+             */
+            warps: components["schemas"]["MapWarp"][];
+            /**
+             * Nearby
+             * @default []
+             */
+            nearby: components["schemas"]["SpawnPoint"][];
+        };
+        /** MapMonster */
+        MapMonster: {
+            /** Npc Id */
+            npc_id: number;
+            /** Name */
+            name?: string | null;
+            /** Level */
+            level?: number | null;
+            /** Hp */
+            hp?: number | null;
+            /** Count */
+            count: number;
+            /** Drop Money Min */
+            drop_money_min?: number | null;
+            /** Drop Money Max */
+            drop_money_max?: number | null;
+            /** Drop Exp */
+            drop_exp?: number | null;
+        };
+        /** MapWarp */
+        MapWarp: {
+            /** Dst Stage Id */
+            dst_stage_id: number;
+            /** Dst Name */
+            dst_name?: string | null;
+            /** Dst Tag */
+            dst_tag?: number | null;
+        };
         /** OkResponse */
         OkResponse: {
             /** Ok */
@@ -573,6 +709,71 @@ export interface components {
             saved_at: string;
             /** Item Count */
             item_count: number;
+        };
+        /** SpawnPoint */
+        SpawnPoint: {
+            /** Npc Id */
+            npc_id: number;
+            /** Name */
+            name?: string | null;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Distance */
+            distance?: number | null;
+        };
+        /** StageInfo */
+        StageInfo: {
+            /** Stage Id */
+            stage_id: number;
+            /** Name */
+            name: string;
+        };
+        /** TreasuryHolder */
+        TreasuryHolder: {
+            /** Character */
+            character: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "inventory" | "warehouse";
+            /** Account */
+            account?: string | null;
+            /** Qty */
+            qty: number;
+        };
+        /** TreasuryItem */
+        TreasuryItem: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /**
+             * Item Type
+             * @default
+             */
+            item_type: string;
+            /** Total Qty */
+            total_qty: number;
+            /** On Person */
+            on_person: number;
+            /** In Warehouse */
+            in_warehouse: number;
+            /** Holders */
+            holders: components["schemas"]["TreasuryHolder"][];
+        };
+        /** TreasurySummary */
+        TreasurySummary: {
+            /** Total Kinds */
+            total_kinds: number;
+            /** Total Qty */
+            total_qty: number;
+            /** On Person */
+            on_person: number;
+            /** In Warehouse */
+            in_warehouse: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -830,6 +1031,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_inventory_api_characters__pid__inventory_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_warehouse_api_characters__pid__warehouse_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Item"][];
                 };
             };
             /** @description Validation Error */
@@ -1212,6 +1475,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExportCsvResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    map_by_name_api_maps_by_name__name__get: {
+        parameters: {
+            query?: {
+                x?: number | null;
+                y?: number | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MapInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    treasury_summary_api_treasury_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreasurySummary"];
+                };
+            };
+        };
+    };
+    treasury_items_api_treasury_items_get: {
+        parameters: {
+            query?: {
+                search?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreasuryItem"][];
                 };
             };
             /** @description Validation Error */

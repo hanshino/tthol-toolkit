@@ -1,28 +1,90 @@
 :root {
-  --tt-bg: #14100e;
-  --tt-panel: #1c1815;
-  --tt-raised: #241e1a;
-  --tt-line: #3a2f28;
-  --tt-line-soft: #2a221d;
-  --tt-text: #e8dcc8;
-  --tt-dim: #a89880;
-  --tt-mute: #6b5e4e;
-  --tt-accent: #c83838;
-  --tt-accent-dim: #8a2828;
-  --tt-gold: #c9a866;
-  --tt-ok: #7ca858;
-  --tt-warn: #d4a142;
-  --tt-bad: #c83838;
-  --tt-seal: #a02828;
-  --tt-grid: rgba(200, 56, 56, 0.05);
+  --tt-bg: #0c1014;
+  --tt-panel: #141a20;
+  --tt-raised: #1c242c;
+  --tt-line: #2c3a44;
+  --tt-line-soft: #1f2830;
+  --tt-text: #d8e2e8;
+  --tt-dim: #8a9aa4;
+  --tt-mute: #5a6a74;
+  --tt-accent: #5a8898;
+  --tt-accent-dim: #3a5868;
+  --tt-gold: #c9b884;
+  --tt-ok: #7ca898;
+  --tt-warn: #d4b072;
+  --tt-bad: #c87878;
+  --tt-seal: #a04848;
+  --tt-grid: rgba(90, 136, 152, 0.05);
   --tt-font: "Noto Sans TC", "Source Han Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
   --tt-font-serif: "Noto Serif TC", "Source Han Serif TC", "Songti TC", "PMingLiU", serif;
   --tt-font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
 }
-html, body, #root { margin: 0; height: 100%; background: var(--tt-bg); color: var(--tt-text); }
+html, body, #root { margin: 0; height: 100%; background: var(--tt-bg); color: var(--tt-text); font-family: var(--tt-font); }
 * { box-sizing: border-box; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.06); }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.12); }
-input::placeholder { color: #6b5e4e; }
+input::placeholder { color: var(--tt-mute); }
+
+/* ---- Buttons ------------------------------------------------------ */
+button {
+  font-family: var(--tt-font);
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--tt-text);
+  background: var(--tt-panel);
+  border: 1px solid var(--tt-line);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+button:hover:not(:disabled) {
+  background: var(--tt-raised);
+  border-color: var(--tt-gold);
+}
+button:active:not(:disabled) {
+  background: var(--tt-line);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+button.is-active {
+  background: var(--tt-raised);
+  border-color: var(--tt-gold);
+  color: var(--tt-gold);
+}
+button.is-ghost {
+  background: transparent;
+  border: none;
+  color: var(--tt-dim);
+  letter-spacing: 1px;
+}
+button.is-ghost:hover:not(:disabled) {
+  color: var(--tt-text);
+  background: transparent;
+}
+button.is-primary {
+  background: var(--tt-accent-dim);
+  border-color: var(--tt-accent);
+  color: var(--tt-text);
+}
+button.is-primary:hover:not(:disabled) {
+  background: var(--tt-accent);
+  border-color: var(--tt-gold);
+}
+
+/* ---- Inputs ------------------------------------------------------- */
+input, select, textarea {
+  font-family: var(--tt-font-mono);
+  font-size: 13px;
+  color: var(--tt-text);
+  background: var(--tt-bg);
+  border: 1px solid var(--tt-line);
+  padding: 6px 10px;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--tt-gold);
+}

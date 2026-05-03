@@ -15,11 +15,15 @@ export function ItemsTab({ pid }: { pid: number }) {
   return (
     <Panel title="行囊 / 庫房">
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <button onClick={scanInventory}>掃描行囊</button>
-        <button onClick={scanWarehouse}>掃描庫房</button>
+        <button className="is-primary" onClick={scanInventory}>掃描行囊</button>
+        <button className="is-primary" onClick={scanWarehouse}>掃描庫房</button>
+        <span style={{ flex: 1 }} />
         {(['all', 'inventory', 'warehouse'] as const).map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            style={{ background: filter === f ? 'var(--tt-raised)' : 'transparent', color: 'var(--tt-text)' }}>
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={filter === f ? 'is-active' : ''}
+          >
             {f === 'all' ? '全部' : f === 'inventory' ? '身' : '庫'}
           </button>
         ))}

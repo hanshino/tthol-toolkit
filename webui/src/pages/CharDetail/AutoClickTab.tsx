@@ -13,10 +13,10 @@ export function AutoClickTab({ pid }: { pid: number }) {
 
   return (
     <Panel title="輔助·召喚商人">
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={start} disabled={running}>啟動</button>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button className="is-primary" onClick={start} disabled={running}>啟動</button>
         <button onClick={stop} disabled={!running}>停止</button>
-        <span style={{ alignSelf: 'center', color: running ? 'var(--tt-ok)' : 'var(--tt-mute)' }}>
+        <span style={{ marginLeft: 12, color: running ? 'var(--tt-ok)' : 'var(--tt-mute)', letterSpacing: 2, fontSize: 12 }}>
           {running ? '執行中' : '未啟用'}
         </span>
       </div>

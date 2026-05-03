@@ -20,7 +20,7 @@ export function CharDetail({ char, onBack }: { char: CharacterRow; onBack: () =>
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-        <button onClick={onBack} style={{ background: 'transparent', color: 'var(--tt-dim)' }}>← 返回</button>
+        <button className="is-ghost" onClick={onBack}>← 返回</button>
         <Seal>{char.name[0]}</Seal>
         <div>
           <div style={{ fontFamily: 'var(--tt-font-serif)', fontSize: 18 }}>{char.name}</div>
@@ -30,19 +30,34 @@ export function CharDetail({ char, onBack }: { char: CharacterRow; onBack: () =>
           <LinkDot status={char.link} /> Lv {char.level}
         </div>
       </div>
-      <nav style={{ display: 'flex', gap: 0, marginBottom: 12 }}>
-        {TABS.map(t => (
-          <button key={t.k} onClick={() => setTab(t.k)} style={{
-            padding: '6px 18px', background: tab === t.k ? 'var(--tt-raised)' : 'transparent',
-            color: 'var(--tt-text)', border: '1px solid var(--tt-line)', borderBottom: 'none',
-            fontFamily: 'var(--tt-font-serif)', letterSpacing: 4, cursor: 'pointer',
-          }}>{t.n}</button>
-        ))}
+      <nav style={{
+        display: 'flex', gap: 4, marginBottom: 12,
+        borderBottom: '1px solid var(--tt-line)',
+      }}>
+        {TABS.map(t => {
+          const active = tab === t.k;
+          return (
+            <button
+              key={t.k}
+              onClick={() => setTab(t.k)}
+              className="is-ghost"
+              style={{
+                padding: '8px 22px',
+                fontFamily: 'var(--tt-font-serif)',
+                fontSize: 14,
+                letterSpacing: 4,
+                color: active ? 'var(--tt-gold)' : 'var(--tt-dim)',
+                borderBottom: active ? '2px solid var(--tt-gold)' : '2px solid transparent',
+                marginBottom: -1,
+              }}
+            >{t.n}</button>
+          );
+        })}
       </nav>
       {tab === 'body' && <BodyTab pid={char.pid} />}
       {tab === 'items' && <ItemsTab pid={char.pid} />}
       {tab === 'autoclick' && <AutoClickTab pid={char.pid} />}
-      {tab === 'maps' && <MapAnalysis />}
+      {tab === 'maps' && <MapAnalysis char={char} />}
     </div>
   );
 }
