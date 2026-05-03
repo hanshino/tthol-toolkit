@@ -19,6 +19,17 @@ def _connect() -> sqlite3.Connection:
     return con
 
 
+def all_stage_names() -> set[str]:
+    """Return every distinct stage name as a UTF-8 string set. Used as a whitelist
+    when scanning heap memory for the current map name — heuristic padding checks
+    became unreliable after the 2026-05 game update, so we validate candidates
+    against the canonical map list instead.
+    """
+    with _connect() as con:
+        rows = con.execute("SELECT DISTINCT name FROM stages").fetchall()
+        return {r["name"] for r in rows if r["name"]}
+
+
 def stage_by_name(name: str) -> dict | None:
     if not name:
         return None

@@ -35,6 +35,7 @@ from reader import (
     verify_structure,
     verify_structure_shifted,
 )
+from services.map_db import all_stage_names
 from warehouse_scan import (
     SLOT_SIZE,
     locate_all_slot_arrays,
@@ -77,6 +78,10 @@ class ReaderWorker(threading.Thread):
         self._knowledge = load_knowledge()
         self._display_fields = get_display_fields(self._knowledge)
         self._item_db = load_item_db()
+        try:
+            self._stage_names = all_stage_names()
+        except Exception:
+            self._stage_names = None  # fall back to heuristic if DB unavailable
 
     # ------------------------------------------------------------------
     # Public API (called from main thread)
@@ -174,7 +179,7 @@ class ReaderWorker(threading.Thread):
                 else:
                     failure_count = 0
                     if map_tick % MAP_RESCAN_EVERY == 0 or not map_name:
-                        map_name = locate_map_name(pm)
+                        map_name = locate_map_name(pm, valid_names=self._stage_names)
                     map_tick += 1
                     self._cb_stats([("角色名稱", char_name), ("地圖名稱", map_name)] + fields)
 
