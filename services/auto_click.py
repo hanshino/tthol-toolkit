@@ -39,6 +39,11 @@ MERCHANT_COORDS: list[tuple[int, int]] = [
     (633, 333),  # Merchant 5
 ]
 
+# Round-end button coordinates (800x600 reference space).
+# These buttons require two consecutive click pairs to register.
+COLLECT_ALL_COORD = (645, 177)  # 全部收下
+DESTROY_ALL_COORD = (645, 209)  # 全部銷毀
+
 
 def _scale_coord(hwnd: int, ref_x: int, ref_y: int) -> tuple[int, int]:
     """Scale reference 800x600 coordinates to the actual client rect size."""
@@ -66,6 +71,13 @@ def background_click(hwnd: int, ref_x: int, ref_y: int) -> None:
     user32.PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lparam)
     time.sleep(0.05)
     user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam)
+
+
+def background_double_click(hwnd: int, ref_x: int, ref_y: int) -> None:
+    """Two consecutive click pairs - required by 全部收下 / 全部銷毀 buttons."""
+    background_click(hwnd, ref_x, ref_y)
+    time.sleep(0.05)
+    background_click(hwnd, ref_x, ref_y)
 
 
 def _resolve_hwnd(pid: int) -> int:
@@ -100,7 +112,13 @@ class _Job:
         )
 
     def _run(self) -> None:  # pragma: no cover - Win32 only
-        """Recurring background click on the configured merchant button.
+        """Recurring background click loop.
+
+        - mode "off":     click selected merchant every ``interval_seconds``
+        - mode "collect": after every ``clicks_per_round`` merchant clicks,
+                          double-click 全部收下 then 全部銷毀 (collect what
+                          fits, destroy the rest so the panel clears)
+        - mode "destroy": same cadence but double-click 全部銷毀 only
 
         Resolves HWND once at start; if the window goes away we keep retrying
         on every tick so a brief disconnect does not kill the job.
@@ -109,8 +127,13 @@ class _Job:
         if merchant_idx < 0 or merchant_idx >= len(MERCHANT_COORDS):
             merchant_idx = 0
         ref_x, ref_y = MERCHANT_COORDS[merchant_idx]
-        interval = max(0.05, float(self.config.interval_seconds))
+        # 50ms floor matches the down/up gap inside background_click — anything
+        # tighter would have round timing dominated by the click pair itself.
+        interval = max(0.05, self.config.interval_ms / 1000.0)
+        mode = self.config.mode
+        clicks_per_round = max(1, int(self.config.clicks_per_round))
 
+        click_count = 0
         hwnd = _resolve_hwnd(self.pid)
         while not self._stop.is_set():
             if not hwnd:
@@ -119,6 +142,16 @@ class _Job:
                 try:
                     background_click(hwnd, ref_x, ref_y)
                     self.last_click_at = time.time()
+                    click_count += 1
+                    if mode != "off" and click_count >= clicks_per_round:
+                        if mode == "collect":
+                            # Collect first; whatever doesn't fit, destroy.
+                            background_double_click(hwnd, *COLLECT_ALL_COORD)
+                            time.sleep(0.1)  # let the panel update before next action
+                            background_double_click(hwnd, *DESTROY_ALL_COORD)
+                        elif mode == "destroy":
+                            background_double_click(hwnd, *DESTROY_ALL_COORD)
+                        click_count = 0
                 except Exception:
                     # Best-effort: window may have closed mid-click; force re-resolve.
                     hwnd = 0

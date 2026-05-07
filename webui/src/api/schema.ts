@@ -415,10 +415,21 @@ export interface components {
         };
         /** AutoClickConfig */
         AutoClickConfig: {
-            /** Interval Seconds */
-            interval_seconds: number;
+            /** Interval Ms */
+            interval_ms: number;
             /** Merchant Idx */
             merchant_idx: number;
+            /**
+             * Mode
+             * @default off
+             * @enum {string}
+             */
+            mode?: "off" | "collect" | "destroy";
+            /**
+             * Clicks Per Round
+             * @default 1
+             */
+            clicks_per_round?: number;
         };
         /** AutoClickStatus */
         AutoClickStatus: {

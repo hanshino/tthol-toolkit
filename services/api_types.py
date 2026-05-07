@@ -38,6 +38,13 @@ class AutoClickStatus(_Base):
     last_click_at: float | None = None
 
 
+class KeepActiveStatus(_Base):
+    running: bool
+    started_at: float | None = None
+    runtime_seconds: int | None = None
+    last_send_at: float | None = None
+
+
 # ---- Stats (六屬 + 七戰) -----------------------------------------------
 
 
@@ -182,8 +189,13 @@ class SetCharacterAccountRequest(_Base):
 
 
 class AutoClickConfig(_Base):
-    interval_seconds: int
+    interval_ms: int  # gap between merchant clicks; ms granularity matches game's tick rate
     merchant_idx: int
+    # "off"     — merchant clicks only (legacy behavior)
+    # "collect" — after clicks_per_round merchant clicks, press 全部收下 then 全部銷毀
+    # "destroy" — after clicks_per_round merchant clicks, press 全部銷毀
+    mode: Literal["off", "collect", "destroy"] = "off"
+    clicks_per_round: int = 1
 
 
 class AutoClickTestRequest(_Base):
