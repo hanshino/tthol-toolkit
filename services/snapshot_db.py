@@ -12,12 +12,33 @@ checksum is SHA256 of the canonical items JSON string.
 
 import hashlib
 import json
+import os
+import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 
 ITEM_NAME_DB = Path(__file__).parent.parent / "tthol.sqlite"
-DEFAULT_DB = Path(__file__).parent.parent / "tthol_inventory.db"
+
+
+def _default_db_path() -> Path:
+    """User snapshots live under %APPDATA%\\御心鑒 so they survive folder moves
+    and self-updates. On first run after upgrading, migrate the legacy
+    tthol_inventory.db from repo root if present.
+    """
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return Path(__file__).parent.parent / "tthol_inventory.db"
+    target = Path(appdata) / "御心鑒" / "snapshots.db"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    legacy = Path(__file__).parent.parent / "tthol_inventory.db"
+    if legacy.exists() and not target.exists():
+        try:
+            shutil.move(str(legacy), str(target))
+        except (OSError, shutil.Error):
+            pass
+    return target
+
 
 _ITEM_MAPS_CACHE: tuple[dict[int, str], dict[int, str]] | None = None
 
@@ -74,7 +95,7 @@ def _checksum(canonical: str) -> str:
 
 class SnapshotDB:
     def __init__(self, path: str | None = None):
-        db_path = path or str(DEFAULT_DB)
+        db_path = path or str(_default_db_path())
         # check_same_thread=False: uvicorn dispatches handlers on worker threads.
         self._con = sqlite3.connect(db_path, check_same_thread=False)
         self._con.row_factory = sqlite3.Row
