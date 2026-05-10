@@ -4,6 +4,7 @@ import { LinkDot, Seal } from '../../primitives';
 import { BodyTab } from './BodyTab';
 import { ItemsTab } from './ItemsTab';
 import { AutoClickTab } from './AutoClickTab';
+import { KeepActiveTab } from './KeepActiveTab';
 import { MapAnalysis } from './MapAnalysis';
 
 const TABS = [
@@ -56,7 +57,12 @@ export function CharDetail({ char, onBack }: { char: CharacterRow; onBack: () =>
       </nav>
       {tab === 'body' && <BodyTab pid={char.pid} />}
       {tab === 'items' && <ItemsTab pid={char.pid} />}
-      {tab === 'autoclick' && <AutoClickTab pid={char.pid} />}
+      {tab === 'autoclick' && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <AutoClickTab pid={char.pid} />
+          <KeepActiveTab pid={char.pid} />
+        </div>
+      )}
       {tab === 'maps' && <MapAnalysis char={char} />}
     </div>
   );

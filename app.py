@@ -17,6 +17,7 @@ import webview
 
 from services.api import build_app
 from services.auto_click import AutoClickManager
+from services.fake_active import KeepActiveManager
 from services.snapshot_db import SnapshotDB
 from services.worker_manager import WorkerManager
 
@@ -34,10 +35,12 @@ def _pick_port() -> int:
 def _build_services(dev: bool) -> dict:
     db = SnapshotDB()
     autoclick = AutoClickManager()
+    keep_active = KeepActiveManager()
     return {
         "worker_manager": WorkerManager(snapshot_db=db, autoclick_manager=autoclick),
         "snapshot_db": db,
         "autoclick_manager": autoclick,
+        "keep_active_manager": keep_active,
     }
 
 
