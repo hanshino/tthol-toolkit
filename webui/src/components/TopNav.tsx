@@ -32,7 +32,9 @@ export function TopNav({
               letterSpacing: 4, fontWeight: 600,
               background: active ? 'var(--tt-bg)' : 'transparent',
               color: active ? 'var(--tt-text)' : 'var(--tt-dim)',
-              border: '1px solid ' + (active ? 'var(--tt-line)' : 'transparent'),
+              borderTop: '1px solid ' + (active ? 'var(--tt-line)' : 'transparent'),
+              borderLeft: '1px solid ' + (active ? 'var(--tt-line)' : 'transparent'),
+              borderRight: '1px solid ' + (active ? 'var(--tt-line)' : 'transparent'),
               borderBottom: 'none', cursor: 'pointer',
             }}>{t.n}</button>
           );
