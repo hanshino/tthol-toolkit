@@ -9,9 +9,10 @@ import ctypes.wintypes
 import struct
 import json
 import sqlite3
-import os
 import sys
 import time
+
+from services._paths import bundled
 
 
 # ============================================================
@@ -85,7 +86,7 @@ def get_memory_regions(process_handle):
 # 知識庫
 # ============================================================
 def load_knowledge():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge.json")
+    path = bundled("knowledge.json")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -536,10 +537,10 @@ MAX_INVENTORY_SLOTS = 60
 
 def load_item_db():
     """Load item name lookup from tthol.sqlite."""
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tthol.sqlite")
-    if not os.path.exists(db_path):
+    db_path = bundled("tthol.sqlite")
+    if not db_path.exists():
         return {}
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(str(db_path))
     conn.text_factory = lambda b: b.decode("utf-8", errors="replace")
     cur = conn.cursor()
     cur.execute("SELECT id, name FROM items")

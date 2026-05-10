@@ -7,9 +7,10 @@ the worker thread / async handlers can use it without sharing a cursor.
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / "tthol.sqlite"
+from services._paths import bundled
+
+DB_PATH = bundled("tthol.sqlite")
 
 
 def _connect() -> sqlite3.Connection:

@@ -15,6 +15,7 @@ from pathlib import Path
 import uvicorn
 import webview
 
+from services._paths import bundled
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.fake_active import KeepActiveManager
@@ -80,7 +81,7 @@ def main() -> int:
     if not args.dev:
         from fastapi.staticfiles import StaticFiles
 
-        dist = Path("webui/dist")
+        dist = bundled("webui", "dist")
         if dist.exists():
             app.mount("/", StaticFiles(directory=str(dist), html=True), name="webui")
 

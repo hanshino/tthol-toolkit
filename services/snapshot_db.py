@@ -18,20 +18,22 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-ITEM_NAME_DB = Path(__file__).parent.parent / "tthol.sqlite"
+from services._paths import app_root, bundled
+
+ITEM_NAME_DB = bundled("tthol.sqlite")
 
 
 def _default_db_path() -> Path:
     """User snapshots live under %APPDATA%\\御心鑒 so they survive folder moves
     and self-updates. On first run after upgrading, migrate the legacy
-    tthol_inventory.db from repo root if present.
+    tthol_inventory.db from the install root if present.
     """
     appdata = os.environ.get("APPDATA")
     if not appdata:
-        return Path(__file__).parent.parent / "tthol_inventory.db"
+        return app_root() / "tthol_inventory.db"
     target = Path(appdata) / "御心鑒" / "snapshots.db"
     target.parent.mkdir(parents=True, exist_ok=True)
-    legacy = Path(__file__).parent.parent / "tthol_inventory.db"
+    legacy = app_root() / "tthol_inventory.db"
     if legacy.exists() and not target.exists():
         try:
             shutil.move(str(legacy), str(target))
