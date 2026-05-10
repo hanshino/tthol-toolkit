@@ -67,6 +67,29 @@ def _local_version() -> str:
     return "v0.0.0"
 
 
+def _parse_version(v: str) -> tuple[int, ...]:
+    """v1.2.3 -> (1, 2, 3). Returns () if any segment is non-numeric so
+    callers can fall back to string equality for tags like 'dev' / 'rc1'."""
+    parts = v.lstrip("v").strip().split(".")
+    out: list[int] = []
+    for p in parts:
+        try:
+            out.append(int(p))
+        except ValueError:
+            return ()
+    return tuple(out)
+
+
+def _is_outdated(local: str, latest: str) -> bool:
+    """True if `latest` is strictly newer than `local`. Falls back to
+    string inequality if either tag can't be parsed as semver."""
+    lt = _parse_version(local)
+    rt = _parse_version(latest)
+    if lt and rt:
+        return rt > lt
+    return latest != local
+
+
 def _fetch_latest_release() -> dict:
     req = urllib.request.Request(
         RELEASE_API,
@@ -138,8 +161,8 @@ class SplashApi:
                 self._log("no latest release found")
                 return {"ok": True, "skipped": True}
 
-            if latest == local:
-                self._log("already up to date")
+            if not _is_outdated(local, latest):
+                self._log(f"already up to date (local {local} >= latest {latest})")
                 return {"ok": True, "skipped": True}
 
             asset = _pick_asset(meta)
