@@ -37,7 +37,12 @@
     async function start() {
       try {
         const r = await window.pywebview.api.do_update();
-        if (r.ok) {
+        if (r && r.swapped) {
+          setStatus('已套用更新，重啟中…');
+          setTimeout(() => window.pywebview.api.quit(), 500);
+          return;
+        }
+        if (r && r.ok) {
           setStatus('啟動中…');
           await window.pywebview.api.launch_app();
         } else {
