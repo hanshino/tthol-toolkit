@@ -22,10 +22,18 @@ from pathlib import Path
 
 import webview
 
-REPO = Path(__file__).resolve().parent
+
+def _install_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+REPO = _install_root()
 VERSION_FILE = REPO / "VERSION"
 PENDING_DIR = REPO / "_pending_update"
 SWAP_SCRIPT = REPO / "_swap.cmd"
+APP_EXE = "tthol-reader.exe"
 
 GITHUB_REPO = "hanshino/tthol-toolkit"
 RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -36,7 +44,7 @@ ASSET_PREFIX = "tthol-reader-"
 #   %1 = parent pid (this process)
 #   %2 = staging dir (extracted update)
 #   %3 = install dir (repo root)
-SWAP_CMD = """@echo off
+SWAP_CMD = f"""@echo off
 setlocal
 
 :wait
@@ -48,7 +56,7 @@ goto wait
 :swap
 robocopy "%~2" "%~3" /E /NFL /NDL /NJH /NJS /NC /NS /NP /R:3 /W:1 >NUL
 rmdir /S /Q "%~2" 2>NUL
-start "" "%~3\\toolkit\\python\\pythonw.exe" "%~3\\bootstrap.py"
+start "" "%~3\\{APP_EXE}"
 del "%~f0" 2>NUL
 """
 
@@ -176,7 +184,12 @@ class SplashApi:
             return {"ok": False, "error": str(e)}
 
     def launch_app(self) -> None:
-        subprocess.Popen([sys.executable, str(REPO / "app.py")], cwd=REPO)
+        if getattr(sys, "frozen", False):
+            # In frozen mode bootstrap.exe IS the runtime; re-spawn with
+            # --app sentinel so the same executable enters app mode.
+            subprocess.Popen([sys.executable, "--app"], cwd=REPO)
+        else:
+            subprocess.Popen([sys.executable, str(REPO / "app.py")], cwd=REPO)
         if self._window:
             self._window.destroy()
 
@@ -188,11 +201,28 @@ class SplashApi:
             self._window.destroy()
 
 
+def _splash_html_path() -> Path:
+    """In dev: alongside bootstrap.py. In frozen: shipped as a data file
+    inside _internal/ via PyInstaller's datas spec entry.
+    """
+    from services._paths import bundled
+
+    return bundled("bootstrap_splash.html")
+
+
 def main() -> int:
+    # Single-binary dispatch: --app re-enters this executable as the main
+    # FastAPI/webview app so we don't need two separate .exe files.
+    if len(sys.argv) > 1 and sys.argv[1] == "--app":
+        sys.argv.pop(1)
+        from app import main as app_main
+
+        return app_main()
+
     api = SplashApi()
     window = webview.create_window(
         "御心鑒 — 啟動",
-        str(REPO / "bootstrap_splash.html"),
+        str(_splash_html_path()),
         js_api=api,
         width=460,
         height=260,

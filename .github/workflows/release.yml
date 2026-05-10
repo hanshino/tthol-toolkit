@@ -36,91 +36,62 @@ jobs:
           npm ci
           npm run build
 
-      # ── Embeddable Python ───────────────────────────────────────
-      - name: Download embeddable Python 3.11.9
+      # ── Python + PyInstaller ────────────────────────────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+          cache: 'pip'
+
+      - name: Install dependencies (runtime + pyinstaller)
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          # Mirror the runtime extras vendored in the release: pull project
+          # deps from pyproject.toml and add pyinstaller for the build.
+          python - <<'PY'
+          import tomllib
+          d = tomllib.load(open("pyproject.toml", "rb"))
+          deps = d["project"]["dependencies"]
+          open("requirements-build.txt", "w").write("\n".join(deps + ["pyinstaller>=6.10"]))
+          PY
+          cat requirements-build.txt
+          pip install -r requirements-build.txt
+
+      - name: PyInstaller build
         shell: powershell
         run: |
-          curl.exe -L "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -o python-embed.zip
-          New-Item -ItemType Directory -Path "toolkit\python" -Force | Out-Null
-          Expand-Archive -Path "python-embed.zip" -DestinationPath "toolkit\python" -Force
-          Remove-Item python-embed.zip
-
-      - name: Configure embeddable Python paths
-        shell: powershell
-        run: |
-          $pth = @"
-          python311.zip
-          .
-          Lib\site-packages
-
-          import site
-          "@
-          Set-Content -Path "toolkit\python\python311._pth" -Value $pth -Encoding ascii
-
-          $sitecustom = @"
-          import sys, os
-          _here = os.path.dirname(os.path.abspath(__file__))
-          _root = os.path.dirname(os.path.dirname(_here))
-          if _root not in sys.path:
-              sys.path.insert(0, _root)
-          "@
-          Set-Content -Path "toolkit\python\sitecustomize.py" -Value $sitecustom -Encoding ascii
-
-      - name: Install pip into embeddable Python
-        shell: powershell
-        run: |
-          curl.exe -L "https://bootstrap.pypa.io/get-pip.py" -o get-pip.py
-          toolkit\python\python.exe get-pip.py --no-warn-script-location
-          Remove-Item get-pip.py
-
-      - name: Vendor runtime dependencies
-        shell: powershell
-        run: |
-          python -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb')); open('requirements.txt','w').write('\n'.join(d['project']['dependencies']))"
-          Get-Content requirements.txt
-          toolkit\python\python.exe -m pip install --no-warn-script-location -r requirements.txt
-          # Slim site-packages: drop pip itself (no longer needed at runtime) & __pycache__
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue toolkit\python\Lib\site-packages\pip
-          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue toolkit\python\Lib\site-packages\pip-*.dist-info
-          Get-ChildItem -Path toolkit\python -Recurse -Filter "__pycache__" -Directory |
-            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          pyinstaller --noconfirm --clean tthol-reader.spec
+          if (-not (Test-Path 'dist\tthol-reader\tthol-reader.exe')) {
+            throw "PyInstaller did not produce tthol-reader.exe"
+          }
 
       # ── Stage release contents ─────────────────────────────────
       - name: Stage release tree
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Path _stage -Force | Out-Null
+          $stage = '_stage'
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          New-Item -ItemType Directory -Path $stage | Out-Null
 
-          $files = @(
-            'start.bat', 'bootstrap.py', 'bootstrap_splash.html',
-            'app.py', 'auto_detect.py', 'reader.py', 'warehouse_scan.py',
-            'knowledge.json', 'tthol.sqlite',
-            'icon.png', 'icon_small.png', 'brand_banner.png',
-            'README.md'
-          )
-          foreach ($f in $files) {
-            if (Test-Path $f) { Copy-Item $f _stage\ -Force }
-          }
-          Set-Content -Path "_stage\VERSION" -Value "${{ steps.tag.outputs.TAG }}" -Encoding ascii -NoNewline
-
-          # Trees: services / webui dist / toolkit (embeddable Python + vendored wheels)
-          robocopy services _stage\services /E /XD __pycache__ /XF *.pyc *.pyo
-          if ($LASTEXITCODE -ge 8) { throw "robocopy services failed: $LASTEXITCODE" }
-          robocopy webui\dist _stage\webui\dist /E
-          if ($LASTEXITCODE -ge 8) { throw "robocopy webui\dist failed: $LASTEXITCODE" }
-          robocopy toolkit _stage\toolkit /E /XD __pycache__ /XF *.pyc *.pyo
-          if ($LASTEXITCODE -ge 8) { throw "robocopy toolkit failed: $LASTEXITCODE" }
+          # Everything PyInstaller produced (.exe + _internal/) is the install tree.
+          robocopy 'dist\tthol-reader' $stage /E /NFL /NDL /NJH /NJS /NC /NS /NP
+          if ($LASTEXITCODE -ge 8) { throw "robocopy stage failed: $LASTEXITCODE" }
           $global:LASTEXITCODE = 0
 
-          # Sanity check: required entries must exist before zipping
+          # User-visible files at install root.
+          Set-Content -Path "$stage\VERSION" -Value "${{ steps.tag.outputs.TAG }}" -Encoding ascii -NoNewline
+          if (Test-Path 'README.md') { Copy-Item 'README.md' $stage\ -Force }
+
+          # Sanity check.
           $required = @(
-            '_stage\app.py', '_stage\bootstrap.py', '_stage\start.bat',
-            '_stage\webui\dist\index.html',
-            '_stage\toolkit\python\python.exe',
-            '_stage\toolkit\python\pythonw.exe',
-            '_stage\tthol.sqlite', '_stage\VERSION',
-            '_stage\services\__init__.py'
+            "$stage\tthol-reader.exe",
+            "$stage\_internal\bootstrap_splash.html",
+            "$stage\_internal\webui\dist\index.html",
+            "$stage\_internal\knowledge.json",
+            "$stage\_internal\tthol.sqlite",
+            "$stage\VERSION"
           )
           foreach ($p in $required) {
             if (-not (Test-Path $p)) { throw "Missing required entry: $p" }
