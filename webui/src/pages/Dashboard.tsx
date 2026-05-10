@@ -61,20 +61,19 @@ export function Dashboard({
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.position.map_name ?? '—'}</span>
                 <span>{c.position.x},{c.position.y}</span>
               </span>
-              {c.link === 'lost' ? (
-                <button
-                  className="is-ghost"
-                  onClick={(e) => { e.stopPropagation(); handleRescan(c.pid); }}
-                  disabled={rescanning === c.pid}
-                  title="重新驅動角色偵測"
-                  style={{
-                    fontSize: 11, padding: '6px 10px', letterSpacing: 2,
-                    color: 'var(--tt-gold)', cursor: 'pointer',
-                  }}
-                >
-                  {rescanning === c.pid ? '偵測中…' : '↻ 重偵'}
-                </button>
-              ) : <span />}
+              <button
+                className="is-ghost"
+                onClick={(e) => { e.stopPropagation(); handleRescan(c.pid); }}
+                disabled={rescanning === c.pid}
+                title={c.link === 'lost' ? '重新驅動角色偵測' : '強制重新定位（資料不對時用）'}
+                style={{
+                  fontSize: 11, padding: '6px 10px', letterSpacing: 2,
+                  color: c.link === 'lost' ? 'var(--tt-gold)' : 'var(--tt-mute)',
+                  cursor: 'pointer',
+                }}
+              >
+                {rescanning === c.pid ? '偵測中…' : '↻ 重偵'}
+              </button>
             </div>
           ))}
         </div>
