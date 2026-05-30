@@ -309,7 +309,7 @@ def verify_structure(pm, hp_addr, fields, skip_seq_check=False):
                 val = pm.read_int(hp_addr + offset)
                 if not (min_val <= val <= max_val):
                     penalties += 1
-            except:
+            except Exception:
                 penalties += 1
 
         # Check coordinates reasonableness
@@ -318,7 +318,7 @@ def verify_structure(pm, hp_addr, fields, skip_seq_check=False):
                 coord = pm.read_int(hp_addr + offset)
                 if not (-1 <= coord <= 10000):
                     penalties += 1
-            except:
+            except Exception:
                 penalties += 1
 
         # Detect sequential number pattern (false positive indicator)
@@ -327,7 +327,7 @@ def verify_structure(pm, hp_addr, fields, skip_seq_check=False):
             diffs = [abs(vals[i + 1] - vals[i]) for i in range(len(vals) - 1)]
             if sum(1 for d in diffs if d < 10) >= 4:
                 penalties += 3
-        except:
+        except Exception:
             pass
 
         # Apply penalties
@@ -385,7 +385,7 @@ def verify_structure_shifted(pm, struct_base, fields):
                 val = pm.read_int(struct_base + offset)
                 if not (min_val <= val <= max_val):
                     penalties += 1
-            except:
+            except Exception:
                 penalties += 1
 
         for offset in [416, 420]:
@@ -393,7 +393,7 @@ def verify_structure_shifted(pm, struct_base, fields):
                 coord = pm.read_int(struct_base + offset)
                 if not (-1 <= coord <= 10000):
                     penalties += 1
-            except:
+            except Exception:
                 penalties += 1
 
         score -= penalties * 0.1
@@ -448,9 +448,9 @@ def locate_map_name(pm, valid_names: set[str] | None = None):
             if str_start + 4 >= len(data):
                 continue
 
-            h = data[str_start]
-            l = data[str_start + 1]
-            if not (0xA1 <= h <= 0xF9 and 0x40 <= l <= 0xFE):
+            hi = data[str_start]
+            lo = data[str_start + 1]
+            if not (0xA1 <= hi <= 0xF9 and 0x40 <= lo <= 0xFE):
                 continue
 
             null_pos = data.find(b"\x00", str_start, str_start + 17)

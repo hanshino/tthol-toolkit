@@ -2,12 +2,13 @@
 Verify character name at HP-228 offset.
 Reads the raw bytes at hp_addr - 228 and decodes as Big5 string.
 """
+
 import sys
 import struct
 import time
 import pymem
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 from reader import locate_character, load_knowledge
 
 
@@ -24,24 +25,24 @@ def read_name(pm, hp_addr):
         return None, None, str(e)
 
     # Find null terminator
-    end = raw.find(b'\x00')
+    end = raw.find(b"\x00")
     if end != -1:
         raw = raw[:end]
 
     print(f"  Raw bytes at HP{NAME_OFFSET:+d} (0x{addr:08X}): {raw.hex()}")
 
-    for enc in ['big5', 'gbk', 'utf-8']:
+    for enc in ["big5", "gbk", "utf-8"]:
         try:
             text = raw.decode(enc)
             return text, enc, None
         except Exception:
             pass
 
-    return raw.hex(), 'hex', None
+    return raw.hex(), "hex", None
 
 
 def main():
-    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding="utf-8")
 
     if len(sys.argv) < 2:
         print("Usage: uv run verify_name.py <current_hp>")
@@ -79,20 +80,20 @@ def main():
         print("  (empty or unreadable)")
 
     # Also dump the 32 bytes around NAME_OFFSET for inspection
-    print(f"\n  Context dump (HP-256 to HP-200):")
+    print("\n  Context dump (HP-256 to HP-200):")
     for off in range(-256, -196, 4):
         try:
             raw4 = pm.read_bytes(hp_addr + off, 4)
-            val = struct.unpack('<i', raw4)[0]
-            uval = struct.unpack('<I', raw4)[0]
+            val = struct.unpack("<i", raw4)[0]
+            uval = struct.unpack("<I", raw4)[0]
             try:
-                text = raw4.rstrip(b'\x00').decode('big5')
+                text = raw4.rstrip(b"\x00").decode("big5")
             except Exception:
-                text = ''
+                text = ""
             print(f"    HP{off:+4d}  0x{uval:08X}  ({val:10d})  {text!r}")
         except Exception:
             pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

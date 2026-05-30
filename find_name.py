@@ -9,19 +9,19 @@ Usage:
 Example:
     uv run find_name.py 46277 YourCharName
 """
+
 import sys
 import struct
 import time
 import pymem
-import ctypes
-import ctypes.wintypes
 
 # Re-use infrastructure from reader.py
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 from reader import get_memory_regions, locate_character, load_knowledge
 
 
-ENCODINGS = ['big5', 'gbk', 'utf-8']
+ENCODINGS = ["big5", "gbk", "utf-8"]
+
 
 # ============================================================
 # Search memory for a byte pattern
@@ -53,16 +53,16 @@ def read_cstring(pm, addr, max_len=64):
         raw = pm.read_bytes(addr, max_len)
     except Exception:
         return None, None
-    end = raw.find(b'\x00')
+    end = raw.find(b"\x00")
     if end == 0:
         return None, None
     raw = raw[:end] if end != -1 else raw
-    for enc in ['big5', 'gbk', 'utf-8', 'latin-1']:
+    for enc in ["big5", "gbk", "utf-8", "latin-1"]:
         try:
             return raw.decode(enc), enc
         except Exception:
             pass
-    return raw.hex(), 'hex'
+    return raw.hex(), "hex"
 
 
 # ============================================================
@@ -71,14 +71,16 @@ def read_cstring(pm, addr, max_len=64):
 def scan_struct_pointers(pm, hp_addr, scan_range=(-256, 512)):
     """Check every int32 in range from hp_addr; if it looks like a valid
     heap pointer, try to read a string at that address."""
-    print(f"\n[Pointer scan] Scanning offsets {scan_range[0]}..{scan_range[1]} from HP addr for pointers to strings")
+    print(
+        f"\n[Pointer scan] Scanning offsets {scan_range[0]}..{scan_range[1]} from HP addr for pointers to strings"
+    )
     start = scan_range[0]
     end = scan_range[1]
     found = []
     for off in range(start, end, 4):
         try:
             raw = pm.read_bytes(hp_addr + off, 4)
-            ptr = struct.unpack('<I', raw)[0]
+            ptr = struct.unpack("<I", raw)[0]
         except Exception:
             continue
         # Valid 32-bit heap pointer range
@@ -88,7 +90,9 @@ def scan_struct_pointers(pm, hp_addr, scan_range=(-256, 512)):
         text, enc = read_cstring(pm, ptr)
         if text and len(text) >= 2 and len(text) <= 32:
             # Filter: at least one printable non-ASCII char or purely ASCII name
-            printable = all(32 <= b < 127 or b >= 0x81 for b in text.encode('latin-1', errors='replace'))
+            printable = all(
+                32 <= b < 127 or b >= 0x81 for b in text.encode("latin-1", errors="replace")
+            )
             if printable:
                 print(f"  HP+{off:+d}  ptr=0x{ptr:08X}  -> '{text}'  [{enc}]")
                 found.append((off, ptr, text, enc))
@@ -127,7 +131,7 @@ def dump_strings_near_hp(pm, hp_addr, before=512, after=1024):
                     break
             run = raw[i:j]
             if len(run) >= 4:
-                for enc in ['big5', 'gbk']:
+                for enc in ["big5", "gbk"]:
                     try:
                         text = run.decode(enc)
                         offset_from_hp = (hp_addr - before + i) - hp_addr
@@ -144,7 +148,7 @@ def dump_strings_near_hp(pm, hp_addr, before=512, after=1024):
 # Main
 # ============================================================
 def main():
-    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding="utf-8")
 
     if len(sys.argv) < 3:
         print("Usage: uv run find_name.py <current_hp> <character_name>")
@@ -201,5 +205,5 @@ def main():
     print("\nDone.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
