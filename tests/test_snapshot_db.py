@@ -1,5 +1,5 @@
 import pytest
-from gui.snapshot_db import SnapshotDB
+from services.snapshot_db import SnapshotDB
 
 
 @pytest.fixture

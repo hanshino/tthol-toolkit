@@ -9,9 +9,10 @@ import ctypes.wintypes
 import struct
 import json
 import sqlite3
-import os
 import sys
 import time
+
+from services._paths import bundled
 
 
 # ============================================================
@@ -85,7 +86,7 @@ def get_memory_regions(process_handle):
 # 知識庫
 # ============================================================
 def load_knowledge():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge.json")
+    path = bundled("knowledge.json")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -362,14 +363,23 @@ NAME_OFFSET = -228
 NAME_MAX_BYTES = 32
 
 
-def locate_map_name(pm):
+def locate_map_name(pm, valid_names: set[str] | None = None):
     """Scan heap for the current map name string.
 
     Map struct pattern (offsets from string start):
       [-4]  = 40 (0x28) — consistent across maps
       [0]   = Big5 encoded map name (2-8 Chinese characters)
       [+N]  = 0x00 terminator
-      [+N+1..+N+4] = 0xCDCDCDCD (uninitialized heap padding)
+
+    When `valid_names` is provided (set of UTF-8 stage names from tthol.sqlite),
+    candidates are validated against the canonical map list — this is the only
+    reliable filter after the 2026-05 game update, which broke the previous
+    `0xCDCDCDCD` trailing-padding heuristic (some maps now have 2 bytes between
+    the null terminator and the heap padding).
+
+    Without `valid_names`, falls back to the legacy heuristic: trailing
+    `0xCDCDCDCD` immediately after null + no `cdcd/fdfd` in preceding 8 bytes.
+    The legacy path is kept for the standalone `reader.py` CLI which has no DB.
 
     Returns the decoded map name string, or empty string if not found.
     """
@@ -386,7 +396,6 @@ def locate_map_name(pm):
 
         i = 0
         while i < len(data) - 24:
-            # Look for the [-4]=40 marker
             idx = data.find(marker_before, i)
             if idx == -1:
                 break
@@ -396,13 +405,11 @@ def locate_map_name(pm):
             if str_start + 4 >= len(data):
                 continue
 
-            # First two bytes must be a valid Big5 lead/trail pair
             h = data[str_start]
             l = data[str_start + 1]
             if not (0xA1 <= h <= 0xF9 and 0x40 <= l <= 0xFE):
                 continue
 
-            # Read the full Big5 string (up to 16 bytes = 8 chars)
             null_pos = data.find(b"\x00", str_start, str_start + 17)
             if null_pos < str_start + 2:
                 continue
@@ -410,30 +417,33 @@ def locate_map_name(pm):
             if len(name_bytes) % 2 != 0:
                 continue
 
-            # All bytes must be valid Big5 pairs
             if not all(
                 0xA1 <= name_bytes[j] <= 0xF9 and 0x40 <= name_bytes[j + 1] <= 0xFE
                 for j in range(0, len(name_bytes), 2)
             ):
                 continue
 
-            # Must be followed by 0xCDCDCDCD (uninitialized heap)
+            try:
+                decoded = name_bytes.decode("big5")
+            except Exception:
+                continue
+
+            if valid_names is not None:
+                if decoded in valid_names:
+                    return decoded
+                continue
+
+            # Legacy heuristic path (no DB whitelist available)
             after = null_pos + 1
             if after + 4 > len(data):
                 continue
             if data[after : after + 4] != b"\xcd\xcd\xcd\xcd":
                 continue
-
-            # Preceding 8 bytes must not be cdcd/fdfd (not freed/uninitialized)
             if idx >= 8:
                 pre = data[idx - 8 : idx]
                 if b"\xcd\xcd" in pre or b"\xfd\xfd" in pre:
                     continue
-
-            try:
-                return name_bytes.decode("big5")
-            except Exception:
-                continue
+            return decoded
 
     return ""
 
@@ -527,10 +537,10 @@ MAX_INVENTORY_SLOTS = 60
 
 def load_item_db():
     """Load item name lookup from tthol.sqlite."""
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tthol.sqlite")
-    if not os.path.exists(db_path):
+    db_path = bundled("tthol.sqlite")
+    if not db_path.exists():
         return {}
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(str(db_path))
     conn.text_factory = lambda b: b.decode("utf-8", errors="replace")
     cur = conn.cursor()
     cur.execute("SELECT id, name FROM items")

@@ -15,89 +15,93 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      # Ensure the remote URL is clean (no auth tokens embedded)
-      - name: Fix git remote URL
-        shell: bash
-        run: git remote set-url origin https://github.com/${{ github.repository }}.git
-
-      # ── Portable Python ───────────────────────────────────────────
-      - name: Download Python 3.11.9 embeddable
-        shell: powershell
-        run: |
-          curl.exe -L "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -o python-embed.zip
-          New-Item -ItemType Directory -Path "toolkit\python" -Force | Out-Null
-          Expand-Archive -Path "python-embed.zip" -DestinationPath "toolkit\python" -Force
-          Remove-Item python-embed.zip
-
-      - name: Enable pip in embeddable Python
-        shell: powershell
-        run: |
-          (Get-Content "toolkit\python\python311._pth") -replace '#import site', 'import site' |
-            Set-Content "toolkit\python\python311._pth"
-          curl.exe -L "https://bootstrap.pypa.io/get-pip.py" -o get-pip.py
-          toolkit\python\python.exe get-pip.py --quiet
-          Remove-Item get-pip.py
-
-      - name: Create sitecustomize.py
-        shell: powershell
-        run: |
-          $content = @'
-          import sys
-          import os
-
-          # Add project root to sys.path so that the 'gui' package is importable.
-          # This file lives at: <project_root>/toolkit/python/sitecustomize.py
-          _python_dir = os.path.dirname(os.path.abspath(__file__))  # toolkit/python/
-          _project_root = os.path.dirname(os.path.dirname(_python_dir))  # project root
-          if _project_root not in sys.path:
-              sys.path.insert(0, _project_root)
-          '@
-          # Strip leading spaces from heredoc
-          $content = ($content -split "`n" | ForEach-Object { $_ -replace '^\s{10}', '' }) -join "`n"
-          [System.IO.File]::WriteAllText(
-            "$PWD\toolkit\python\sitecustomize.py",
-            $content,
-            [System.Text.Encoding]::UTF8
-          )
-
-      # ── Portable Git ──────────────────────────────────────────────
-      - name: Download and extract Portable Git
-        shell: powershell
-        run: |
-          $release = Invoke-RestMethod "https://api.github.com/repos/git-for-windows/git/releases/latest"
-          $asset = $release.assets |
-            Where-Object { $_.name -like "PortableGit-*-64-bit.7z.exe" } |
-            Select-Object -First 1
-          Write-Host "Downloading $($asset.name)"
-          curl.exe -L $asset.browser_download_url -o PortableGit.exe
-          New-Item -ItemType Directory -Path "toolkit\git" -Force | Out-Null
-          7z x PortableGit.exe -o"toolkit\git" -y | Out-Null
-          Remove-Item PortableGit.exe
-
-      # ── Package ───────────────────────────────────────────────────
-      # Ensure the packaged .git has HEAD on main with upstream configured,
-      # so end users can run git pull without detached HEAD errors.
-      - name: Set HEAD to main branch for end users
-        shell: bash
-        run: |
-          git checkout -b main
-          git branch --set-upstream-to=origin/main main
 
       - name: Get tag name
         id: tag
         shell: bash
         run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      # ── WebUI build ─────────────────────────────────────────────
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build webui
+        shell: bash
+        working-directory: webui
+        run: |
+          npm ci
+          npm run build
+
+      # ── Python + PyInstaller ────────────────────────────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+          cache: 'pip'
+
+      - name: Install dependencies (runtime + pyinstaller)
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          # Mirror the runtime extras vendored in the release: pull project
+          # deps from pyproject.toml and add pyinstaller for the build.
+          python - <<'PY'
+          import tomllib
+          d = tomllib.load(open("pyproject.toml", "rb"))
+          deps = d["project"]["dependencies"]
+          open("requirements-build.txt", "w").write("\n".join(deps + ["pyinstaller>=6.10"]))
+          PY
+          cat requirements-build.txt
+          pip install -r requirements-build.txt
+
+      - name: PyInstaller build
+        shell: powershell
+        run: |
+          pyinstaller --noconfirm --clean tthol-reader.spec
+          if (-not (Test-Path 'dist\tthol-reader\tthol-reader.exe')) {
+            throw "PyInstaller did not produce tthol-reader.exe"
+          }
+
+      # ── Stage release contents ─────────────────────────────────
+      - name: Stage release tree
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = '_stage'
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+
+          # Everything PyInstaller produced (.exe + _internal/) is the install tree.
+          robocopy 'dist\tthol-reader' $stage /E /NFL /NDL /NJH /NJS /NC /NS /NP
+          if ($LASTEXITCODE -ge 8) { throw "robocopy stage failed: $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0
+
+          # User-visible files at install root.
+          if (Test-Path 'README.md') { Copy-Item 'README.md' $stage\ -Force }
+
+          # Sanity check.
+          $required = @(
+            "$stage\tthol-reader.exe",
+            "$stage\_internal\webui\dist\index.html",
+            "$stage\_internal\knowledge.json",
+            "$stage\_internal\tthol.sqlite"
+          )
+          foreach ($p in $required) {
+            if (-not (Test-Path $p)) { throw "Missing required entry: $p" }
+          }
+
       - name: Create release zip
         shell: powershell
         run: |
-          $zip = "tthol-reader-${{ steps.tag.outputs.TAG }}.zip"
-          7z a $zip . -xr!".venv" -xr!"__pycache__" -xr!"*.pyc"
-          Write-Host "Created $zip ($('{0:N1} MB' -f ((Get-Item $zip).Length / 1MB)))"
+          $tag = "${{ steps.tag.outputs.TAG }}"
+          $zip = "tthol-reader-$tag.zip"
+          7z a -mx=5 $zip .\_stage\* | Out-Null
+          $size = '{0:N1} MB' -f ((Get-Item $zip).Length / 1MB)
+          Write-Host "Created $zip ($size)"
 
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v2

@@ -2,6 +2,8 @@
 __pycache__/
 *.py[oc]
 build/
+_build/
+_build_log.txt
 dist/
 wheels/
 *.egg-info
@@ -33,3 +35,17 @@ toolkit/
 
 # User preferences (generated at runtime)
 config.json
+
+# Generated CSV exports (regenerated on demand)
+exports/tthol_*.csv
+tthol_*.csv
+
+# WebUI build artifacts
+webui/node_modules/
+webui/dist/
+webui/src/**/*.js
+webui/openapi.json
+
+# OMC working state (keep shared skills under version control)
+**/.omc/*
+!.omc/skills/
