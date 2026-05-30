@@ -1,6 +1,6 @@
 [project]
 name = "tthol-memory"
-version = "1.0.0"
+version = "1.1.0"
 description = "Read-only memory reader UI for tthol"
 requires-python = ">=3.11.9"
 dependencies = [

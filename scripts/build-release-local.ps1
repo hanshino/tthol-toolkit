@@ -3,11 +3,11 @@
 # you can exercise the end-user experience without pushing a tag.
 #
 # Usage:
-#   pwsh scripts/build-release-local.ps1                # tag = v1.0.0
+#   pwsh scripts/build-release-local.ps1                # tag = v1.1.0
 #   pwsh scripts/build-release-local.ps1 -Tag v9.9.9    # name the output zip differently
 #   pwsh scripts/build-release-local.ps1 -SkipNpm       # reuse existing webui/dist
 param(
-    [string]$Tag = 'v1.0.0',
+    [string]$Tag = 'v1.1.0',
     [switch]$SkipNpm
 )
 
