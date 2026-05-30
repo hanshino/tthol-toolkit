@@ -14,7 +14,7 @@ from services.events import WorldStream
 
 
 def build_app(services: dict[str, Any] | None = None) -> FastAPI:
-    app = FastAPI(title="tthol-memory", version="0.7.2")
+    app = FastAPI(title="tthol-memory", version="1.0.0")
     services = dict(services or {})
     services.setdefault("world_stream", WorldStream())
     app.state.services = services
