@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { post } from '../api/client';
 import type { CharacterRow, OkResponse } from '../api/types';
-import { Bar, LinkDot, Panel, StatNum } from '../primitives';
+import { Bar, BuffChips, LinkDot, Panel, StatNum } from '../primitives';
 
 export function Dashboard({
   chars, onPick,
@@ -38,14 +38,17 @@ export function Dashboard({
               onClick={() => onPick(c)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPick(c); }}
               style={{
-                display: 'grid',
-                gridTemplateColumns: '24px minmax(0, 1fr) 40px 88px 88px 88px 72px 72px',
-                gap: 10, alignItems: 'center', padding: 12,
+                display: 'flex', flexDirection: 'column', gap: 8, padding: 12,
                 background: 'var(--tt-raised)', border: '1px solid var(--tt-line-soft)',
                 color: 'var(--tt-text)', cursor: 'pointer', textAlign: 'left',
                 opacity: c.link === 'lost' ? 0.65 : 1,
               }}
             >
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '24px minmax(0, 1fr) 40px 88px 88px 88px 72px 72px',
+                gap: 10, alignItems: 'center',
+              }}>
               <LinkDot status={c.link} />
               <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
                 <span style={{ fontFamily: 'var(--tt-font-serif)', letterSpacing: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
@@ -74,6 +77,8 @@ export function Dashboard({
               >
                 {rescanning === c.pid ? '偵測中…' : '↻ 重偵'}
               </button>
+              </div>
+              <BuffChips buffs={c.buffs} />
             </div>
           ))}
         </div>

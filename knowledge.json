@@ -45,6 +45,47 @@
       "420": { "name": "Y座標", "type": "int32", "sample_value": 127 }
     }
   },
+  "buff_structure": {
+    "description": "角色身上的 active buff 列表。count + 緊湊陣列，存的是 status `group` 不是 status id。",
+    "note": "陣列會 compact；只有前 <count> 個 slot 有效，後面可能殘留舊值。確切等級/剩餘時間不在此持久儲存。",
+    "kind": "buff",
+    "count_offset": 648,
+    "array_offset": 652,
+    "slot_size": 4,
+    "max_slots": 32,
+    "value_type": "int32 (status.group)",
+    "status_db": {
+      "file": "tthol.sqlite",
+      "table": "status",
+      "group_column": "group",
+      "name_column": "name"
+    },
+    "verified_sample": {
+      "anchor_groups": { "31": "血契(刺槐血契)", "32": "靈契(纏絲靈契)", "51": "護體(冰霜烈炎盾)" },
+      "note": "施放冰霜烈炎盾時 count 由 2->3、array 追加 51；HP+0x4(maxHP)、HP+0x54(防禦) 同步被 buff 改動"
+    },
+    "scope_note": "此陣列只涵蓋『契/盾/陣/符』類正面自我 buff（高 group 31/32/51/52）。負面 debuff 見 debuff_structure (HP+0x4C4)。默念純屬性 buff（如冰心靈訣 group 2）兩個陣列都不進，只在繪圖層出現，無法穩定偵測。"
+  },
+  "debuff_structure": {
+    "description": "角色身上的負面狀態 (debuff) 列表，例如中毒。與 buff_structure 機制完全相同：count + 緊湊 status.group 陣列。",
+    "note": "陣列會 compact、count-gated；count 之後的 slot 殘留舊值（觀察到 count 1->0 時 slot 仍殘留 19）。確切等級/剩餘時間不在此持久儲存。",
+    "kind": "debuff",
+    "count_offset": 1220,
+    "array_offset": 1224,
+    "slot_size": 4,
+    "max_slots": 32,
+    "value_type": "int32 (status.group)",
+    "status_db": {
+      "file": "tthol.sqlite",
+      "table": "status",
+      "group_column": "group",
+      "name_column": "name"
+    },
+    "verified_sample": {
+      "anchor_groups": { "19": "中毒" },
+      "note": "中毒生效時 HP+0x4C4 count=1、array=[19]；實時觀察到中毒過期瞬間 count 由 1->0（slot 殘留 19，被 count gate 濾掉），與 HP+0x288 同機制。DB 中『中毒』分屬 group 19/70/71。"
+    }
+  },
   "inventory_structure": {
     "description": "背包物品陣列，每槽固定 2272 bytes (0x8E0)",
     "locate_method": "掃描已知物品ID，匹配特徵模式: [8 bytes zeros][item_id][pointer][24+ bytes zeros]",

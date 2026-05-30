@@ -8,6 +8,7 @@ export type Account = S['Account'];
 export type AutoClickConfig = S['AutoClickConfig'];
 export type AutoClickStatus = S['AutoClickStatus'];
 export type AutoClickTestRequest = S['AutoClickTestRequest'];
+export type BuffInfo = S['BuffInfo'];
 export type Character = S['Character'];
 export type CharacterDetail = S['CharacterDetail'];
 export type CharacterRow = S['CharacterRow'];

@@ -462,12 +462,26 @@ def read_character_name(pm, hp_addr):
         return ""
 
 
-def read_all_fields(pm, hp_addr, display_fields):
-    """Read all known integer fields."""
+# In the compat (4-byte-shifted) layout the current/max HP and MP pairs are
+# stored swapped relative to the normal layout (see verify_structure_shifted):
+#   struct_base+0 = max_HP, +4 = current_HP, +8 = max_MP, +12 = current_MP.
+# Remap exactly those four offsets so each field keeps its correct meaning;
+# every other field shares the normal-layout offset.
+_COMPAT_OFFSET_SWAP = {0: 4, 4: 0, 8: 12, 12: 8}
+
+
+def read_all_fields(pm, hp_addr, display_fields, compat_mode=False):
+    """Read all known integer fields.
+
+    When compat_mode is True the struct uses the 4-byte-shifted layout, so the
+    HP/MP current/max offsets (0/4 and 8/12) are remapped to keep 血量/最大血量/
+    真氣/最大真氣 correct. All other fields share the normal-layout offsets.
+    """
     result = []
     for offset, name in display_fields:
+        phys = _COMPAT_OFFSET_SWAP.get(offset, offset) if compat_mode else offset
         try:
-            value = pm.read_int(hp_addr + offset)
+            value = pm.read_int(hp_addr + phys)
             result.append((name, value))
         except Exception:
             result.append((name, "???"))
@@ -547,6 +561,119 @@ def load_item_db():
     items = {row[0]: row[1] for row in cur.fetchall()}
     conn.close()
     return items
+
+
+# ============================================================
+# Active-buff list (status-group array inside the char struct)
+# Defaults; overridable via knowledge.json "buff_structure".
+# ============================================================
+BUFF_COUNT_OFFSET = 0x288  # int32: number of active buffs
+BUFF_ARRAY_OFFSET = 0x28C  # int32[]: compacting array of status `group` ids
+BUFF_MAX_SLOTS = 32
+
+
+def read_status_array(pm, hp_addr, count_off, array_off, max_slots):
+    """Read one count+group status array relative to the HP base.
+
+    Layout: an int32 count at count_off, then a compacting array of int32
+    status-group ids at array_off. Only the first <count> slots are valid;
+    trailing slots may hold stale values. Returns a list of group ids (ints),
+    or [] on any read failure.
+    """
+    try:
+        count = pm.read_int(hp_addr + count_off)
+    except Exception:
+        return []
+    if count <= 0 or count > max_slots:
+        return []
+    groups = []
+    for i in range(count):
+        try:
+            g = pm.read_int(hp_addr + array_off + i * 4)
+        except Exception:
+            break
+        if 0 < g < 100000:  # plausible group id; skip stale/garbage
+            groups.append(g)
+    return groups
+
+
+def read_active_buffs(pm, hp_addr, knowledge=None):
+    """Read positive-buff status groups (HP+0x288). Kept for backward
+    compatibility; new code should prefer read_active_statuses().
+    """
+    count_off, array_off, max_slots = BUFF_COUNT_OFFSET, BUFF_ARRAY_OFFSET, BUFF_MAX_SLOTS
+    if knowledge:
+        bs = knowledge.get("buff_structure")
+        if bs:
+            count_off = bs.get("count_offset", count_off)
+            array_off = bs.get("array_offset", array_off)
+            max_slots = bs.get("max_slots", max_slots)
+    return read_status_array(pm, hp_addr, count_off, array_off, max_slots)
+
+
+def read_active_statuses(pm, hp_addr, knowledge=None):
+    """Read every status array declared in knowledge.json.
+
+    A status array is any structure carrying both count_offset and array_offset
+    whose value_type names status groups (buff_structure, debuff_structure, …).
+    Returns a list of (group, kind) tuples, where `kind` comes from the
+    structure's "kind" field (defaulting to the key minus "_structure").
+
+    Config-driven: to cover a newly reverse-engineered status category, add its
+    verified offsets + a "kind" to knowledge.json — no code change needed.
+    """
+    if not knowledge:
+        return [
+            (g, "buff")
+            for g in read_status_array(
+                pm, hp_addr, BUFF_COUNT_OFFSET, BUFF_ARRAY_OFFSET, BUFF_MAX_SLOTS
+            )
+        ]
+    out = []
+    for key, st in knowledge.items():
+        if not isinstance(st, dict) or "count_offset" not in st or "array_offset" not in st:
+            continue
+        if "status" not in str(st.get("value_type", "")).lower():
+            continue  # skip inventory/warehouse slot arrays
+        kind = st.get("kind") or key.replace("_structure", "")
+        for g in read_status_array(
+            pm,
+            hp_addr,
+            st.get("count_offset", BUFF_COUNT_OFFSET),
+            st.get("array_offset", BUFF_ARRAY_OFFSET),
+            st.get("max_slots", BUFF_MAX_SLOTS),
+        ):
+            out.append((g, kind))
+    return out
+
+
+def load_status_db():
+    """Map status `group` id -> representative buff name from tthol.sqlite.
+
+    A group's statuses share a display name across levels (護體/血契/靈契...),
+    so the first row per group (lowest `order`) is a good representative.
+    """
+    db_path = bundled("tthol.sqlite")
+    if not db_path.exists():
+        return {}
+    conn = None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.text_factory = lambda b: b.decode("utf-8", errors="replace")
+        cur = conn.cursor()
+        cur.execute('SELECT "group", name FROM status ORDER BY "group", "order"')
+        out = {}
+        for group_id, name in cur.fetchall():
+            if group_id not in out:
+                out[group_id] = name
+        return out
+    except Exception:
+        return {}
+    finally:
+        # sqlite's `with` only manages the transaction, not the handle, so close
+        # explicitly here to avoid leaking the connection on the error path.
+        if conn is not None:
+            conn.close()
 
 
 def locate_inventory(pm):

@@ -6,16 +6,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import socket
 import sys
 import threading
 import time
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import uvicorn
 import webview
 
-from services._paths import bundled
+from services._paths import app_root, bundled
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.fake_active import KeepActiveManager
@@ -23,6 +25,31 @@ from services.snapshot_db import SnapshotDB
 from services.worker_manager import WorkerManager
 
 DEV_PORT_FILE = Path(".omc/.dev-port")
+
+
+def _setup_logging() -> None:
+    """Log worker/app events to console + a rotating file next to the exe.
+
+    Without this, worker locate/read failures are invisible (CharSession passes
+    a no-op on_error), which makes connection drops impossible to diagnose.
+    """
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    try:
+        handlers.append(
+            RotatingFileHandler(
+                app_root() / "tthol-reader.log",
+                maxBytes=1_000_000,
+                backupCount=2,
+                encoding="utf-8",
+            )
+        )
+    except Exception:
+        pass  # console-only if the install dir is not writable
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=handlers,
+    )
 
 
 def _pick_port() -> int:
@@ -70,6 +97,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    _setup_logging()
     services = _build_services(args.dev)
     app = build_app(services=services)
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get } from '../../api/client';
-import { Panel, StatNum } from '../../primitives';
+import { BuffChips, Panel, StatNum } from '../../primitives';
+import type { BuffInfo } from '../../api/types';
 
 interface Detail {
   pid: number; name: string;
@@ -8,11 +9,19 @@ interface Detail {
     waigong: number; neili: number; genggu: number; shenfa: number; jiqiao: number; xuanxue: number;
     wugong: number; wugong_base: number; neijing: number; fangyu: number; huji: number; mingzhong: number; shanduo: number;
   };
+  buffs?: BuffInfo[];
 }
 
 export function BodyTab({ pid }: { pid: number }) {
   const [d, setD] = useState<Detail | null>(null);
-  useEffect(() => { get<Detail>(`/api/characters/${pid}`).then(setD).catch(() => {}); }, [pid]);
+  useEffect(() => {
+    let alive = true;
+    const fetchOnce = () =>
+      get<Detail>(`/api/characters/${pid}`).then(x => { if (alive) setD(x); }).catch(() => {});
+    fetchOnce();                              // immediate
+    const id = setInterval(fetchOnce, 3000); // keep stats + buffs fresh, like the dashboard
+    return () => { alive = false; clearInterval(id); };
+  }, [pid]);
   if (!d) return <div style={{ color: 'var(--tt-mute)' }}>讀取中…</div>;
   const six = [
     ['外功', d.stats.waigong], ['內力', d.stats.neili], ['根骨', d.stats.genggu],
@@ -29,6 +38,9 @@ export function BodyTab({ pid }: { pid: number }) {
       </Panel>
       <Panel title="七戰">
         <Grid pairs={seven} />
+      </Panel>
+      <Panel title="狀態" style={{ gridColumn: '1 / -1' }}>
+        <BuffChips buffs={d.buffs} emptyText="目前無增益狀態" />
       </Panel>
     </div>
   );

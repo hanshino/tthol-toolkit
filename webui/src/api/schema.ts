@@ -506,6 +506,25 @@ export interface components {
             merchant_idx: number;
         };
         /**
+         * BuffInfo
+         * @description One active status on a character. The game stores the status `group`
+         *     (not the exact status id), so `name` is the representative status name
+         *     for that group (e.g. 護體 / 血契 / 靈契 / 中毒). `kind` distinguishes the
+         *     source array: positive self-buffs (HP+0x288) vs debuffs (HP+0x4C4).
+         */
+        BuffInfo: {
+            /** Group */
+            group: number;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @default buff
+             * @enum {string}
+             */
+            kind: "buff" | "debuff";
+        };
+        /**
          * Character
          * @description Lightweight row used by GET /api/characters.
          */
@@ -541,6 +560,11 @@ export interface components {
             vitals: components["schemas"]["Vitals"];
             position: components["schemas"]["Position"];
             autoclick: components["schemas"]["AutoClickStatus"];
+            /**
+             * Buffs
+             * @default []
+             */
+            buffs: components["schemas"]["BuffInfo"][];
             /** Inventory */
             inventory?: components["schemas"]["Item"][] | null;
             /** Warehouse */
@@ -567,6 +591,11 @@ export interface components {
             vitals: components["schemas"]["Vitals"];
             position: components["schemas"]["Position"];
             autoclick: components["schemas"]["AutoClickStatus"];
+            /**
+             * Buffs
+             * @default []
+             */
+            buffs: components["schemas"]["BuffInfo"][];
         };
         /** CharacterStats */
         CharacterStats: {
