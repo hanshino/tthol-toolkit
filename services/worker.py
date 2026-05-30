@@ -73,6 +73,7 @@ class ReaderWorker(threading.Thread):
         self._offset_filters = None
         self._compat_mode = False
         self._stop_event = threading.Event()
+        self._wake_event = threading.Event()
         self._scan_inventory = False
         self._scan_warehouse = False
         self._knowledge = load_knowledge()
@@ -102,12 +103,15 @@ class ReaderWorker(threading.Thread):
 
     def request_inventory(self) -> None:
         self._scan_inventory = True
+        self._wake_event.set()
 
     def request_warehouse(self) -> None:
         self._scan_warehouse = True
+        self._wake_event.set()
 
     def stop(self) -> None:
         self._stop_event.set()
+        self._wake_event.set()
 
     # ------------------------------------------------------------------
     # Thread entry point
@@ -205,7 +209,8 @@ class ReaderWorker(threading.Thread):
                     map_name = ""
                     map_tick = 0
 
-            self._stop_event.wait(POLL_INTERVAL)
+            self._wake_event.wait(POLL_INTERVAL)
+            self._wake_event.clear()
 
         self._cb_state("DISCONNECTED")
 
@@ -257,10 +262,15 @@ class ReaderWorker(threading.Thread):
             return None
 
     def _do_inventory_scan(self, pm):
+        # Every exit path must call self._cb_inventory(...) so the session's
+        # _inv_seq advances and the waiting API request returns promptly.
+        # Otherwise a not-found / error path leaves the request blocked for the
+        # full INVENTORY_SCAN_TIMEOUT before it 504s.
         try:
             inv_match = locate_inventory(pm)
             if inv_match is None:
                 self._cb_error("Inventory not found in memory")
+                self._cb_inventory([])
                 return
             inv_start = find_inventory_start(pm, inv_match)
             items = read_inventory(pm, inv_start)
@@ -268,8 +278,13 @@ class ReaderWorker(threading.Thread):
             self._cb_inventory(named)
         except Exception as e:
             self._cb_error(f"Inventory scan error: {e}")
+            self._cb_inventory([])
 
     def _do_warehouse_scan(self, pm):
+        # Every exit path must call self._cb_warehouse(...) so the session's
+        # _wh_seq advances and the waiting API request returns promptly.
+        # Otherwise a not-found / error path leaves the request blocked for the
+        # full WAREHOUSE_SCAN_TIMEOUT (60s) before it 504s.
         try:
             # Find inventory range for exclusion
             inv_match = locate_inventory(pm)
@@ -292,6 +307,7 @@ class ReaderWorker(threading.Thread):
 
             if not warehouse_arrays:
                 self._cb_error("Warehouse not found -- open warehouse UI in game first")
+                self._cb_warehouse([])
                 return
 
             # Use the largest array (most items = warehouse)
@@ -301,3 +317,4 @@ class ReaderWorker(threading.Thread):
             self._cb_warehouse(named)
         except Exception as e:
             self._cb_error(f"Warehouse scan error: {e}")
+            self._cb_warehouse([])

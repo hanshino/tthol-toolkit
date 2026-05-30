@@ -18,8 +18,13 @@ uv run reader.py <current_hp> [--loop]
 # Auto-detect (no known value needed, slower ~14s)
 uv run auto_detect.py [--loop]
 
-# Run GUI
-uv run gui_main.py
+# Run the app (FastAPI + pywebview, serves bundled webui/dist)
+uv run app.py
+
+# Run the app in dev mode (points window at Vite dev server on :5173)
+uv run app.py --dev
+# In a second terminal:
+cd webui && npm run dev
 
 # Run tests
 uv run pytest

@@ -81,17 +81,14 @@ jobs:
           $global:LASTEXITCODE = 0
 
           # User-visible files at install root.
-          Set-Content -Path "$stage\VERSION" -Value "${{ steps.tag.outputs.TAG }}" -Encoding ascii -NoNewline
           if (Test-Path 'README.md') { Copy-Item 'README.md' $stage\ -Force }
 
           # Sanity check.
           $required = @(
             "$stage\tthol-reader.exe",
-            "$stage\_internal\bootstrap_splash.html",
             "$stage\_internal\webui\dist\index.html",
             "$stage\_internal\knowledge.json",
-            "$stage\_internal\tthol.sqlite",
-            "$stage\VERSION"
+            "$stage\_internal\tthol.sqlite"
           )
           foreach ($p in $required) {
             if (-not (Test-Path $p)) { throw "Missing required entry: $p" }

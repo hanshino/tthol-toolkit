@@ -1,19 +1,18 @@
 # PyInstaller spec — onedir build of 御心鑒.
 #
-# Single .exe (`tthol-reader.exe`) that dispatches between splash/update
-# mode (default) and main app mode (with `--app` argv sentinel). Run with:
+# Builds `tthol-reader.exe` from app.py — double-click goes straight into
+# the FastAPI + pywebview main app. Run with:
 #     uv run pyinstaller --noconfirm tthol-reader.spec
 #
 # Output layout (in dist/tthol-reader/):
 #     tthol-reader.exe
 #     _internal/
 #         python311.dll, base_library.zip, ...
-#         bootstrap_splash.html, knowledge.json, tthol.sqlite, webui/dist/
+#         knowledge.json, tthol.sqlite, webui/dist/
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 datas = [
-    ("bootstrap_splash.html", "."),
     ("knowledge.json", "."),
     ("tthol.sqlite", "."),
     ("webui/dist", "webui/dist"),
@@ -57,7 +56,7 @@ excludes = [
 ]
 
 a = Analysis(
-    ["bootstrap.py"],
+    ["app.py"],
     pathex=["."],
     binaries=[],
     datas=datas,
@@ -70,14 +69,18 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+import os
+
+_DEBUG = os.environ.get("TTHOL_BUILD_DEBUG") == "1"
+
 exe = EXE(
     pyz,
     a.scripts,
     [],
     exclude_binaries=True,
     name="tthol-reader",
-    console=False,
-    uac_admin=True,
+    console=_DEBUG,
+    uac_admin=not _DEBUG,
     disable_windowed_traceback=False,
     debug=False,
     strip=False,

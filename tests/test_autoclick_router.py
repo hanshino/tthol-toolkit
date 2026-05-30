@@ -47,10 +47,3 @@ async def test_autoclick_status(client):
     resp = await client.get("/api/characters/1001/autoclick/status")
     assert resp.status_code == 200
     assert "running" in resp.json()
-
-
-async def test_export_csv_returns_path(client):
-    resp = await client.post("/api/export/csv", json={"mode": "summary"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["path"].endswith(".csv")

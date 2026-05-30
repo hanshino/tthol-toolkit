@@ -123,6 +123,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rescan Char
+         * @description Rebuild the session for a PID so locate can run again.
+         *
+         *     Used when a tthola.dat process exists but locate retries timed out before the
+         *     user logged into a character — the worker thread is dead and there is no
+         *     automatic restart path.
+         */
+        post: operations["rescan_char_api_characters__pid__rescan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/focus": {
         parameters: {
             query?: never;
@@ -329,7 +353,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/export/csv": {
+    "/api/characters/{pid}/keep-active/start": {
         parameters: {
             query?: never;
             header?: never;
@@ -338,8 +362,42 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Export Csv */
-        post: operations["export_csv_api_export_csv_post"];
+        /** Start */
+        post: operations["start_api_characters__pid__keep_active_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/keep-active/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__keep_active_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/keep-active/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_characters__pid__keep_active_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -424,12 +482,12 @@ export interface components {
              * @default off
              * @enum {string}
              */
-            mode?: "off" | "collect" | "destroy";
+            mode: "off" | "collect" | "destroy";
             /**
              * Clicks Per Round
              * @default 1
              */
-            clicks_per_round?: number;
+            clicks_per_round: number;
         };
         /** AutoClickStatus */
         AutoClickStatus: {
@@ -580,21 +638,6 @@ export interface components {
             /** Name */
             name: string;
         };
-        /** ExportCsvRequest */
-        ExportCsvRequest: {
-            /**
-             * Mode
-             * @enum {string}
-             */
-            mode: "detail" | "summary";
-        };
-        /** ExportCsvResult */
-        ExportCsvResult: {
-            /** Rows */
-            rows: number;
-            /** Path */
-            path: string;
-        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -613,6 +656,17 @@ export interface components {
              * @enum {string}
              */
             source: "inventory" | "warehouse";
+        };
+        /** KeepActiveStatus */
+        KeepActiveStatus: {
+            /** Running */
+            running: boolean;
+            /** Started At */
+            started_at?: number | null;
+            /** Runtime Seconds */
+            runtime_seconds?: number | null;
+            /** Last Send At */
+            last_send_at?: number | null;
         };
         /** MapInfo */
         MapInfo: {
@@ -680,6 +734,11 @@ export interface components {
             x: number;
             /** Y */
             y: number;
+        };
+        /** RelocateRequest */
+        RelocateRequest: {
+            /** Hp */
+            hp?: number | null;
         };
         /** SaveSnapshotRequest */
         SaveSnapshotRequest: {
@@ -998,11 +1057,40 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
+                "application/json": components["schemas"]["RelocateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
+    };
+    rescan_char_api_characters__pid__rescan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -1466,18 +1554,16 @@ export interface operations {
             };
         };
     };
-    export_csv_api_export_csv_post: {
+    start_api_characters__pid__keep_active_start_post: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                pid: number;
+            };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExportCsvRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -1485,7 +1571,69 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExportCsvResult"];
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__keep_active_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_characters__pid__keep_active_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeepActiveStatus"];
                 };
             };
             /** @description Validation Error */

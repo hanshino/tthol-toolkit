@@ -202,18 +202,6 @@ class AutoClickTestRequest(_Base):
     merchant_idx: int
 
 
-# ---- Export --------------------------------------------------------------
-
-
-class ExportCsvRequest(_Base):
-    mode: Literal["detail", "summary"]
-
-
-class ExportCsvResult(_Base):
-    rows: int
-    path: str
-
-
 # ---- Treasury / 帳房 ---------------------------------------------------
 
 

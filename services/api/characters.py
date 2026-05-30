@@ -15,7 +15,8 @@ from services.api_types import (
     WorldSnapshot,
 )
 
-SCAN_TIMEOUT = 15.0  # seconds
+INVENTORY_SCAN_TIMEOUT = 15.0  # seconds
+WAREHOUSE_SCAN_TIMEOUT = 60.0  # seconds — full-memory exhaustive scan is much heavier
 
 router = APIRouter(prefix="/api", tags=["characters"])
 
@@ -140,7 +141,7 @@ async def scan_inventory(pid: int, request: Request) -> list[Item]:
     before = sess._inv_seq
     if not wm.request_inventory_scan(pid):
         raise HTTPException(status_code=404, detail=f"No active session for pid {pid}")
-    advanced = await _wait_for_seq(sess, "_inv_seq", before, SCAN_TIMEOUT)
+    advanced = await _wait_for_seq(sess, "_inv_seq", before, INVENTORY_SCAN_TIMEOUT)
     if not advanced:
         raise HTTPException(status_code=504, detail="Inventory scan timed out")
     return wm.latest_inventory(pid)
@@ -157,7 +158,7 @@ async def scan_warehouse(pid: int, request: Request) -> list[Item]:
     before = sess._wh_seq
     if not wm.request_warehouse_scan(pid):
         raise HTTPException(status_code=404, detail=f"No active session for pid {pid}")
-    advanced = await _wait_for_seq(sess, "_wh_seq", before, SCAN_TIMEOUT)
+    advanced = await _wait_for_seq(sess, "_wh_seq", before, WAREHOUSE_SCAN_TIMEOUT)
     if not advanced:
         raise HTTPException(
             status_code=504, detail="Warehouse scan timed out (open warehouse UI in game first)"
