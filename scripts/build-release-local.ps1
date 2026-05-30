@@ -47,6 +47,10 @@ Invoke-Exe 'pyinstaller' { & uv run pyinstaller --noconfirm --clean tthol-reader
 if (-not (Test-Path 'dist\tthol-reader\tthol-reader.exe')) {
     throw "PyInstaller did not produce tthol-reader.exe"
 }
+# .NET app config (loadFromRemoteSources) so the pythonnet/.NET backend loads
+# even when the downloaded zip is extracted with Mark-of-the-Web. Must sit next
+# to the exe, not under _internal.
+Copy-Item 'tthol-reader.exe.config' 'dist\tthol-reader\' -Force
 
 Write-Host "[3/5] Stage release tree ..." -ForegroundColor Cyan
 New-Item -ItemType Directory -Path $stage | Out-Null
@@ -57,6 +61,7 @@ if (Test-Path 'README.md') { Copy-Item 'README.md' $stage\ -Force }
 
 $required = @(
     "$stage\tthol-reader.exe",
+    "$stage\tthol-reader.exe.config",
     "$stage\_internal\webui\dist\index.html",
     "$stage\_internal\knowledge.json",
     "$stage\_internal\tthol.sqlite"
