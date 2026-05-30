@@ -36,32 +36,30 @@ jobs:
           npm ci
           npm run build
 
-      # ── Python + PyInstaller ────────────────────────────────────
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      # ── Python + PyInstaller (pinned via uv.lock) ───────────────
+      # Build from the committed lockfile so the release bundles the EXACT,
+      # locally-tested dependency set. Installing from pyproject's ">="
+      # specifiers (plain `pip install`) lets transitive deps drift to
+      # untested versions on the runner — e.g. pythonnet 3.1.0, whose
+      # Python.Runtime has .NET dependencies that aren't satisfied on a clean
+      # end-user machine, crashing pywebview at startup with
+      # "Failed to resolve Python.Runtime.Loader.Initialize" (it can still load
+      # on a dev box with .NET SDKs installed, so the bug is easy to miss).
+      # `--frozen` also fails the build loudly if uv.lock drifts from
+      # pyproject, instead of silently shipping a different resolution.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: '3.11.9'
-          cache: 'pip'
+          enable-cache: true
 
-      - name: Install dependencies (runtime + pyinstaller)
+      - name: Sync dependencies (frozen lock)
         shell: bash
-        run: |
-          python -m pip install --upgrade pip
-          # Mirror the runtime extras vendored in the release: pull project
-          # deps from pyproject.toml and add pyinstaller for the build.
-          python - <<'PY'
-          import tomllib
-          d = tomllib.load(open("pyproject.toml", "rb"))
-          deps = d["project"]["dependencies"]
-          open("requirements-build.txt", "w").write("\n".join(deps + ["pyinstaller>=6.10"]))
-          PY
-          cat requirements-build.txt
-          pip install -r requirements-build.txt
+        run: uv sync --frozen --group dev --python 3.11.9
 
       - name: PyInstaller build
         shell: powershell
         run: |
-          pyinstaller --noconfirm --clean tthol-reader.spec
+          uv run pyinstaller --noconfirm --clean tthol-reader.spec
           if (-not (Test-Path 'dist\tthol-reader\tthol-reader.exe')) {
             throw "PyInstaller did not produce tthol-reader.exe"
           }

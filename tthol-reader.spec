@@ -12,6 +12,24 @@
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
+# Guard: refuse to build with a pythonnet that breaks the frozen WinForms/.NET
+# (netfx) loader. pythonnet >= 3.1 (built with .NET SDK 10) ships a
+# Python.Runtime whose .NET dependencies aren't satisfied on a clean end-user
+# machine, so the bundle crashes at startup with
+# "Failed to resolve Python.Runtime.Loader.Initialize" (it can still load on a
+# dev box with .NET SDKs installed, which makes the bug easy to miss). uv.lock
+# and the pyproject `pythonnet<3.1` pin keep us on the tested 3.0.x line; this
+# is the last-line guard if both are bypassed (e.g. a manual pip install).
+import importlib.metadata as _md
+
+_pnet = _md.version("pythonnet")
+if tuple(int(x) for x in _pnet.split(".")[:2]) >= (3, 1):
+    raise SystemExit(
+        f"tthol-reader.spec: refusing to build with pythonnet {_pnet}. "
+        ">= 3.1 breaks the frozen netfx loader on clean machines. "
+        "Pin pythonnet<3.1 (see pyproject.toml / uv.lock)."
+    )
+
 datas = [
     ("knowledge.json", "."),
     ("tthol.sqlite", "."),
