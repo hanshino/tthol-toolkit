@@ -8,6 +8,13 @@ dependencies = [
     "pymem>=1.14.0",
     "pywin32>=311",
     "pywebview>=5.3",
+    # pythonnet is pulled in transitively by pywebview's WinForms (.NET) backend
+    # on Windows. Pin below 3.1: pythonnet 3.1.0 (built with .NET SDK 10) ships a
+    # Python.Runtime that the frozen netfx loader can't load — the bundle crashes
+    # at startup with "Failed to resolve Python.Runtime.Loader.Initialize". Stay
+    # on the tested 3.0.x line. See .github/workflows/release.yml for the matching
+    # lock-frozen build that prevents this drift in CI.
+    "pythonnet<3.1; sys_platform == 'win32'",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "websockets>=13.1",
