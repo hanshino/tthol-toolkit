@@ -7,6 +7,7 @@ Requires warehouse UI to be open (data is freed when closed).
 Usage:
     uv run warehouse_scan.py <current_hp>
 """
+
 import pymem
 import struct
 import sys
@@ -17,13 +18,12 @@ from reader import (
     locate_inventory,
     locate_character,
     find_inventory_start,
-    read_inventory,
     load_item_db,
     load_knowledge,
     INVENTORY_SLOT_SIZE,
 )
 
-sys.stdout.reconfigure(encoding='utf-8')
+sys.stdout.reconfigure(encoding="utf-8")
 
 SLOT_SIZE = INVENTORY_SLOT_SIZE  # 2272 = 0x8E0
 MAX_WAREHOUSE_SLOTS = 80
@@ -33,8 +33,8 @@ def locate_all_slot_arrays(pm):
     """Find ALL item-slot arrays in memory using the same pattern as inventory.
     Returns list of addresses (first matched slot in each array)."""
     regions = get_memory_regions(pm.process_handle)
-    zero8 = b'\x00' * 8
-    zero24 = b'\x00' * 24
+    zero8 = b"\x00" * 8
+    zero24 = b"\x00" * 24
     hits = []
     found_ranges = []  # track (start, end) to avoid duplicate hits in same array
 
@@ -57,27 +57,27 @@ def locate_all_slot_arrays(pm):
             if skip:
                 continue
 
-            if buffer[pos - 8:pos] != zero8:
+            if buffer[pos - 8 : pos] != zero8:
                 continue
-            item_id = struct.unpack('<i', buffer[pos:pos + 4])[0]
+            item_id = struct.unpack("<i", buffer[pos : pos + 4])[0]
             if not (1000 <= item_id <= 65535):
                 continue
-            ptr = struct.unpack('<I', buffer[pos + 4:pos + 8])[0]
+            ptr = struct.unpack("<I", buffer[pos + 4 : pos + 8])[0]
             if not (0x01000000 <= ptr <= 0x7FFFFFFF):
                 continue
-            if buffer[pos + 8:pos + 32] != zero24:
+            if buffer[pos + 8 : pos + 32] != zero24:
                 continue
             # Verify next slot
             ns = pos + SLOT_SIZE
             if ns + 32 > len(buffer):
                 continue
-            next_id = struct.unpack('<i', buffer[ns:ns + 4])[0]
+            next_id = struct.unpack("<i", buffer[ns : ns + 4])[0]
             if not (1000 <= next_id <= 65535):
                 continue
-            next_ptr = struct.unpack('<I', buffer[ns + 4:ns + 8])[0]
+            next_ptr = struct.unpack("<I", buffer[ns + 4 : ns + 8])[0]
             if not (0x01000000 <= next_ptr <= 0x7FFFFFFF):
                 continue
-            if buffer[ns + 8:ns + 32] != zero24:
+            if buffer[ns + 8 : ns + 32] != zero24:
                 continue
 
             hits.append(addr)
@@ -97,7 +97,7 @@ def walk_back_to_start(pm, addr):
                 addr = prev
                 continue
             if 1000 <= item_id <= 65535:
-                ptr = struct.unpack('<I', pm.read_bytes(prev + 4, 4))[0]
+                ptr = struct.unpack("<I", pm.read_bytes(prev + 4, 4))[0]
                 if ptr == 0 or (0x01000000 <= ptr <= 0x7FFFFFFF):
                     addr = prev
                     continue
@@ -129,7 +129,7 @@ def read_slot_array(pm, base_addr, max_slots=MAX_WAREHOUSE_SLOTS):
 
         empty_streak = 0
         try:
-            ptr = struct.unpack('<I', pm.read_bytes(addr + 4, 4))[0]
+            ptr = struct.unpack("<I", pm.read_bytes(addr + 4, 4))[0]
             qty = pm.read_int(ptr) if (0x01000000 <= ptr <= 0x7FFFFFFF) else -1
         except Exception:
             qty = -1
@@ -206,17 +206,17 @@ def main():
         if len(items) < 2:
             continue  # skip tiny arrays (probably not warehouse)
 
-        print(f"\n{'='*60}")
-        print(f"Array #{wi+1} at 0x{arr_start:08X}  ({len(items)} items)")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print(f"Array #{wi + 1} at 0x{arr_start:08X}  ({len(items)} items)")
+        print(f"{'=' * 60}")
         print(f"  {'#':>3}  {'ID':>6}  {'Qty':>5}  Name")
         print(f"  {'---':>3}  {'------':>6}  {'-----':>5}  ----")
         for i, (item_id, qty, addr) in enumerate(items):
             name = item_db.get(item_id, "???")
-            print(f"  {i+1:>3}  {item_id:>6}  {qty:>5}  {name}")
+            print(f"  {i + 1:>3}  {item_id:>6}  {qty:>5}  {name}")
         print(f"  Total: {len(items)} items")
 
-    print(f"\nDone.")
+    print("\nDone.")
 
 
 if __name__ == "__main__":

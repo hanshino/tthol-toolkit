@@ -1,3 +1,6 @@
+# Runtime log (regenerated each run, never committed)
+*.log
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -18,6 +21,10 @@ wheels/
 candidates.json
 pointer_history.json
 pointers.json
+
+# Reverse-engineering / diagnostic scratch scripts (kept locally, not the app)
+_bx_profile.py
+probe_buff.py
 
 # AHK/game scripts
 *.Q

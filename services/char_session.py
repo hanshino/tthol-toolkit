@@ -7,6 +7,7 @@ from typing import Literal
 
 from services.api_types import (
     AutoClickStatus,
+    BuffInfo,
     CharacterDetail,
     CharacterRow,
     CharacterStats,
@@ -57,6 +58,7 @@ class CharSession:
         self._latest_stats: dict[str, int] = {}
         self._latest_inv: list[Item] = []
         self._latest_wh: list[Item] = []
+        self._latest_buffs: list[BuffInfo] = []
         self._inv_seq: int = 0
         self._wh_seq: int = 0
         self._lock = threading.Lock()
@@ -67,6 +69,7 @@ class CharSession:
             on_inventory=self._on_inv,
             on_warehouse=self._on_wh,
             on_error=lambda _msg: None,
+            on_buffs=self._on_buffs,
         )
 
     def start(self, hp: int | None = None, compat_mode: bool = False) -> None:
@@ -113,6 +116,7 @@ class CharSession:
                 ),
                 position=Position(map_name=s.get("map_name"), x=s.get("x", 0), y=s.get("y", 0)),
                 autoclick=AutoClickStatus(running=False),
+                buffs=list(self._latest_buffs),
             )
 
     def detail(self) -> CharacterDetail:
@@ -149,6 +153,7 @@ class CharSession:
                 ),
                 position=Position(map_name=s.get("map_name"), x=s.get("x", 0), y=s.get("y", 0)),
                 autoclick=AutoClickStatus(running=False),
+                buffs=list(self._latest_buffs),
                 inventory=self._latest_inv or None,
                 warehouse=self._latest_wh or None,
             )
@@ -170,6 +175,10 @@ class CharSession:
             name = translated.get("name")
             if isinstance(name, str) and name:
                 self.name = name
+
+    def _on_buffs(self, items: list[tuple[int, str, str]]) -> None:
+        with self._lock:
+            self._latest_buffs = [BuffInfo(group=g, name=n, kind=k) for g, n, k in items]
 
     def _on_inv(self, items: list[tuple[int, int, str]]) -> None:
         with self._lock:

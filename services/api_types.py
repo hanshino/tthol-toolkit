@@ -75,6 +75,20 @@ class Item(_Base):
     source: Literal["inventory", "warehouse"]
 
 
+# ---- Buffs (active status effects) --------------------------------------
+
+
+class BuffInfo(_Base):
+    """One active status on a character. The game stores the status `group`
+    (not the exact status id), so `name` is the representative status name
+    for that group (e.g. 護體 / 血契 / 靈契 / 中毒). `kind` distinguishes the
+    source array: positive self-buffs (HP+0x288) vs debuffs (HP+0x4C4)."""
+
+    group: int
+    name: str
+    kind: Literal["buff", "debuff"] = "buff"
+
+
 # ---- Character views -----------------------------------------------------
 
 
@@ -99,6 +113,7 @@ class CharacterRow(_Base):
     vitals: Vitals
     position: Position
     autoclick: AutoClickStatus
+    buffs: list[BuffInfo] = []
 
 
 class CharacterDetail(_Base):
@@ -110,6 +125,7 @@ class CharacterDetail(_Base):
     vitals: Vitals
     position: Position
     autoclick: AutoClickStatus
+    buffs: list[BuffInfo] = []
     inventory: list[Item] | None = None
     warehouse: list[Item] | None = None
 

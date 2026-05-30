@@ -1,4 +1,9 @@
+import struct
+from unittest.mock import MagicMock, patch
+
 import pytest
+
+from reader import HEAP_MIN_ADDR
 
 
 def test_parse_filters_returns_dict():
@@ -60,8 +65,34 @@ def test_resolve_filters_unknown_name_raises():
         resolve_filters({"未知": 1}, knowledge)
 
 
-from unittest.mock import MagicMock, patch
-import struct
+# Candidate addresses must sit on the heap (>= HEAP_MIN_ADDR); real character
+# structs never live in low static/module memory. Tests place the buffer at a
+# heap base so the address-range guard does not reject the synthetic candidate.
+_HEAP_BASE = HEAP_MIN_ADDR + 0x10000000
+_POS = 228  # 4-byte aligned, leaves room for negative offsets down to -228
+
+
+def _struct_buf(level=99):
+    buf = bytearray(1024)
+    struct.pack_into("<i", buf, _POS, 287)  # offset 0: hp
+    struct.pack_into("<i", buf, _POS + 4, 287)  # offset 4: max_hp
+    struct.pack_into("<i", buf, _POS + 8, 100)  # offset 8: mp
+    struct.pack_into("<i", buf, _POS + 12, 100)  # offset 12: max_mp
+    struct.pack_into("<i", buf, _POS + 24, 0)  # offset 24: weight
+    struct.pack_into("<i", buf, _POS + 28, 1000)  # offset 28: max_weight
+    struct.pack_into("<i", buf, _POS - 36, level)  # offset -36: level
+    return buf
+
+
+def _fake_pm(buf, base=_HEAP_BASE, read_int=None):
+    pm = MagicMock()
+    pm.process_handle = MagicMock()
+    pm.read_bytes.return_value = bytes(buf)
+    # Tests address memory absolutely (base + index); map back to buffer index.
+    pm.read_int.side_effect = read_int or (
+        lambda addr: struct.unpack_from("<i", buf, addr - base)[0]
+    )
+    return pm
 
 
 def test_locate_character_respects_filters():
@@ -69,26 +100,10 @@ def test_locate_character_respects_filters():
     from reader import locate_character, load_knowledge
 
     knowledge = load_knowledge()
-
-    hp = 287
-    # Build a buffer with hp at pos=228 (room for negative offsets down to -228)
-    buf = bytearray(1024)
-    pos = 228  # 4-byte aligned
-    struct.pack_into("<i", buf, pos, hp)  # offset 0: hp
-    struct.pack_into("<i", buf, pos + 4, hp)  # offset 4: max_hp
-    struct.pack_into("<i", buf, pos + 8, 100)  # offset 8: mp
-    struct.pack_into("<i", buf, pos + 12, 100)  # offset 12: max_mp
-    struct.pack_into("<i", buf, pos + 24, 0)  # offset 24: weight
-    struct.pack_into("<i", buf, pos + 28, 1000)  # offset 28: max_weight
-    struct.pack_into("<i", buf, pos - 36, 99)  # offset -36: level=99 (NOT 7)
-
-    pm = MagicMock()
-    pm.process_handle = MagicMock()
-    with patch("reader.get_memory_regions", return_value=[(0, len(buf))]):
+    buf = _struct_buf()
+    with patch("reader.get_memory_regions", return_value=[(_HEAP_BASE, len(buf))]):
         with patch("reader.verify_structure", return_value=1.0):
-            pm.read_bytes.return_value = bytes(buf)
-            pm.read_int.side_effect = lambda addr: struct.unpack_from("<i", buf, addr)[0]
-            result = locate_character(pm, hp, knowledge, offset_filters={-36: 7})
+            result = locate_character(_fake_pm(buf), 287, knowledge, offset_filters={-36: 7})
 
     assert result is None  # filtered out because level(99) != 7
 
@@ -98,27 +113,12 @@ def test_locate_character_no_filters_keeps_candidate():
     from reader import locate_character, load_knowledge
 
     knowledge = load_knowledge()
-
-    hp = 287
-    buf = bytearray(1024)
-    pos = 228
-    struct.pack_into("<i", buf, pos, hp)
-    struct.pack_into("<i", buf, pos + 4, hp)
-    struct.pack_into("<i", buf, pos + 8, 100)
-    struct.pack_into("<i", buf, pos + 12, 100)
-    struct.pack_into("<i", buf, pos + 24, 0)
-    struct.pack_into("<i", buf, pos + 28, 1000)
-    struct.pack_into("<i", buf, pos - 36, 99)
-
-    pm = MagicMock()
-    pm.process_handle = MagicMock()
-    with patch("reader.get_memory_regions", return_value=[(0, len(buf))]):
+    buf = _struct_buf()
+    with patch("reader.get_memory_regions", return_value=[(_HEAP_BASE, len(buf))]):
         with patch("reader.verify_structure", return_value=1.0):
-            pm.read_bytes.return_value = bytes(buf)
-            pm.read_int.side_effect = lambda addr: struct.unpack_from("<i", buf, addr)[0]
-            result = locate_character(pm, hp, knowledge, offset_filters={})
+            result = locate_character(_fake_pm(buf), 287, knowledge, offset_filters={})
 
-    assert result == pos  # found at correct position
+    assert result == _HEAP_BASE + _POS  # found at correct heap address
 
 
 def test_locate_character_filter_match_keeps_candidate():
@@ -126,27 +126,12 @@ def test_locate_character_filter_match_keeps_candidate():
     from reader import locate_character, load_knowledge
 
     knowledge = load_knowledge()
-
-    hp = 287
-    buf = bytearray(1024)
-    pos = 228
-    struct.pack_into("<i", buf, pos, hp)
-    struct.pack_into("<i", buf, pos + 4, hp)
-    struct.pack_into("<i", buf, pos + 8, 100)
-    struct.pack_into("<i", buf, pos + 12, 100)
-    struct.pack_into("<i", buf, pos + 24, 0)
-    struct.pack_into("<i", buf, pos + 28, 1000)
-    struct.pack_into("<i", buf, pos - 36, 99)  # level = 99
-
-    pm = MagicMock()
-    pm.process_handle = MagicMock()
-    with patch("reader.get_memory_regions", return_value=[(0, len(buf))]):
+    buf = _struct_buf()
+    with patch("reader.get_memory_regions", return_value=[(_HEAP_BASE, len(buf))]):
         with patch("reader.verify_structure", return_value=1.0):
-            pm.read_bytes.return_value = bytes(buf)
-            pm.read_int.side_effect = lambda addr: struct.unpack_from("<i", buf, addr)[0]
-            result = locate_character(pm, hp, knowledge, offset_filters={-36: 99})
+            result = locate_character(_fake_pm(buf), 287, knowledge, offset_filters={-36: 99})
 
-    assert result == pos  # filter matches level=99, candidate kept
+    assert result == _HEAP_BASE + _POS  # filter matches level=99, candidate kept
 
 
 def test_locate_character_filter_read_error_drops_candidate():
@@ -154,31 +139,50 @@ def test_locate_character_filter_read_error_drops_candidate():
     from reader import locate_character, load_knowledge
 
     knowledge = load_knowledge()
-
-    hp = 287
-    buf = bytearray(1024)
-    pos = 228
-    struct.pack_into("<i", buf, pos, hp)
-    struct.pack_into("<i", buf, pos + 4, hp)
-    struct.pack_into("<i", buf, pos + 8, 100)
-    struct.pack_into("<i", buf, pos + 12, 100)
-    struct.pack_into("<i", buf, pos + 24, 0)
-    struct.pack_into("<i", buf, pos + 28, 1000)
-    struct.pack_into("<i", buf, pos - 36, 99)
-
-    pm = MagicMock()
-    pm.process_handle = MagicMock()
+    buf = _struct_buf()
 
     def read_int_raises_on_filter(addr):
-        # Normal reads work, but the filter offset (-36 relative = pos-36 = 192) raises
-        if addr == pos - 36:
+        if addr == _HEAP_BASE + _POS - 36:  # the filter offset read raises
             raise OSError("cannot read")
-        return struct.unpack_from("<i", buf, addr)[0]
+        return struct.unpack_from("<i", buf, addr - _HEAP_BASE)[0]
 
-    with patch("reader.get_memory_regions", return_value=[(0, len(buf))]):
+    with patch("reader.get_memory_regions", return_value=[(_HEAP_BASE, len(buf))]):
         with patch("reader.verify_structure", return_value=1.0):
-            pm.read_bytes.return_value = bytes(buf)
-            pm.read_int.side_effect = read_int_raises_on_filter
-            result = locate_character(pm, hp, knowledge, offset_filters={-36: 99})
+            result = locate_character(
+                _fake_pm(buf, read_int=read_int_raises_on_filter),
+                287,
+                knowledge,
+                offset_filters={-36: 99},
+            )
 
     assert result is None  # candidate dropped due to read error
+
+
+def test_locate_character_rejects_static_low_address():
+    """A struct-shaped match below the heap floor (static/module memory) is
+    rejected even when verify_structure would score it 1.0 — this is the
+    false-positive lock that froze a second client on dead memory at 0x00A3BE14.
+    """
+    from reader import locate_character, load_knowledge
+
+    knowledge = load_knowledge()
+    buf = _struct_buf()
+    low_base = 0x00A30000  # below HEAP_MIN_ADDR, like the real false positive
+    with patch("reader.get_memory_regions", return_value=[(low_base, len(buf))]):
+        with patch("reader.verify_structure", return_value=1.0):
+            result = locate_character(_fake_pm(buf, base=low_base), 287, knowledge)
+
+    assert result is None  # rejected by the heap address-range guard
+
+
+def test_locate_character_accepts_heap_address():
+    """The same struct on the heap (>= HEAP_MIN_ADDR) is kept."""
+    from reader import locate_character, load_knowledge
+
+    knowledge = load_knowledge()
+    buf = _struct_buf()
+    with patch("reader.get_memory_regions", return_value=[(_HEAP_BASE, len(buf))]):
+        with patch("reader.verify_structure", return_value=1.0):
+            result = locate_character(_fake_pm(buf), 287, knowledge)
+
+    assert result == _HEAP_BASE + _POS
