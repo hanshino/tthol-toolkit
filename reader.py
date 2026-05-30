@@ -147,6 +147,47 @@ def resolve_filters(filters, knowledge):
 # ============================================================
 # 定位角色結構
 # ============================================================
+# Real character structs live on the heap; static/module data sits below this
+# floor. A candidate below it is a struct-shaped false positive: a second client
+# that had not logged in once locked dead static memory (0x00A3BE14) that scored
+# a perfect 1.0 and so never re-located. 32-bit heap spans up to 0x7FFFFFFF.
+HEAP_MIN_ADDR = 0x10000000
+
+# Character name: null-terminated Big5 string at NAME_OFFSET from the HP base.
+NAME_OFFSET = -228
+NAME_MAX_BYTES = 32
+
+
+def _has_valid_character_name(pm, struct_base):
+    """True when a Big5 character name sits at NAME_OFFSET.
+
+    A genuine character always has a name there; struct-shaped garbage (static
+    data, freed heap) does not. Used as a hard constraint in verify_structure to
+    reject false positives that satisfy the numeric checks but are not real
+    characters. Requires the first character to be a valid Big5 double-byte
+    (names start with a CJK glyph) and the whole name to decode as Big5.
+    """
+    try:
+        raw = pm.read_bytes(struct_base + NAME_OFFSET, NAME_MAX_BYTES)
+    except Exception:
+        return False
+    # A real name is null-terminated within the 32-byte field (padded after).
+    # Garbage heap with no terminator in the window is not a character name.
+    end = raw.find(b"\x00")
+    if end < 2:
+        return False
+    raw = raw[:end]
+    if len(raw) % 2 != 0:  # Big5 names are whole double-byte characters
+        return False
+    if not (0xA1 <= raw[0] <= 0xF9 and 0x40 <= raw[1] <= 0xFE):
+        return False
+    try:
+        raw.decode("big5")
+    except Exception:
+        return False
+    return True
+
+
 def locate_character(pm, hp_value, knowledge, offset_filters=None, compat_mode=False):
     """Scan memory for HP value, return best candidate with highest score.
 
@@ -172,7 +213,7 @@ def locate_character(pm, hp_value, knowledge, offset_filters=None, compat_mode=F
                 pos = buffer.find(target_bytes, offset)
                 if pos == -1:
                     break
-                if pos % 4 == 0:
+                if pos % 4 == 0 and base + pos >= HEAP_MIN_ADDR:
                     addr = base + pos
                     score = verify_structure(pm, addr, fields)
                     if score >= 0.8:
@@ -202,7 +243,7 @@ def locate_character(pm, hp_value, knowledge, offset_filters=None, compat_mode=F
                     if pos == -1:
                         break
                     # hp_value is at addr = struct_base + 4 (shifted by 4 bytes)
-                    if pos % 4 == 0 and pos >= 4:
+                    if pos % 4 == 0 and pos >= 4 and base + pos - 4 >= HEAP_MIN_ADDR:
                         struct_base = base + pos - 4
                         score = verify_structure_shifted(pm, struct_base, fields)
                         if score >= 0.8:
@@ -249,6 +290,9 @@ def verify_structure(pm, hp_addr, fields, skip_seq_check=False):
         if not (0 <= weight <= weight_max <= 999999):
             return 0.0
         if not (1 <= level <= 200):
+            return 0.0
+        # A real character has a Big5 name here; struct-shaped garbage does not.
+        if not _has_valid_character_name(pm, hp_addr):
             return 0.0
 
         score = 1.0
@@ -323,6 +367,9 @@ def verify_structure_shifted(pm, struct_base, fields):
             return 0.0
         if not (1 <= level <= 200):
             return 0.0
+        # A real character has a Big5 name here; struct-shaped garbage does not.
+        if not _has_valid_character_name(pm, struct_base):
+            return 0.0
 
         score = 1.0
         penalties = 0
@@ -359,10 +406,6 @@ def verify_structure_shifted(pm, struct_base, fields):
 # ============================================================
 # 顯示角色狀態
 # ============================================================
-NAME_OFFSET = -228
-NAME_MAX_BYTES = 32
-
-
 def locate_map_name(pm, valid_names: set[str] | None = None):
     """Scan heap for the current map name string.
 
