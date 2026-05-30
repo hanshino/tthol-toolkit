@@ -99,7 +99,15 @@ def main() -> int:
 
     target_url = "http://127.0.0.1:5173" if args.dev else f"http://127.0.0.1:{port}"
     webview.create_window("御心鑒", target_url, width=1024, height=768)
-    webview.start(debug=args.devtools or args.dev)
+    # Window / taskbar icon. The winforms backend builds a .NET Icon(path), so
+    # the file must be a .ico (a PNG would raise). When frozen with no icon
+    # passed, the backend falls back to extracting the exe's own icon; passing
+    # it explicitly also covers dev mode (where sys.executable is python.exe).
+    start_kwargs = {"debug": args.devtools or args.dev}
+    icon_path = bundled("icon.ico")
+    if icon_path.exists():
+        start_kwargs["icon"] = str(icon_path)
+    webview.start(**start_kwargs)
     return 0
 
 

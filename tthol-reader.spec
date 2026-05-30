@@ -8,13 +8,14 @@
 #     tthol-reader.exe
 #     _internal/
 #         python311.dll, base_library.zip, ...
-#         knowledge.json, tthol.sqlite, webui/dist/
+#         knowledge.json, tthol.sqlite, icon.ico, webui/dist/
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 datas = [
     ("knowledge.json", "."),
     ("tthol.sqlite", "."),
+    ("icon.ico", "."),
     ("webui/dist", "webui/dist"),
 ]
 datas += collect_data_files("webview")
@@ -85,7 +86,7 @@ exe = EXE(
     debug=False,
     strip=False,
     upx=False,
-    icon=None,
+    icon="icon.ico",
 )
 
 coll = COLLECT(
