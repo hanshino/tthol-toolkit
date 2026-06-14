@@ -125,6 +125,12 @@ def main() -> int:
         except OSError:
             time.sleep(0.05)
 
+    # pywebview blocks downloads by default, which silently kills the backup /
+    # CSV export <a download> links inside the WebView2 window (no dialog, no
+    # file). Enabling this hands the click to WebView2's native download UI
+    # (flyout + save to the Downloads folder).
+    webview.settings["ALLOW_DOWNLOADS"] = True
+
     target_url = "http://127.0.0.1:5173" if args.dev else f"http://127.0.0.1:{port}"
     webview.create_window("御心鑒", target_url, width=1024, height=768)
     # Window / taskbar icon. The winforms backend builds a .NET Icon(path), so
