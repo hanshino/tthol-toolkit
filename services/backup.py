@@ -14,7 +14,7 @@ BACKUP_VERSION = 1
 # Informational only (recorded in the file's envelope). Keep in sync with
 # pyproject.toml [project].version; not resolvable via importlib.metadata
 # because the project runs from source, not an installed distribution.
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 
 class BackupFormatError(ValueError):
