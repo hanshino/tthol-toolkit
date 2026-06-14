@@ -49,12 +49,15 @@ export function Treasury() {
           <Stat label="件數總計" value={summary.total_qty} />
           <Stat label="隨身可用" value={summary.on_person} />
           <Stat label="庫房存放" value={summary.in_warehouse} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜尋道具…"
-            style={{ minWidth: 200 }}
-          />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜尋道具…"
+              style={{ minWidth: 200 }}
+            />
+            <ExportMenu />
+          </div>
         </div>
         {error && <Empty text={`讀取失敗：${error}`} />}
         {!error && loading && <Empty text="讀取中…" />}
@@ -68,6 +71,51 @@ export function Treasury() {
           </div>
         )}
       </Panel>
+    </div>
+  );
+}
+
+function ExportMenu() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        匯出報表 ▾
+      </button>
+      {open && (
+        <>
+          {/* click-away backdrop */}
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
+          <div
+            role="menu"
+            style={{
+              position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 30,
+              display: 'grid', gap: 4, padding: 4, minWidth: 150,
+              background: 'var(--tt-panel)', border: '1px solid var(--tt-line)',
+            }}
+          >
+            <a
+              className="tt-btn" role="menuitem" download
+              href="/api/treasury/export.csv?mode=detail"
+              onClick={() => setOpen(false)}
+            >
+              明細 CSV
+            </a>
+            <a
+              className="tt-btn" role="menuitem" download
+              href="/api/treasury/export.csv?mode=summary"
+              onClick={() => setOpen(false)}
+            >
+              彙總 CSV
+            </a>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -455,6 +455,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/treasury/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Treasury Export Csv
+         * @description Treasury report as Excel-friendly CSV. mode=detail|summary (unknown → summary).
+         *
+         *     Encoded UTF-8 with BOM (utf-8-sig) so Windows Excel (cp950 locale) opens
+         *     Chinese names without mojibake. Reuses load_latest_snapshots + _aggregate;
+         *     no new aggregation logic.
+         */
+        get: operations["treasury_export_csv_api_treasury_export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backup/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Backup */
+        get: operations["export_backup_api_backup_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backup/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Backup */
+        post: operations["import_backup_api_backup_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -504,6 +562,24 @@ export interface components {
         AutoClickTestRequest: {
             /** Merchant Idx */
             merchant_idx: number;
+        };
+        /** BackupImportResult */
+        BackupImportResult: {
+            /** Snapshots Added */
+            snapshots_added: number;
+            /** Snapshots Skipped */
+            snapshots_skipped: number;
+            /** Accounts Added */
+            accounts_added: number;
+            /** Characters Assigned */
+            characters_assigned: number;
+            /** Account Conflicts */
+            account_conflicts: number;
+        };
+        /** Body_import_backup_api_backup_import_post */
+        Body_import_backup_api_backup_import_post: {
+            /** File */
+            file: string;
         };
         /**
          * BuffInfo
@@ -1748,6 +1824,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TreasuryItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    treasury_export_csv_api_treasury_export_csv_get: {
+        parameters: {
+            query?: {
+                mode?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_backup_api_backup_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    import_backup_api_backup_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_backup_api_backup_import_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupImportResult"];
                 };
             };
             /** @description Validation Error */

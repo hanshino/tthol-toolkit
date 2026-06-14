@@ -5,6 +5,7 @@ import type { components } from './schema';
 type S = components['schemas'];
 
 export type Account = S['Account'];
+export type BackupImportResult = S['BackupImportResult'];
 export type AutoClickConfig = S['AutoClickConfig'];
 export type AutoClickStatus = S['AutoClickStatus'];
 export type AutoClickTestRequest = S['AutoClickTestRequest'];
