@@ -1,8 +1,27 @@
-from fastapi import APIRouter, Request
+import csv
+import io
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import Response
 
 from services.api_types import TreasuryHolder, TreasuryItem, TreasurySummary
 
 router = APIRouter(prefix="/api/treasury", tags=["treasury"])
+
+_SOURCE_LABEL = {"inventory": "隨身", "warehouse": "庫房"}
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _safe_cell(value: str) -> str:
+    """Neutralize spreadsheet formula injection (CWE-1236) for free-text cells.
+
+    Names can originate from scanned game memory (other players' shop/character
+    names), so a value starting with =, +, -, @, tab or CR could be executed as
+    a formula when the CSV is opened in Excel. Prefix such values with a quote.
+    """
+    if value and value[0] in _CSV_FORMULA_PREFIXES:
+        return "'" + value
+    return value
 
 
 def _aggregate(rows: list[dict]) -> dict[int, dict]:
@@ -88,3 +107,61 @@ async def treasury_items(request: Request, search: str | None = None) -> list[Tr
         )
     items.sort(key=lambda i: (-i.total_qty, i.name))
     return items
+
+
+@router.get("/export.csv")
+async def treasury_export_csv(request: Request, mode: str = "summary") -> Response:
+    """Treasury report as Excel-friendly CSV. mode=detail|summary (unknown → summary).
+
+    Encoded UTF-8 with BOM (utf-8-sig) so Windows Excel (cp950 locale) opens
+    Chinese names without mojibake. Reuses load_latest_snapshots + _aggregate;
+    no new aggregation logic.
+    """
+    mode = "detail" if mode == "detail" else "summary"
+    db = request.app.state.services.get("snapshot_db")
+    if db is None:
+        raise HTTPException(status_code=503, detail="snapshot database unavailable")
+    rows = db.load_latest_snapshots()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+
+    if mode == "detail":
+        writer.writerow(["角色", "帳號", "來源", "道具ID", "道具名", "類型", "數量", "掃描時間"])
+        for r in sorted(rows, key=lambda x: (x["character"], x["source"], x["item_id"])):
+            writer.writerow(
+                [
+                    _safe_cell(r["character"]),
+                    _safe_cell(r.get("account") or ""),
+                    _SOURCE_LABEL.get(r["source"], "隨身"),
+                    r["item_id"],
+                    _safe_cell(r["name"]),
+                    _safe_cell(r.get("item_type", "") or ""),
+                    r["qty"],
+                    r["scanned_at"],
+                ]
+            )
+    else:
+        writer.writerow(["道具ID", "道具名", "類型", "身上", "庫房", "合計", "持有角色數"])
+        by_id = _aggregate(rows)
+        for b in sorted(by_id.values(), key=lambda x: (-x["total_qty"], x["name"])):
+            holder_chars = {h.character for h in b["holders"]}
+            writer.writerow(
+                [
+                    b["item_id"],
+                    _safe_cell(b["name"]),
+                    _safe_cell(b["item_type"]),
+                    b["on_person"],
+                    b["in_warehouse"],
+                    b["total_qty"],
+                    len(holder_chars),
+                ]
+            )
+
+    body = buf.getvalue().encode("utf-8-sig")
+    filename = f"treasury-{mode}.csv"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

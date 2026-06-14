@@ -201,6 +201,17 @@ class SetCharacterAccountRequest(_Base):
     account_id: int | None
 
 
+# ---- Backup / restore (system-level) -------------------------------------
+
+
+class BackupImportResult(_Base):
+    snapshots_added: int
+    snapshots_skipped: int
+    accounts_added: int
+    characters_assigned: int
+    account_conflicts: int
+
+
 # ---- Auto-click ----------------------------------------------------------
 
 

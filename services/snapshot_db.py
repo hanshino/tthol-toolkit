@@ -355,3 +355,136 @@ class SnapshotDB:
             }
             for r in rows
         ]
+
+    # ---- Backup / restore (full-db export + non-destructive merge) --------
+
+    def export_all(self) -> dict:
+        """Dump all three tables for a full system backup.
+
+        Account references in character_accounts use the account NAME (not id)
+        so a merge into another db never collides on autoincrement ids. Every
+        snapshot row is exported (full history, not just the latest per
+        character/source) and item lists are parsed back to objects.
+
+        Returns {accounts, character_accounts, snapshots}.
+        """
+        accounts = [r["name"] for r in self._con.execute("SELECT name FROM accounts ORDER BY name")]
+        character_accounts = [
+            {"character": r["character"], "account": r["name"]}
+            for r in self._con.execute(
+                "SELECT ca.character, a.name FROM character_accounts ca "
+                "JOIN accounts a ON a.id=ca.account_id ORDER BY ca.character"
+            )
+        ]
+        snapshots = [
+            {
+                "character": r["character"],
+                "source": r["source"],
+                "scanned_at": r["scanned_at"],
+                "items": json.loads(r["items"]),
+            }
+            for r in self._con.execute(
+                "SELECT character, source, scanned_at, items FROM snapshots ORDER BY id"
+            )
+        ]
+        return {
+            "accounts": accounts,
+            "character_accounts": character_accounts,
+            "snapshots": snapshots,
+        }
+
+    def snapshot_exists(self, character: str, source: str, scanned_at: str, checksum: str) -> bool:
+        """True if a snapshot with this exact identity already exists."""
+        row = self._con.execute(
+            "SELECT 1 FROM snapshots "
+            "WHERE character=? AND source=? AND scanned_at=? AND checksum=? LIMIT 1",
+            (character, source, scanned_at, checksum),
+        ).fetchone()
+        return row is not None
+
+    def _ensure_account(self, name: str) -> bool:
+        """Insert an account if missing (NO commit — caller owns the transaction).
+        Returns True if a new row was inserted, False if it already existed.
+        """
+        row = self._con.execute("SELECT id FROM accounts WHERE name=?", (name,)).fetchone()
+        if row is not None:
+            return False
+        self._con.execute("INSERT INTO accounts (name) VALUES (?)", (name,))
+        return True
+
+    def import_merge(self, data: dict) -> dict:
+        """Non-destructively merge a backup payload into this db.
+
+        Runs inside a single transaction: any failure rolls back the whole
+        import so a bad file never leaves the db half-merged.
+
+        Rules (see import/export design spec §3.2):
+          * accounts    — create by name if missing (idempotent).
+          * character_accounts — assign if unassigned; if already on a
+            different account, keep existing and count as a conflict; same
+            account is a no-op.
+          * snapshots   — identity is (character, source, scanned_at, checksum);
+            the checksum is always recomputed from items (file value untrusted).
+            Existing rows are skipped; new rows preserve the original scanned_at.
+
+        Returns a summary dict of counts.
+        """
+        summary = {
+            "snapshots_added": 0,
+            "snapshots_skipped": 0,
+            "accounts_added": 0,
+            "characters_assigned": 0,
+            "account_conflicts": 0,
+        }
+        con = self._con
+        try:
+            con.execute("BEGIN")
+
+            for name in data.get("accounts") or []:
+                if self._ensure_account(name):
+                    summary["accounts_added"] += 1
+
+            for entry in data.get("character_accounts") or []:
+                character = entry["character"]
+                acct_name = entry["account"]
+                if self._ensure_account(acct_name):
+                    summary["accounts_added"] += 1
+                acct_id = con.execute(
+                    "SELECT id FROM accounts WHERE name=?", (acct_name,)
+                ).fetchone()["id"]
+                existing = con.execute(
+                    "SELECT account_id FROM character_accounts WHERE character=?",
+                    (character,),
+                ).fetchone()
+                if existing is None:
+                    con.execute(
+                        "INSERT INTO character_accounts (character, account_id) VALUES (?, ?)",
+                        (character, acct_id),
+                    )
+                    summary["characters_assigned"] += 1
+                elif existing["account_id"] != acct_id:
+                    summary["account_conflicts"] += 1
+                # same account -> no-op
+
+            for snap in data.get("snapshots") or []:
+                character = snap["character"]
+                source = snap["source"]
+                scanned_at = snap["scanned_at"]
+                items = snap.get("items") or []
+                canonical = _canonical(items)
+                chk = _checksum(canonical)
+                if self.snapshot_exists(character, source, scanned_at, chk):
+                    summary["snapshots_skipped"] += 1
+                    continue
+                con.execute(
+                    "INSERT INTO snapshots (character, source, scanned_at, items, checksum) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (character, source, scanned_at, canonical, chk),
+                )
+                summary["snapshots_added"] += 1
+
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+        return summary

@@ -75,6 +75,26 @@ button.is-primary:hover:not(:disabled) {
   border-color: var(--tt-gold);
 }
 
+/* Anchor styled as a button (used for native download links). Mirrors the
+   base button look so <a href download> matches the rest of the UI. */
+a.tt-btn {
+  display: inline-block;
+  font-family: var(--tt-font);
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--tt-text);
+  background: var(--tt-panel);
+  border: 1px solid var(--tt-line);
+  padding: 6px 14px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+a.tt-btn:hover, a.tt-btn:focus-visible {
+  background: var(--tt-raised);
+  border-color: var(--tt-gold);
+}
+
 /* ---- Inputs ------------------------------------------------------- */
 input, select, textarea {
   font-family: var(--tt-font-mono);
