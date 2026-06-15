@@ -90,3 +90,41 @@ def test_verify_structure_shifted_rejects_struct_without_name():
 def test_verify_structure_shifted_accepts_struct_with_valid_big5_name():
     pm = FakePm(_SHIFTED_INTS, name="晨曦破空".encode("big5"))
     assert verify_structure_shifted(pm, 0, _FIELDS) >= 0.8
+
+
+# Pure-numeric (and other pure-ASCII) character names are legal in-game. They
+# are single-byte in Big5, so the old "first byte is a Big5 lead byte + whole
+# name is an even number of bytes" rule rejected them, leaving such characters
+# permanently stuck on the "(連線中)" placeholder. The name check must admit
+# alphanumeric names while still rejecting empty / control-byte garbage.
+def test_verify_structure_accepts_pure_numeric_name():
+    pm = FakePm(_NORMAL_INTS, name=b"12345")  # odd byte length, ASCII digits
+    assert verify_structure(pm, 0, _FIELDS) >= 0.8
+
+
+def test_verify_structure_accepts_even_length_numeric_name():
+    pm = FakePm(_NORMAL_INTS, name=b"1234")  # even length, ASCII-leading
+    assert verify_structure(pm, 0, _FIELDS) >= 0.8
+
+
+def test_verify_structure_accepts_alphanumeric_name():
+    pm = FakePm(_NORMAL_INTS, name=b"Player1")
+    assert verify_structure(pm, 0, _FIELDS) >= 0.8
+
+
+def test_verify_structure_accepts_mixed_ascii_and_big5_name():
+    pm = FakePm(_NORMAL_INTS, name="6之".encode("big5"))
+    assert verify_structure(pm, 0, _FIELDS) >= 0.8
+
+
+def test_verify_structure_accepts_name_with_printable_punctuation():
+    # Underscores / printable punctuation appear in real names. The previous
+    # rule accepted any clean Big5 decode, so the fix must not newly reject
+    # these (that would just trade one stuck-on-"(連線中)" bug for another).
+    pm = FakePm(_NORMAL_INTS, name=b"Player_1")
+    assert verify_structure(pm, 0, _FIELDS) >= 0.8
+
+
+def test_verify_structure_shifted_accepts_pure_numeric_name():
+    pm = FakePm(_SHIFTED_INTS, name=b"7788")
+    assert verify_structure_shifted(pm, 0, _FIELDS) >= 0.8

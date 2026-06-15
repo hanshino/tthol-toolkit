@@ -158,34 +158,52 @@ NAME_OFFSET = -228
 NAME_MAX_BYTES = 32
 
 
+def _is_name_char(ch: str) -> bool:
+    """True for a character that can legitimately appear in a character name.
+
+    Names are CJK ideographs and/or ASCII alphanumerics, occasionally with
+    printable punctuation (e.g. an underscore). Rather than allow-list those
+    categories -- which would newly reject the punctuation the previous rule
+    accepted -- this rejects only what marks struct-shaped garbage: C0/C1
+    control bytes, space, and DEL. Everything else that decoded cleanly as Big5
+    is treated as a name character.
+    """
+    o = ord(ch)
+    return o > 0x20 and o != 0x7F and not (0x80 <= o <= 0x9F)
+
+
 def _has_valid_character_name(pm, struct_base):
-    """True when a Big5 character name sits at NAME_OFFSET.
+    """True when a plausible character name sits at NAME_OFFSET.
 
     A genuine character always has a name there; struct-shaped garbage (static
     data, freed heap) does not. Used as a hard constraint in verify_structure to
     reject false positives that satisfy the numeric checks but are not real
-    characters. Requires the first character to be a valid Big5 double-byte
-    (names start with a CJK glyph) and the whole name to decode as Big5.
+    characters.
+
+    The name must be null-terminated within the 32-byte field, decode cleanly as
+    Big5, and consist solely of name characters (CJK ideographs or ASCII
+    alphanumerics). Admitting ASCII lets pure-numeric and English names through
+    -- they are single-byte in Big5 and were wrongly rejected by the previous
+    "first byte must be a Big5 lead byte / name must be an even byte count" rule,
+    which left such characters stuck forever on the "(連線中)" placeholder. The
+    all-name-char + null-terminated requirement still rejects empty names and
+    control-byte / random-heap garbage.
     """
     try:
         raw = pm.read_bytes(struct_base + NAME_OFFSET, NAME_MAX_BYTES)
     except Exception:
         return False
     # A real name is null-terminated within the 32-byte field (padded after).
-    # Garbage heap with no terminator in the window is not a character name.
+    # Garbage heap with no terminator near the start is not a character name.
     end = raw.find(b"\x00")
-    if end < 2:
+    if end < 1:
         return False
     raw = raw[:end]
-    if len(raw) % 2 != 0:  # Big5 names are whole double-byte characters
-        return False
-    if not (0xA1 <= raw[0] <= 0xF9 and 0x40 <= raw[1] <= 0xFE):
-        return False
     try:
-        raw.decode("big5")
+        name = raw.decode("big5")
     except Exception:
         return False
-    return True
+    return all(_is_name_char(ch) for ch in name)
 
 
 def locate_character(pm, hp_value, knowledge, offset_filters=None, compat_mode=False):
