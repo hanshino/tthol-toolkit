@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { get, post } from '../../api/client';
+import { describeError, reportClientError } from '../../diag/report';
 import type { CharacterDetail, Item, SaveSnapshotResult } from '../../api/types';
 import { Panel } from '../../primitives';
 
@@ -20,7 +21,11 @@ export function ItemsTab({ pid }: { pid: number }) {
         const cached = [...(d.inventory ?? []), ...(d.warehouse ?? [])];
         if (cached.length) setItems(cached);
       })
-      .catch(() => {});
+      .catch(e => {
+        if (cancelled) return;
+        setToast(`讀取失敗：${describeError(e)}`);
+        reportClientError(e, { component: 'ItemsTab' });
+      });
     return () => { cancelled = true; };
   }, [pid]);
 
@@ -32,7 +37,8 @@ export function ItemsTab({ pid }: { pid: number }) {
       const fresh = await post<Item[]>(`/api/characters/${pid}/${source}/scan`);
       setItems(prev => [...prev.filter(i => i.source !== source), ...fresh]);
     } catch (e) {
-      setToast(`掃描失敗：${String(e)}`);
+      setToast(`掃描失敗：${describeError(e)}`);
+      reportClientError(e, { component: 'ItemsTab.scan' });
     } finally {
       setScanning(null);
     }
@@ -46,7 +52,8 @@ export function ItemsTab({ pid }: { pid: number }) {
       const r = await post<SaveSnapshotResult>('/api/snapshots', { pid, source });
       setToast(r.saved ? '已存入留影' : '無新內容可存（可能與最近一筆相同）');
     } catch (e) {
-      setToast(`保存失敗：${String(e)}`);
+      setToast(`保存失敗：${describeError(e)}`);
+      reportClientError(e, { component: 'ItemsTab.saveSnapshot' });
     } finally {
       setSaving(null);
     }

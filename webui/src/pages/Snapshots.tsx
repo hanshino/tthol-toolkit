@@ -1,5 +1,6 @@
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { get, upload } from '../api/client';
+import { describeError, reportClientError } from '../diag/report';
 import type { BackupImportResult, SnapshotRow } from '../api/types';
 import { Panel } from '../primitives';
 
@@ -13,7 +14,12 @@ export function Snapshots() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadRows = useCallback(
-    () => get<SnapshotRow[]>('/api/snapshots').then(setRows).catch(() => {}),
+    () => get<SnapshotRow[]>('/api/snapshots')
+      .then(setRows)
+      .catch(e => {
+        setStatus({ kind: 'err', text: `讀取留影失敗：${describeError(e)}` });
+        reportClientError(e, { component: 'Snapshots.loadRows' });
+      }),
     [],
   );
 
@@ -34,6 +40,7 @@ export function Snapshots() {
       await loadRows();
     } catch (err) {
       setStatus({ kind: 'err', text: importErrorText(err) });
+      reportClientError(err, { component: 'Snapshots.import' });
     } finally {
       setBusy(false);
     }
