@@ -29,8 +29,15 @@ probe_buff.py
 # AHK/game scripts
 *.Q
 
-# Claude Code local config
-.claude/
+# Claude Code local config — but project slash commands are shared, not local.
+# A triage skill that lives on one machine cannot do its job: the point is that
+# a fresh clone (or a fresh agent session) can run it without being told how.
+#
+# Must exclude the *contents* (.claude/*), not the directory (.claude/): git
+# never descends into an excluded directory, so a `!` re-include under it is
+# silently inert.
+.claude/*
+!.claude/commands/
 
 # Opencode local config
 .opencode/
