@@ -7,13 +7,18 @@ explain it. The app is a distributed desktop binary — there is no way to attac
 to a user's machine, so every diagnosis has to be reconstructed from whatever the app
 recorded on its own.
 
-Today it records almost nothing. This design closes the gap in three moves:
+Today it records almost nothing. This design closes the gap in four moves:
 
 1. Make the log pipeline complete and impossible to silence.
 2. Route every error — backend and frontend alike — through one bus (Python `logging`),
    with an in-memory ring buffer as the second sink.
 3. Give the user a "脈案" (diagnostics) page and a one-click bundle export so a bug report
    arrives as a zip instead of a sentence.
+4. Give an agent its own doorway onto the same stream — a fixed discovery pointer, JSONL on
+   disk, stable error codes, a CLI, and a skill that explains how to triage with them.
+
+Moves 3 and 4 are two doorways onto one event stream, not two pipelines. The human gets a
+rendering; the agent gets the record.
 
 The app stays read-only with respect to game memory. Nothing here writes to the game.
 
@@ -26,6 +31,8 @@ The app stays read-only with respect to game memory. Nothing here writes to the 
 - The frontend stops swallowing errors; what the user saw and what the backend did land on
   one timeline.
 - Logging never silently disappears because of an unwritable install directory.
+- An agent can locate, query, and triage the diagnostic data on its own — from a live app,
+  from a dead one, or from a bundle someone sent — without a human relaying context.
 
 ## Non-Goals
 
@@ -94,9 +101,10 @@ this was it.
 
 ## Architecture
 
-**`logging` is the bus.** Events are born in exactly one place — a `log.*` call. A
-`DiagnosticsHandler` on the root logger feeds an in-memory ring buffer; the rotating file
-handler writes to disk. The file log and the UI event list cannot disagree, because they
+**`logging` is the bus.** Events are born in exactly one place — a `log.*` call. Two
+handlers on the root logger consume that stream: `DiagnosticsHandler` feeds an in-memory
+ring buffer (for the live UI), `JsonlHandler` writes `events.jsonl` (for durability, the
+bundle, and the CLI). The on-disk record and the UI event list cannot disagree, because they
 are two sinks on one stream. Third-party loggers (`pymem`, `uvicorn`) are captured for free.
 
 Frontend errors POST to an endpoint whose only job is to call `log.error(...)` under the
@@ -118,22 +126,18 @@ Alternatives considered and rejected:
 
 Extract `app.py::_setup_logging` into `services/logsetup.py` so tests can exercise it.
 
-### Landing path: three-tier fallback, never silent
+### On-disk format: JSONL only
 
-1. `%LOCALAPPDATA%\tthol-reader\logs\tthol-reader.log` — primary, guaranteed writable
-2. `app_root()/tthol-reader.log` — preserves today's behaviour for portable installs
-3. `tempfile.gettempdir()/tthol-reader.log` — last resort
+`events.jsonl` is the **single on-disk format** — one JSON object per line, one line per
+event, matching the `DiagEvent` schema in Section 2. There is no parallel text log.
 
-The first handler that constructs successfully wins. If all three fail, the ring buffer
-still collects events and the diagnostics page and bundle export still work — that
-resilience is the direct payoff of the logging-as-bus choice. The path actually in use is
-written as the first ring-buffer event and shown on the diagnostics page.
+The human-readable rendering is produced on demand — by `diag.py` (Section 6.4) and by the
+bundle's `report.md` (Section 4) — from the same lines. A rendering can never disagree with
+the record, because there is only one record. The full `detail` failure snapshot reaches
+disk, so it survives a crash; a formatted text line could not have carried it.
 
-### Rotation
-
-`maxBytes=5_000_000, backupCount=5` (25 MB ceiling). The export includes every backup.
-
-### Format
+The console `StreamHandler` (dev builds only; release builds are windowed and have no
+stderr — F4) keeps the human format:
 
 ```
 %(asctime)s %(levelname)-7s %(name)s [pid=%(char_pid)s char=%(char_name)s] %(message)s
@@ -141,7 +145,27 @@ written as the first ring-buffer event and shown on the diagnostics page.
 
 A `logging.Filter` supplies `-` defaults for `char_pid` / `char_name` on records that lack
 them. **This is mandatory, not cosmetic**: without it the first `pymem` or `uvicorn` record
-raises `KeyError` inside the formatter.
+raises `KeyError` inside the formatter. The JSONL handler needs no such guard — it reads
+`record.__dict__` with `.get()` defaults.
+
+### Landing path: three-tier fallback, never silent
+
+1. `%LOCALAPPDATA%\tthol-reader\logs\events.jsonl` — primary, guaranteed writable
+2. `app_root()/events.jsonl` — preserves today's behaviour for portable installs
+3. `tempfile.gettempdir()/events.jsonl` — last resort
+
+The first handler that constructs successfully wins. If all three fail, the ring buffer
+still collects events and the diagnostics page and bundle export still work — that
+resilience is the direct payoff of the logging-as-bus choice.
+
+Because the winning path is not knowable in advance, it is recorded in `runtime.json` at a
+**fixed** location (Section 6.1) and shown on the diagnostics page. Without that pointer the
+fallback would trade one problem (silent logging) for another (unfindable logs).
+
+### Rotation
+
+`maxBytes=5_000_000, backupCount=5` (25 MB ceiling). The export includes every backup.
+Rotation must split on line boundaries so every backup file stays valid JSONL.
 
 ### Startup header
 
@@ -149,7 +173,7 @@ Written once, immediately after the file handler opens:
 
 - App version (`services/backup.APP_VERSION`)
 - `frozen?`, exe path, Python version, OS build
-- The log path actually in use
+- The `events.jsonl` path actually in use, and the HTTP port
 - `knowledge.json` mtime + first 8 chars of its sha256
 - `tthol.sqlite` presence and `items` row count
 - `reader.py`'s current `STATIC_BASE`, `STATIC_OFFSETS`, `PLAYER_HP_CHAIN_BASE`,
@@ -177,22 +201,31 @@ scan timeouts surface on their own.
 ```python
 @dataclass(frozen=True)
 class DiagEvent:
+    v: int                # schema version, currently 1
     ts: float
     level: str            # INFO / WARNING / ERROR
     logger: str           # tthol.worker / tthol.api / tthol.client / pymem
     pid: int | None
     char: str | None
     cat: str              # locate / read / inventory / warehouse / api / client / startup
-    message: str
+    code: str | None      # stable error code, see Section 6.3
+    message: str          # free text, may change between versions
     detail: dict | None   # structured failure snapshot
 ```
 
+`v` is written on every JSONL line so a consumer can tell what it is reading and the schema
+can evolve. `code` is the stable identifier: `message` is prose and may be reworded, so
+nothing should ever match on it (Section 6.3).
+
 - **`DiagnosticsBuffer`** — `collections.deque(maxlen=1000)` guarded by a `threading.Lock`.
   At the 3s poll cadence this spans tens of minutes of activity.
-- **`DiagnosticsHandler(logging.Handler)`** — attached to the root logger. `emit()` reads
-  `char_pid` / `char_name` / `cat` / `detail` from `record.__dict__`, defaulting to `None`.
-  The whole body is wrapped in `try/except` and **must never log**: a handler that logs
-  from inside `emit` recurses into itself.
+- **`DiagnosticsHandler(logging.Handler)`** — attached to the root logger, feeds the ring
+  buffer. `emit()` reads `char_pid` / `char_name` / `cat` / `code` / `detail` from
+  `record.__dict__`, defaulting to `None`. The whole body is wrapped in `try/except` and
+  **must never log**: a handler that logs from inside `emit` recurses into itself.
+- **`JsonlHandler(logging.Handler)`** — the on-disk sink. Serialises the same `DiagEvent`
+  to one line. `detail` is serialised with `default=repr` so an unexpected non-JSON value
+  degrades to a string instead of losing the whole event. Same never-log rule.
 - **`bind(pid, name) -> LoggerAdapter`** — held by `CharSession` and handed to the worker,
   so every worker line carries pid and character name without a hand-written `extra=` at
   each call site. This is what makes "structured by discipline" cost nothing in practice.
@@ -282,11 +315,16 @@ New router `services/api/diagnostics.py`, mounted in `build_app`.
 
 ### Bundle contents — `tthol-diag-YYYYMMDD-HHMMSS.zip`
 
-- `report.md` — human-readable summary: last 20 ERROR/WARNING entries, environment
-  highlights, event timeline. **Reading this alone should usually be enough.**
-- `report.json` — environment header, per-session state, the full ring buffer including
-  `detail` failure snapshots
-- `logs/` — the current log file plus every rotation backup
+- `report.md` — human-readable summary rendered at export time: last 20 ERROR/WARNING
+  entries, environment highlights, event timeline. **A person reading this alone should
+  usually be enough.**
+- `runtime.json` — the environment header and per-session state (Section 6.1), so the
+  bundle is self-describing
+- `events/` — `events.jsonl` plus every rotation backup
+
+`report.json` from the earlier draft is dropped: it would have duplicated `events.jsonl`
+with a second, divergent copy of the same events. `diag.py inspect <zip>` reads the JSONL
+directly (Section 6.4), so an agent needs no separate aggregate file.
 
 Served as `StreamingResponse` with `Content-Disposition: attachment`.
 `webview.settings["ALLOW_DOWNLOADS"]` is already `True` (`app.py:132`), so WebView2's
@@ -350,16 +388,114 @@ Rendering 1000 rows at once stutters in WebView2. Default to the most recent 200
 page is open, poll `GET /api/diagnostics/events?since=<last_ts>` every 2s for the delta;
 stop on navigation away.
 
-## Section 6 — Testing
+## Section 6 — Agent-Facing Surface
+
+Sections 1–5 build a channel shaped for a person: the user clicks export and emails a zip.
+An agent needs four different things — to **find** the data itself, to get it
+**structured**, to match on **stable identifiers**, and to have a **command to run**. This
+section supplies those. It is not a separate feature; it is the same event stream given a
+second doorway.
+
+### 6.1 `runtime.json` — the fixed discovery point
+
+Written at startup to `%LOCALAPPDATA%\tthol-reader\runtime.json`. This path is **fixed and
+unconditional** — it does not participate in the Section 1 fallback, because a discovery
+pointer that moves is not a discovery pointer.
+
+```json
+{
+  "schema": 1,
+  "pid": 27160,
+  "port": 51234,
+  "version": "1.2.1",
+  "started_at": 1755820000.0,
+  "events_path": "C:\\Users\\...\\AppData\\Local\\tthol-reader\\logs\\events.jsonl",
+  "frozen": true
+}
+```
+
+This solves both halves of the discovery problem: `_pick_port()` (`app.py:55`) currently
+chooses a random port and records it only under `--dev` (`app.py:106-107`), so nothing can
+reach a release build's API; and the Section 1 fallback means the events path is not
+knowable in advance. `.omc/.dev-port` is the existing precedent — this generalises it to
+all builds and adds the rest of the context.
+
+Deleted on clean shutdown; a stale file is detected by checking whether `pid` is alive, so
+a crash leaves a usable post-mortem pointer rather than a lie.
+
+### 6.2 `events.jsonl` — structured on disk
+
+Specified in Section 1. The point for agents: `grep` and `jq` work directly, the full
+`detail` snapshot is present, and it survives the process. No parsing of formatted text,
+and no dependency on the app still running.
+
+### 6.3 Stable error codes
+
+`DiagEvent.code` carries a constant per failure path. `message` is prose and may be
+reworded or translated; **nothing should ever match on `message`**.
+
+| Code | Raised at | `detail` keys |
+|---|---|---|
+| `E_PROC_GONE` | `worker._connect_process` | `pid`, `exc` |
+| `E_CHAIN_READ` | `read_hp_from_player_chain` failure | `exc`, `chain_base`, `chain_offsets` |
+| `E_LOCATE_EXHAUSTED` | `_locate_with_retries` returns `None` | full `snapshot_locate_failure` dict |
+| `E_LOCK_LOST` | validation score < 0.8 × 3 | `score`, `failed_fields`, `hp_addr`, `bytes_hex` |
+| `E_SCAN_FAILED` | `_locate` exception | `exc`, `hp_value`, `compat_tried` |
+| `E_INV_NOT_FOUND` | `_do_inventory_scan`, no match | `hp_addr`, `scan_ms` |
+| `E_WH_NOT_FOUND` | `_do_warehouse_scan`, no arrays | `hp_addr`, `inv_range`, `arrays_seen` |
+| `E_API_5XX` | global exception handler | `path`, `method`, `status`, `traceback` |
+| `E_CLIENT` | `POST /api/diagnostics/client-error` | `url`, `stack`, `ua`, `component` |
+
+The `detail` key sets are part of the contract: an agent can rely on
+`E_LOCATE_EXHAUSTED.detail.bytes_hex` existing without defensive probing.
+
+### 6.4 `diag.py` — the CLI entry point
+
+```bash
+uv run diag.py events --since 10m --level ERROR --json
+uv run diag.py events --code E_INV_NOT_FOUND --json
+uv run diag.py events --pid 27160 --since 1h --json
+uv run diag.py summary
+uv run diag.py tail
+uv run diag.py inspect <bundle.zip>
+uv run diag.py bundle --out <path>
+```
+
+Source resolution, in order: `runtime.json` → live app over HTTP; if the app is not running,
+read `events_path` from the same file; if `--zip` or an `inspect` target is given, read the
+bundle. **One command set covers live, post-mortem, and someone-else's-bundle.**
+
+`--json` emits NDJSON to stdout — one event per line, pipeable into `jq` with no framing to
+strip. Without `--json`, the same events render in the human format from Section 1.
+
+Per the project convention, all invocations are `uv run`.
+
+### 6.5 `/tthol-diag` skill
+
+`.claude/commands/tthol-diag.md`, following the existing `tthol-update-scan.md` convention.
+Contents: the triage decision tree — what to run first, what each error code means, which
+`detail` field to read for each, and when to suspect a game update (compare the
+`STATIC_BASE` / `PLAYER_HP_CHAIN_BASE` values in the startup header against `reader.py`,
+then escalate to `/tthol-update-scan`).
+
+This is the part that makes the channel durable. The CLI is reachable; the skill is what
+lets a fresh agent session with no context use it correctly, without the maintainer
+re-explaining the codes each time.
+
+## Section 7 — Testing
 
 TDD, using the existing `tests/` pytest layout.
 
 | Test | Covers |
 |---|---|
 | `test_diagnostics_buffer.py` | Ring-buffer cap, thread safety, `since` filtering, handler mapping `extra` → `DiagEvent` |
-| `test_logsetup.py` | Three-tier fallback (primary made unwritable → falls to secondary); **all three failing still leaves the ring buffer collecting**; the formatter survives a third-party record with no `extra` |
-| `test_worker_session_errors.py` | Regression for F1/F10: `locate_inventory` returning `None` produces a non-null `session.last_error` and a buffer event |
-| `test_diagnostics_router.py` | Event filtering, verbose toggle, client-error dedup, bundle zip contains `report.md` / `report.json` / `logs/` |
+| `test_logsetup.py` | Three-tier fallback (primary made unwritable → falls to secondary); **all three failing still leaves the ring buffer collecting**; the console formatter survives a third-party record with no `extra` |
+| `test_jsonl_handler.py` | Every line is valid JSON and carries `v`; a non-serialisable `detail` degrades to `repr` instead of dropping the event; rotation splits on line boundaries so backups stay valid JSONL |
+| `test_worker_session_errors.py` | Regression for F1/F10: `locate_inventory` returning `None` produces a non-null `session.last_error`, a buffer event, and `code == "E_INV_NOT_FOUND"` |
+| `test_error_codes.py` | Every code in the 6.3 table is emitted by its stated call site, and its `detail` contains the declared keys |
+| `test_runtime_json.py` | Written at startup with a reachable port; removed on clean shutdown; a stale file is identified by a dead `pid` |
+| `test_diag_cli.py` | `events --json` emits one valid JSON object per line; `--code` / `--since` / `--level` filter correctly; `inspect <zip>` yields the same events as the live source |
+| `test_diagnostics_router.py` | Event filtering, verbose toggle, client-error dedup, bundle zip contains `report.md` / `runtime.json` / `events/` |
 | `test_api_error_logging.py` | A raising endpoint produces a logged 500 carrying path and pid |
 
 No frontend test framework is introduced; the frontend relies on types plus manual
@@ -367,7 +503,14 @@ verification.
 
 ## Acceptance
 
-The design's real acceptance test is external: after implementation, ask the reporting user
-to reproduce and export a bundle. `report.md` either confirms F10 or names something else.
-Either outcome validates the pipeline — the failure mode being fixed is "the app said
-nothing", and any concrete answer proves that is no longer true.
+Two acceptance tests, one per audience.
+
+**Human channel:** after implementation, ask the reporting user to reproduce and export a
+bundle. `report.md` either confirms F10 or names something else. Either outcome validates
+the pipeline — the failure mode being fixed is "the app said nothing", and any concrete
+answer proves that is no longer true.
+
+**Agent channel:** with the app running and a character deliberately not logged in, a fresh
+agent session given only `/tthol-diag` must reach the correct diagnosis using the CLI, with
+no additional explanation from the maintainer. If it cannot, the skill or the codes are the
+defect, not the agent.
