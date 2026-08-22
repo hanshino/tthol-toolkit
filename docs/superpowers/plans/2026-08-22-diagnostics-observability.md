@@ -1353,13 +1353,30 @@ def init(console: bool = True) -> Path | None:
     return setup_logging(_buffer, console=console)
 
 
+class _BoundAdapter(logging.LoggerAdapter):
+    """LoggerAdapter that merges `extra` instead of replacing it.
+
+    The stdlib default overwrites kwargs["extra"] wholesale, which would drop
+    the `cat` / `code` / `detail` the call site passes -- silently, leaving
+    every bound line uncategorised. (Python 3.13 added merge_extra=True; this
+    project targets 3.11.) Call-site keys win so a caller can override the
+    bound identity when it has better information.
+    """
+
+    def process(self, msg, kwargs):
+        merged = dict(self.extra or {})
+        merged.update(kwargs.get("extra") or {})
+        kwargs["extra"] = merged
+        return msg, kwargs
+
+
 def bind(pid: int, name: str | None = None) -> logging.LoggerAdapter:
     """Logger pre-loaded with this session's identity.
 
     Multi-boxing is a core feature; without this every worker's lines land in
     one undifferentiated stream.
     """
-    return logging.LoggerAdapter(
+    return _BoundAdapter(
         logging.getLogger("tthol.worker"), {"char_pid": pid, "char_name": name}
     )
 
