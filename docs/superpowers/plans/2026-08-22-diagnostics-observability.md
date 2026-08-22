@@ -2023,7 +2023,17 @@ version, and add the `E_LOCK_LOST` event:
 
 Add `import time` to the imports if it is not already present.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Fix the fallout in the existing worker test**
+
+Widening `on_error` breaks any existing caller that assumed a single positional
+argument. `tests/test_worker_scan_seq.py:19` is one:
+
+```python
+        # on_error now takes keyword cat/code/detail alongside the message.
+        on_error=lambda _m, **_kw: None,
+```
+
+- [ ] **Step 5: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_worker_error_codes.py tests/test_worker_scan_seq.py -v`
 Expected: PASS — new tests plus the existing scan-sequence tests still green.
@@ -2033,7 +2043,7 @@ Expected: PASS — new tests plus the existing scan-sequence tests still green.
 ```bash
 uv run ruff format services/worker.py tests/test_worker_error_codes.py
 uv run ruff check services/worker.py tests/test_worker_error_codes.py
-git add services/worker.py tests/test_worker_error_codes.py
+git add services/worker.py tests/test_worker_error_codes.py tests/test_worker_scan_seq.py
 git commit -m "feat(diag): worker error codes, failure snapshots, relocate rate-limit"
 ```
 
