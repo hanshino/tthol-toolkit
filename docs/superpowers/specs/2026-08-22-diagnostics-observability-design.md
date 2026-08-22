@@ -270,8 +270,15 @@ class ErrorInfo(BaseModel):
 `CharacterRow` and `CharacterDetail` gain an optional `last_error: ErrorInfo | None`,
 pushed to the Dashboard over `/ws/world`. The user sees self-serviceable messages
 ("open the warehouse UI in game first") without opening the diagnostics page. Adding an
-optional Pydantic field is backward-compatible for any older frontend. The mirrored
-TypeScript type goes in `webui/src/api/types.ts` alongside the existing row/detail types.
+optional Pydantic field is backward-compatible for any older frontend.
+
+The TypeScript side is **generated, not hand-written**: `services/api_types.py` →
+`uv run python scripts/gen_openapi.py` → `webui/openapi.json` → `npm run gen-types` →
+`webui/src/api/schema.ts`. Only the one-line alias in `webui/src/api/types.ts` is authored
+by hand. Every task that touches a Pydantic model must run that chain.
+
+Note `_Base` sets `extra="forbid"`, so a field must exist on the model before any payload
+may carry it.
 
 The worker's `on_error` signature widens from `Callable[[str], None]` to accept keyword
 `cat` / `detail`. Nine call sites: `worker.py:176, 223, 245, 300, 319, 330, 338, 367, 377`.
