@@ -93,8 +93,25 @@ def test_inspect_reads_a_bundle(tmp_path, capsys):
 
 def test_missing_runtime_json_is_a_clear_error(capsys, monkeypatch):
     monkeypatch.setattr(diag, "read_runtime_json", lambda: None)
+    # Isolate from the developer's own %LOCALAPPDATA%: without this the test
+    # reads the real events.jsonl on the machine running it.
+    monkeypatch.setattr(diag, "_default_events_path", lambda: None)
     assert diag.main(["events"]) == 2
     assert "runtime.json" in capsys.readouterr().err
+
+
+def test_missing_runtime_json_still_reads_the_default_events_path(tmp_path, capsys, monkeypatch):
+    # The pointer can be gone while the events are not (a clean exit on an old
+    # build, a wiped runtime dir). A partial answer beats refusing to look.
+    events = tmp_path / "events.jsonl"
+    _write_events(events, [_row(1.0)])
+    monkeypatch.setattr(diag, "read_runtime_json", lambda: None)
+    monkeypatch.setattr(diag, "_default_events_path", lambda: events)
+
+    assert diag.main(["events", "--json"]) == 0
+    out = capsys.readouterr()
+    assert json.loads(out.out.strip())["code"] == "E_INV_NOT_FOUND"
+    assert "no runtime.json" in out.err  # says so on stderr, not silently
 
 
 def test_summary_reports_counts_and_staleness(tmp_path, capsys, monkeypatch):

@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import os
 import re
 import sys
 import time
@@ -28,7 +29,7 @@ from pathlib import Path
 from services.diag_bundle import build_bundle, bundle_filename, render_human_line
 from services.diag_events import DiagEvent, event_from_json_line
 from services.diag_jsonl import read_jsonl
-from services.runtime_info import read_runtime_json
+from services.runtime_info import read_runtime_json, was_clean_exit
 
 _DURATION = re.compile(r"^(\d+)([smhd])$")
 _UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
@@ -42,6 +43,13 @@ def parse_since(text: str | None, now: float | None = None) -> float | None:
         raise ValueError(f"bad --since {text!r}; expected forms like 30s, 10m, 2h, 1d")
     now = time.time() if now is None else now
     return now - int(m.group(1)) * _UNITS[m.group(2)]
+
+
+def _default_events_path() -> Path | None:
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        return None
+    return Path(local) / "tthol-reader" / "logs" / "events.jsonl"
 
 
 def _app_is_live(info: dict) -> bool:
@@ -87,6 +95,12 @@ def load_events(args) -> tuple[list[DiagEvent], dict | None]:
 
     info = read_runtime_json()
     if info is None:
+        # Last resort: the pointer is gone but the events may not be. A partial
+        # answer beats "I cannot look".
+        fallback = _default_events_path()
+        if fallback is not None and fallback.exists():
+            print(f"no runtime.json; reading {fallback}", file=sys.stderr)
+            return (read_jsonl(fallback), None)
         print(
             "no runtime.json found -- start the app once, or pass a bundle:\n"
             "  uv run diag.py inspect <bundle.zip>",
@@ -151,7 +165,15 @@ def _cmd_summary(args) -> int:
 
     if info:
         live = _app_is_live(info)
-        print(f"app:        {'running' if live else 'not running'} (pid {info.get('pid')})")
+        if live:
+            state = "running"
+        elif was_clean_exit(info):
+            state = "not running (exited cleanly)"
+        else:
+            # No shutdown stamp and the process is gone: it died without running
+            # its exit path. That is itself a finding.
+            state = "not running (CRASHED -- no clean-exit stamp)"
+        print(f"app:        {state} (pid {info.get('pid')})")
         print(f"version:    {info.get('app_version')}")
         print(f"port:       {info.get('port')}")
         print(f"events:     {info.get('events_path')}")

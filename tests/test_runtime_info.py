@@ -61,12 +61,29 @@ def test_stale_detected_by_dead_pid(tmp_path, monkeypatch):
     assert ri.is_stale(dead) is True
 
 
-def test_clear_removes_the_pointer(tmp_path, monkeypatch):
+def test_clear_stamps_the_exit_instead_of_deleting(tmp_path, monkeypatch):
+    # Deleting the pointer on exit made post-mortem triage impossible in the
+    # most common case: the user closes the app and *then* reports the problem,
+    # leaving events.jsonl on disk with nothing pointing at it.
     monkeypatch.setattr(ri, "RUNTIME_DIR", tmp_path)
     ri.write_runtime_json(port=1, events_path=tmp_path / "e.jsonl")
+    assert ri.was_clean_exit(ri.read_runtime_json()) is False
+
     ri.clear_runtime_json()
-    assert ri.read_runtime_json() is None
+    info = ri.read_runtime_json()
+    assert info is not None, "the pointer must survive a clean exit"
+    assert ri.was_clean_exit(info) is True
+    assert info["events_path"].endswith("e.jsonl")
+
     ri.clear_runtime_json()  # idempotent, must not raise
+
+
+def test_crash_is_distinguishable_from_a_clean_exit(tmp_path, monkeypatch):
+    monkeypatch.setattr(ri, "RUNTIME_DIR", tmp_path)
+    ri.write_runtime_json(port=1, events_path=tmp_path / "e.jsonl")
+    crashed = dict(ri.read_runtime_json(), pid=2_147_483_600)
+    assert ri.is_stale(crashed) is True
+    assert ri.was_clean_exit(crashed) is False  # dead pid, no stamp -> crashed
 
 
 def test_corrupt_runtime_json_reads_as_none(tmp_path, monkeypatch):

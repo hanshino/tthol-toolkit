@@ -63,3 +63,9 @@ webui/openapi.json
 # OMC working state (keep shared skills under version control)
 **/.omc/*
 !.omc/skills/
+
+# Diagnostics (runtime artifacts; the real ones live in %LOCALAPPDATA%)
+events.jsonl
+events.jsonl.*
+tthol-diag-*.zip
+tthol-reader.log

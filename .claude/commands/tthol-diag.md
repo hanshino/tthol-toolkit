@@ -86,7 +86,14 @@ raises only the `tthol` logger to DEBUG and resets to INFO on restart.
 - Every command runs through `uv run`. Never bare `python`.
 - `runtime.json` lives at `%LOCALAPPDATA%\tthol-reader\runtime.json` and always
   at that path, whatever the fallback chose for `events.jsonl`.
-- A `runtime.json` whose `pid` is not alive is stale — the app crashed rather
-  than exiting cleanly, which is itself a finding.
+- `uv run diag.py summary` distinguishes three states: `running`,
+  `not running (exited cleanly)`, and
+  `not running (CRASHED -- no clean-exit stamp)`. The last one means the
+  process died without running its exit path — a finding in its own right,
+  and worth correlating with the final events in the timeline.
+- The pointer survives a clean exit (it gains an `exited_at` stamp), so
+  post-mortem triage works after the user has closed the app. If the pointer
+  is missing entirely, the CLI still tries
+  `%LOCALAPPDATA%\tthol-reader\logs\events.jsonl` and says so on stderr.
 - The ring buffer holds 1000 events; `events.jsonl` holds 5 MB × 5 rotations.
   For anything older than that, ask for a bundle taken closer to the incident.

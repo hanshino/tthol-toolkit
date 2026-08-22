@@ -427,8 +427,12 @@ reach a release build's API; and the Section 1 fallback means the events path is
 knowable in advance. `.omc/.dev-port` is the existing precedent — this generalises it to
 all builds and adds the rest of the context.
 
-Deleted on clean shutdown; a stale file is detected by checking whether `pid` is alive, so
-a crash leaves a usable post-mortem pointer rather than a lie.
+On clean shutdown the file is **stamped with `exited_at`, not deleted**. Deleting it was the
+first design and it was wrong: the commonest triage case is a user who closes the app and
+*then* reports, which left `events.jsonl` on disk with nothing pointing at it. Keeping the
+pointer preserves post-mortem access, and the stamp still separates the two states -- a dead
+`pid` with no `exited_at` means the process died without running its exit path, which is
+itself a finding.
 
 ### 6.2 `events.jsonl` — structured on disk
 

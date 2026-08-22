@@ -130,11 +130,7 @@ def read_runtime_json() -> dict[str, Any] | None:
 
 
 def is_stale(info: dict[str, Any]) -> bool:
-    """True when the recorded process is gone.
-
-    A crash leaves the file behind; treating it as stale rather than deleting
-    it on read keeps a usable post-mortem pointer to events_path.
-    """
+    """True when the recorded process is gone."""
     pid = info.get("pid")
     if not isinstance(pid, int):
         return True
@@ -146,8 +142,30 @@ def is_stale(info: dict[str, Any]) -> bool:
         return False
 
 
+def was_clean_exit(info: dict[str, Any]) -> bool:
+    """True when the app recorded its own shutdown.
+
+    Combined with is_stale(): dead pid + no `exited_at` means it crashed, which
+    is itself a finding.
+    """
+    return info.get("exited_at") is not None
+
+
 def clear_runtime_json() -> None:
+    """Mark the run as finished -- do not delete the pointer.
+
+    Deleting it made post-mortem triage impossible in the most common case:
+    the user closes the app and *then* reports the problem, leaving
+    events.jsonl on disk with nothing to point at it. Stamping `exited_at`
+    keeps the pointer findable and still distinguishes a clean exit from a
+    crash (dead pid, no stamp).
+    """
+    path = runtime_json_path()
     try:
-        runtime_json_path().unlink(missing_ok=True)
+        info = read_runtime_json()
+        if info is None:
+            return
+        info["exited_at"] = time.time()
+        path.write_text(json.dumps(info, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
