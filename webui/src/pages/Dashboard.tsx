@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { post } from '../api/client';
+import { describeError, reportClientError } from '../diag/report';
 import type { CharacterRow, OkResponse } from '../api/types';
 import { Bar, BuffChips, LinkDot, Panel, StatNum } from '../primitives';
 
@@ -7,12 +8,17 @@ export function Dashboard({
   chars, onPick,
 }: { chars: CharacterRow[]; onPick: (c: CharacterRow) => void }) {
   const [rescanning, setRescanning] = useState<number | null>(null);
+  const [rescanError, setRescanError] = useState<string | null>(null);
   const handleRescan = async (pid: number) => {
     setRescanning(pid);
+    setRescanError(null);
     try {
       await post<OkResponse>(`/api/characters/${pid}/rescan`);
     } catch (e) {
-      console.warn('rescan failed', e);
+      // A failed 重偵 is the moment a user gives up and files a report, so it
+      // must not vanish into a console nobody reads.
+      setRescanError(describeError(e));
+      reportClientError(e, { component: 'Dashboard.rescan' });
     } finally {
       setRescanning(null);
     }
@@ -28,6 +34,11 @@ export function Dashboard({
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16, padding: 16 }}>
       <Panel title="江湖一覽">
+        {rescanError && (
+          <div role="status" style={{ color: 'var(--tt-bad)', fontSize: 12, marginBottom: 8 }}>
+            重偵失敗：{rescanError}
+          </div>
+        )}
         <div style={{ display: 'grid', gap: 4 }}>
           <Header />
           {chars.map(c => (
@@ -79,6 +90,17 @@ export function Dashboard({
               </button>
               </div>
               <BuffChips buffs={c.buffs} />
+              {c.last_error && (
+                <div style={{
+                  padding: '6px 8px', border: '1px solid var(--tt-bad)',
+                  color: 'var(--tt-text)', fontSize: 11, lineHeight: 1.5,
+                }}>
+                  <span style={{
+                    color: 'var(--tt-bad)', fontFamily: 'var(--tt-font-serif)', marginRight: 6,
+                  }}>錯</span>
+                  {friendlyError(c.last_error)}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -128,4 +150,22 @@ function VitalCell({ tone, v, m }: { tone: 'hp' | 'mp' | 'weight'; v: number; m:
       </span>
     </div>
   );
+}
+
+
+function friendlyError(e: NonNullable<CharacterRow['last_error']>): string {
+  switch (e.code) {
+    case 'E_WH_NOT_FOUND':
+      return '倉庫尚未開啟 — 請先在遊戲中打開倉庫視窗';
+    case 'E_INV_NOT_FOUND':
+      return '找不到背包資料 — 可換張地圖後按「↻ 重偵」';
+    case 'E_LOCATE_EXHAUSTED':
+      return '找不到角色 — 請確認已登入，或按「↻ 重偵」';
+    case 'E_PROC_GONE':
+      return '無法連上遊戲程式 — 遊戲可能已關閉';
+    case 'E_CHAIN_READ':
+      return '尚未登入角色';
+    default:
+      return e.message;
+  }
 }
