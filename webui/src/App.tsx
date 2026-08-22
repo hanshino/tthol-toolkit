@@ -5,6 +5,7 @@ import { useLiveChars } from './hooks/useLiveChars';
 import { Dashboard } from './pages/Dashboard';
 import { Treasury } from './pages/Treasury';
 import { Snapshots } from './pages/Snapshots';
+import { Diagnostics } from './pages/Diagnostics';
 import { CharDetail } from './pages/CharDetail';
 import type { CharacterRow } from './api/types';
 
@@ -28,6 +29,7 @@ export function App() {
           )}
           {page === 'treasury'  && <Treasury />}
           {page === 'snapshots' && <Snapshots />}
+          {page === 'diagnostics' && <Diagnostics />}
           {page === 'detail' && liveSelected && (
             <CharDetail char={liveSelected} onBack={() => setPage('dashboard')} />
           )}
