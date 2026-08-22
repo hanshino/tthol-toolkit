@@ -563,8 +563,14 @@ def test_read_jsonl_merges_backups_in_chronological_order(tmp_path):
     handler.close()
 
     events = read_jsonl(path)
-    assert len(events) > 100
+    # backup_count=3 deliberately discards the oldest rolls, so the total is
+    # far below 200. What must hold is that the surviving files are merged --
+    # more events than one 2KB file can hold -- oldest first, ending on the
+    # newest record in the live file.
+    one_file_worth = len((tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines())
+    assert len(events) > one_file_worth
     assert events == sorted(events, key=lambda e: e.ts)
+    assert events[-1].message == "m199"
 
 
 def test_read_jsonl_skips_corrupt_lines(tmp_path):
