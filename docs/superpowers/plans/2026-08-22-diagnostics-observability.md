@@ -966,7 +966,9 @@ git commit -m "feat(diag): runtime.json discovery pointer and environment header
 
 **Interfaces:**
 - Consumes: `DiagnosticsBuffer`, `DiagnosticsHandler`, `JsonlHandler`, `services.runtime_info.environment_header`.
-- Produces: `setup_logging(buffer, console=True) -> Path | None` (returns the events path in use, or `None` if all three tiers failed), `candidate_paths() -> list[Path]`, `ContextFilter`, `CONSOLE_FORMAT`.
+- Produces: `setup_logging(buffer, console=True) -> Path | None` (returns the events path in use, or `None` if all three tiers failed), `current_path() -> Path | None`, `candidate_paths() -> list[Path]`, `ContextFilter`, `CONSOLE_FORMAT`.
+
+**Read the path through `current_path()`, never by importing the module variable.** `from services.logsetup import _current_path` binds the value at import time — it would be `None` forever, because the import happens before `setup_logging` runs.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2724,14 +2726,14 @@ async def events(
 
 @router.get("/summary", response_model=DiagSummary)
 async def summary(request: Request) -> DiagSummary:
-    from services.logsetup import _current_path
+    from services.logsetup import current_path
     from services.runtime_info import environment_header
 
     return DiagSummary(
         environment=environment_header(),
         sessions=_sessions(request),
         counts=diagnostics.get_buffer().counts(),
-        events_path=str(_current_path) if _current_path else None,
+        events_path=str(current_path()) if current_path() else None,
         verbose=diagnostics.is_verbose(),
     )
 
@@ -2768,11 +2770,11 @@ async def client_error(body: ClientErrorRequest) -> VerboseState:
 
 @router.get("/bundle")
 async def bundle(request: Request) -> Response:
-    from services.logsetup import _current_path
+    from services.logsetup import current_path
     from services.runtime_info import environment_header
 
     blob = build_bundle(
-        events_path=_current_path or "events.jsonl",
+        events_path=current_path() or "events.jsonl",
         header=environment_header(),
         sessions=_sessions(request),
     )
@@ -2890,9 +2892,9 @@ Add the two seams the test drives, above `main()`:
 
 ```python
 def _write_runtime(port: int) -> None:
-    from services.logsetup import _current_path
+    from services.logsetup import current_path
 
-    write_runtime_json(port=port, events_path=_current_path or "")
+    write_runtime_json(port=port, events_path=current_path() or "")
 
 
 def _clear_runtime() -> None:
