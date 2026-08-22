@@ -6,50 +6,25 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 import socket
 import sys
 import threading
 import time
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import uvicorn
 import webview
 
-from services._paths import app_root, bundled
+from services._paths import bundled
+from services import diagnostics
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.fake_active import KeepActiveManager
 from services.snapshot_db import SnapshotDB
+from services.runtime_info import clear_runtime_json, write_runtime_json
 from services.worker_manager import WorkerManager
 
 DEV_PORT_FILE = Path(".omc/.dev-port")
-
-
-def _setup_logging() -> None:
-    """Log worker/app events to console + a rotating file next to the exe.
-
-    Without this, worker locate/read failures are invisible (CharSession passes
-    a no-op on_error), which makes connection drops impossible to diagnose.
-    """
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
-    try:
-        handlers.append(
-            RotatingFileHandler(
-                app_root() / "tthol-reader.log",
-                maxBytes=1_000_000,
-                backupCount=2,
-                encoding="utf-8",
-            )
-        )
-    except Exception:
-        pass  # console-only if the install dir is not writable
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=handlers,
-    )
 
 
 def _pick_port() -> int:
@@ -89,6 +64,30 @@ def _serve(app, port: int) -> None:
     loop.run_until_complete(server.serve())
 
 
+def _write_runtime(port: int) -> None:
+    from services.logsetup import current_path
+
+    write_runtime_json(port=port, events_path=current_path() or "")
+
+
+def _clear_runtime() -> None:
+    clear_runtime_json()
+
+
+def _runtime_lifecycle(port: int, run) -> None:
+    """Publish runtime.json for the life of the window, then remove it.
+
+    The pointer must outlive startup (agents and the CLI read it while the app
+    runs) and must not outlive a clean exit, so a stale file only ever means a
+    crash.
+    """
+    _write_runtime(port)
+    try:
+        run()
+    finally:
+        _clear_runtime()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dev", action="store_true", help="point window at Vite dev server")
@@ -97,7 +96,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    _setup_logging()
+    # Release builds are windowed: no stderr, so the console handler is dead
+    # weight there and the JSONL sink carries everything.
+    diagnostics.init(console=not getattr(sys, "frozen", False))
     services = _build_services(args.dev)
     app = build_app(services=services)
 
@@ -141,7 +142,7 @@ def main() -> int:
     icon_path = bundled("icon.ico")
     if icon_path.exists():
         start_kwargs["icon"] = str(icon_path)
-    webview.start(**start_kwargs)
+    _runtime_lifecycle(port, lambda: webview.start(**start_kwargs))
     return 0
 
 
