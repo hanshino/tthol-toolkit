@@ -645,6 +645,7 @@ export interface components {
             inventory?: components["schemas"]["Item"][] | null;
             /** Warehouse */
             warehouse?: components["schemas"]["Item"][] | null;
+            last_error?: components["schemas"]["ErrorInfo"] | null;
         };
         /**
          * CharacterRow
@@ -672,6 +673,7 @@ export interface components {
              * @default []
              */
             buffs: components["schemas"]["BuffInfo"][];
+            last_error?: components["schemas"]["ErrorInfo"] | null;
         };
         /** CharacterStats */
         CharacterStats: {
@@ -742,6 +744,23 @@ export interface components {
         CreateAccountRequest: {
             /** Name */
             name: string;
+        };
+        /**
+         * ErrorInfo
+         * @description Last error reported by a session's worker, surfaced on the character row.
+         *
+         *     `code` is the stable identifier (services.diag_events.ErrorCode); `message`
+         *     is prose and may be reworded, so consumers should switch on `code`.
+         */
+        ErrorInfo: {
+            /** Ts */
+            ts: number;
+            /** Message */
+            message: string;
+            /** Cat */
+            cat: string;
+            /** Code */
+            code?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {

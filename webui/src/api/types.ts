@@ -18,6 +18,7 @@ export type ConnectOptions = S['ConnectOptions'];
 export type ConnectRequest = S['ConnectRequest'];
 export type ConnectResult = S['ConnectResult'];
 export type CreateAccountRequest = S['CreateAccountRequest'];
+export type ErrorInfo = S['ErrorInfo'];
 export type Item = S['Item'];
 export type MapInfo = S['MapInfo'];
 export type MapMonster = S['MapMonster'];

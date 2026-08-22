@@ -1471,7 +1471,8 @@ git commit -m "feat(diag): façade with bind, verbose toggle, failure snapshots"
 
 **Files:**
 - Modify: `services/api_types.py`
-- Modify: `webui/openapi.json`, `webui/src/api/schema.ts` (both regenerated), `webui/src/api/types.ts`
+- Modify: `webui/src/api/schema.ts` (regenerated), `webui/src/api/types.ts`
+- Regenerated but **gitignored, do not commit**: `webui/openapi.json`
 - Test: `tests/test_api_types_error_info.py`
 
 **Interfaces:**
@@ -1568,7 +1569,7 @@ Expected: a non-zero count.
 uv run pytest -q
 uv run ruff format services/api_types.py tests/test_api_types_error_info.py
 uv run ruff check services/api_types.py tests/test_api_types_error_info.py
-git add services/api_types.py tests/test_api_types_error_info.py webui/openapi.json webui/src/api/schema.ts webui/src/api/types.ts
+git add services/api_types.py tests/test_api_types_error_info.py webui/src/api/schema.ts webui/src/api/types.ts
 git commit -m "feat(api): ErrorInfo model and last_error on character payloads"
 ```
 
@@ -2828,7 +2829,7 @@ uv run python scripts/gen_openapi.py
 cd webui && npm run gen-types && cd ..
 uv run ruff format services/api/diagnostics.py services/api_types.py services/api/__init__.py tests/test_diagnostics_router.py
 uv run ruff check services/api/diagnostics.py services/api_types.py services/api/__init__.py tests/test_diagnostics_router.py
-git add services/api/diagnostics.py services/api_types.py services/api/__init__.py tests/test_diagnostics_router.py webui/openapi.json webui/src/api/schema.ts
+git add services/api/diagnostics.py services/api_types.py services/api/__init__.py tests/test_diagnostics_router.py webui/src/api/schema.ts
 git commit -m "feat(diag): diagnostics router with events, summary, verbose, bundle"
 ```
 
