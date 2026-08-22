@@ -966,7 +966,7 @@ git commit -m "feat(diag): runtime.json discovery pointer and environment header
 
 **Interfaces:**
 - Consumes: `DiagnosticsBuffer`, `DiagnosticsHandler`, `JsonlHandler`, `services.runtime_info.environment_header`.
-- Produces: `setup_logging(buffer, console=True) -> Path | None` (returns the events path in use, or `None` if all three tiers failed), `current_path() -> Path | None`, `candidate_paths() -> list[Path]`, `ContextFilter`, `CONSOLE_FORMAT`.
+- Produces: `setup_logging(buffer, console=True) -> Path | None` (returns the events path in use, or `None` if all three tiers failed), `current_path() -> Path | None`, `candidate_paths() -> list[Path]`, `ContextFormatter`, `CONSOLE_FORMAT`.
 
 **Read the path through `current_path()`, never by importing the module variable.** `from services.logsetup import _current_path` binds the value at import time — it would be `None` forever, because the import happens before `setup_logging` runs.
 

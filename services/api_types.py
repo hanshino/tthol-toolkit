@@ -145,6 +145,44 @@ class CharacterDetail(_Base):
     last_error: ErrorInfo | None = None
 
 
+# ---- Diagnostics ---------------------------------------------------------
+
+
+class DiagEventModel(_Base):
+    """Wire form of services.diag_events.DiagEvent."""
+
+    v: int
+    ts: float
+    level: str
+    logger: str
+    pid: int | None = None
+    char: str | None = None
+    cat: str
+    code: str | None = None
+    message: str
+    detail: dict | None = None
+
+
+class DiagSummary(_Base):
+    environment: dict
+    sessions: list[dict]
+    counts: dict[str, int]
+    events_path: str | None = None
+    verbose: bool
+
+
+class VerboseState(_Base):
+    verbose: bool
+
+
+class ClientErrorRequest(_Base):
+    message: str
+    url: str | None = None
+    stack: str | None = None
+    component: str | None = None
+    ua: str | None = None
+
+
 class WorldSnapshot(_Base):
     chars: list[CharacterRow]
     server_ts: float

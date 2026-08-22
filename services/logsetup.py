@@ -7,6 +7,7 @@ Program Files install logged nothing and said nothing about it.
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import tempfile
@@ -25,19 +26,26 @@ _configured = False
 _current_path: Path | None = None
 
 
-class ContextFilter(logging.Filter):
-    """Supply `-` defaults so the console formatter never raises.
+class ContextFormatter(logging.Formatter):
+    """Console formatter that tolerates records without our `extra` fields.
 
-    Third-party records (pymem, uvicorn) carry none of our fields; without
-    this the first such record blows up the formatter with KeyError.
+    Third-party records (pymem, uvicorn) carry none of them, and CONSOLE_FORMAT
+    would raise KeyError on the first one.
+
+    The defaults are filled on a *copy* of the record. An earlier version used a
+    logging.Filter that mutated the record in place, which leaked the display
+    placeholder "-" into the structured event as the pid -- a presentation
+    concern must not reach the record the JSONL sink and the API serialise.
     """
 
-    def filter(self, record: logging.LogRecord) -> bool:
-        if not hasattr(record, "char_pid"):
-            record.char_pid = "-"
-        if not hasattr(record, "char_name"):
-            record.char_name = "-"
-        return True
+    def format(self, record: logging.LogRecord) -> str:
+        if not hasattr(record, "char_pid") or not hasattr(record, "char_name"):
+            record = copy.copy(record)
+            if not hasattr(record, "char_pid"):
+                record.char_pid = "-"
+            if not hasattr(record, "char_name"):
+                record.char_name = "-"
+        return super().format(record)
 
 
 def candidate_paths() -> list[Path]:
@@ -85,21 +93,18 @@ def setup_logging(buffer: DiagnosticsBuffer, console: bool = True) -> Path | Non
 
     root = logging.getLogger()
     root.setLevel(logging.INFO)
-    ctx = ContextFilter()
 
-    diag_handler = DiagnosticsHandler(buffer)
-    diag_handler.addFilter(ctx)
-    root.addHandler(diag_handler)
+    # No filter on the structured sinks: they must see an absent field as
+    # absent. Only the console needs display placeholders.
+    root.addHandler(DiagnosticsHandler(buffer))
 
     jsonl_handler, path = _make_jsonl_handler()
     if jsonl_handler is not None:
-        jsonl_handler.addFilter(ctx)
         root.addHandler(jsonl_handler)
 
     if console:
         stream = logging.StreamHandler()
-        stream.setFormatter(logging.Formatter(CONSOLE_FORMAT))
-        stream.addFilter(ctx)
+        stream.setFormatter(ContextFormatter(CONSOLE_FORMAT))
         root.addHandler(stream)
 
     _configured = True
