@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 from services.api_types import (
@@ -19,6 +20,8 @@ from services.char_session import CharSession
 from services.events import WorldStream
 from services.process_detector import find_tthol_processes
 from services.snapshot_db import SnapshotDB
+
+log = logging.getLogger("tthol.worker_manager")
 
 
 class WorkerManager:
@@ -169,8 +172,9 @@ class WorkerManager:
         while True:
             try:
                 await stream.publish(self.world_snapshot())
-            except Exception as e:  # pragma: no cover
-                print(f"[tick_loop] publish error: {e}")
+            except Exception:  # pragma: no cover
+                # print() is invisible in a windowed PyInstaller build (no stdout).
+                log.exception("tick loop publish error", extra={"cat": "api"})
             await asyncio.sleep(interval)
 
 
