@@ -1722,29 +1722,15 @@ method:
                 self.name = name
 ```
 
-In `row()`, add to the `CharacterRow(...)` call:
+In `row()` and `detail()`, add to the `CharacterRow(...)` / `CharacterDetail(...)` calls:
 
 ```python
-                last_error=self._latest_error_locked(),
+                last_error=self._last_error,
 ```
 
-In `detail()`, add to the `CharacterDetail(...)` call:
-
-```python
-                last_error=self._latest_error_locked(),
-```
-
-And add the helper (both callers already hold `self._lock`, so this must not re-acquire it):
-
-```python
-    def _latest_error_locked(self) -> ErrorInfo | None:
-        """Read `_last_error` from inside an already-held lock.
-
-        `row()` and `detail()` both run under `self._lock`; using the public
-        `last_error` property here would deadlock on the non-reentrant Lock.
-        """
-        return self._last_error
-```
+Read the attribute directly, **not** the public `last_error` property: both methods already
+run under `self._lock`, and the property re-acquires it — a non-reentrant `threading.Lock`
+would deadlock.
 
 - [ ] **Step 4: Run test to verify it passes**
 
