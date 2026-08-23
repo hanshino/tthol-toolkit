@@ -1,6 +1,7 @@
 import json
 import os
 
+import reader
 import services.runtime_info as ri
 
 
@@ -22,12 +23,16 @@ def test_environment_header_has_the_fields_a_triage_needs():
     ):
         assert key in hdr, f"missing {key}"
     assert hdr["app_version"] == "1.2.1"
-    # The pointer-chain constants are what a game update invalidates. Only the
-    # player HP chain currently exists in reader.py; the session static chain
+    # The pointer-chain constants are what a game update invalidates, so assert
+    # the header *reports reader.py's current values* rather than pinning a
+    # literal. A pinned literal turns every legitimate chain re-derivation into
+    # a test failure on the one day nobody has spare attention for it -- the
+    # 2026-08-07 patch moved the base and broke exactly that assertion.
+    assert hdr["player_hp_chain_base"] == hex(reader.PLAYER_HP_CHAIN_BASE)
+    assert hdr["player_hp_chain_offsets"] == [hex(o) for o in reader.PLAYER_HP_CHAIN_OFFSETS]
+    # Only the player HP chain exists in reader.py; the session static chain
     # (STATIC_BASE / STATIC_OFFSETS) was removed, so the header must report it
     # as absent rather than raise.
-    assert hdr["player_hp_chain_base"] == "0x7f7810"
-    assert hdr["player_hp_chain_offsets"] == ["0x128", "0x68", "0x140"]
     assert hdr["static_base"] is None  # absent today; present again after a re-scan
 
 

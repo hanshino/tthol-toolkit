@@ -17,10 +17,41 @@ from services._paths import bundled
 
 # ============================================================
 # Stable pointer chain (updated after game patches via find_stable_chain.py)
-# CE notation: [[[[0x007F7810]+0x128]+0x68]+0x140]
+# Root 0x00804B90 is tthola.dat's master singleton. There is no ASLR, so it is
+# fixed for every run *of a given build* -- but a game patch relocates it, which
+# is how it silently became 0x007F7810 -> 0x00804B90 on the 2026-08-07 update.
+# The offsets below survived that patch untouched; only the root moved.
+# Re-derive with /tthol-update-scan when detail.chain_walk shows a first hop
+# that is not a heap pointer.
+# The chain resolves into the *engine charobject* (the authoritative object the
+# server updates), NOT the flat display struct that locate_character() scans for
+# -- they are different heap allocations. The charobject reliably holds the vital
+# stats: current HP @ +0x140, max HP @ +0x130. So HP can be read directly from
+# the chain with no memory scan (see read_hp_pair_from_chain). Level / name /
+# attributes / coords are NOT in the charobject; those still come from the flat
+# struct via locate_character().
+# CE notation (current HP): [[[[0x00804B90]+0x128]+0x68]+0x140]
 # ============================================================
-PLAYER_HP_CHAIN_BASE = 0x007F7810
+PLAYER_HP_CHAIN_BASE = 0x00804B90
 PLAYER_HP_CHAIN_OFFSETS = [0x128, 0x68, 0x140]
+
+# Vital-stat offsets inside the engine charobject (= the chain resolved without
+# its final offset). Verified live 2026-06: the sub-struct is laid out as
+# [guard][max][0][0][guard][current], with max/current 0x10 apart.
+CHAR_HP_MAX_OFFSET = 0x130
+CHAR_HP_CUR_OFFSET = 0x140
+
+
+def _resolve_chain(pm, offsets):
+    """Walk the static pointer chain from PLAYER_HP_CHAIN_BASE and return the
+    final address, or None if any link is null / outside the 32-bit user range."""
+    addr = PLAYER_HP_CHAIN_BASE
+    for off in offsets:
+        ptr = struct.unpack("<I", pm.read_bytes(addr, 4))[0]
+        if ptr == 0 or ptr > 0x7FFFFFFF:
+            return None
+        addr = ptr + off
+    return addr
 
 
 def read_hp_from_player_chain(pm):
@@ -29,16 +60,39 @@ def read_hp_from_player_chain(pm):
     Returns HP as int, or None if the chain is broken.
     """
     try:
-        addr = PLAYER_HP_CHAIN_BASE
-        for off in PLAYER_HP_CHAIN_OFFSETS:
-            ptr = struct.unpack("<I", pm.read_bytes(addr, 4))[0]
-            if ptr == 0 or ptr > 0x7FFFFFFF:
-                return None
-            addr = ptr + off
+        addr = _resolve_chain(pm, PLAYER_HP_CHAIN_OFFSETS)
+        if addr is None:
+            return None
         hp = pm.read_int(addr)
         if hp <= 0 or hp > 500000:
             return None
         return hp
+    except Exception:
+        return None
+
+
+def read_hp_pair_from_chain(pm):
+    """Read (current_hp, max_hp) straight from the engine charobject via the
+    stable pointer chain -- no memory scan, stable across restarts and map
+    changes. The charobject base is the chain resolved without its final offset;
+    current HP sits at +CHAR_HP_CUR_OFFSET, max HP at +CHAR_HP_MAX_OFFSET.
+
+    Returns (current, max), or None if the chain is broken or the values look
+    invalid. These are the authoritative engine values -- prefer them over the
+    flat display struct's HP copy, which is located by scanning.
+    """
+    try:
+        charobj_slot = _resolve_chain(pm, PLAYER_HP_CHAIN_OFFSETS[:-1])
+        if charobj_slot is None:
+            return None
+        charobj = struct.unpack("<I", pm.read_bytes(charobj_slot, 4))[0]
+        if charobj == 0 or charobj > 0x7FFFFFFF:
+            return None
+        cur = pm.read_int(charobj + CHAR_HP_CUR_OFFSET)
+        mx = pm.read_int(charobj + CHAR_HP_MAX_OFFSET)
+        if not (1 <= cur <= 999999 and 1 <= mx <= 999999):
+            return None
+        return cur, mx
     except Exception:
         return None
 
