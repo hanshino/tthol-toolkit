@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from services import diagnostics, logsetup
 from services.api import build_app
+from services.backup import APP_VERSION
 
 
 @pytest.fixture(autouse=True)
@@ -79,7 +80,7 @@ async def test_absent_pid_stays_null_rather_than_a_display_placeholder(client):
 async def test_summary_carries_environment_and_counts(client):
     logging.getLogger("tthol.test").error("bad", extra={"cat": "locate"})
     body = (await client.get("/api/diagnostics/summary")).json()
-    assert body["environment"]["app_version"] == "1.2.1"
+    assert body["environment"]["app_version"] == APP_VERSION
     assert body["counts"]["ERROR"] >= 1
     assert "events_path" in body
     assert body["verbose"] is False

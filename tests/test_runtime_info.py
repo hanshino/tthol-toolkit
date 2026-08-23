@@ -2,6 +2,7 @@ import json
 import os
 
 import reader
+from services.backup import APP_VERSION
 import services.runtime_info as ri
 
 
@@ -22,7 +23,10 @@ def test_environment_header_has_the_fields_a_triage_needs():
         "player_hp_chain_offsets",
     ):
         assert key in hdr, f"missing {key}"
-    assert hdr["app_version"] == "1.2.1"
+    # Compared against the source constant, not a literal: a pinned version
+    # string turns every release into a test failure, which is how four of
+    # these broke at once on the 1.3.0 bump.
+    assert hdr["app_version"] == APP_VERSION
     # The pointer-chain constants are what a game update invalidates, so assert
     # the header *reports reader.py's current values* rather than pinning a
     # literal. A pinned literal turns every legitimate chain re-derivation into
@@ -46,7 +50,7 @@ def test_write_and_read_roundtrip(tmp_path, monkeypatch):
     assert info["port"] == 51234
     assert info["pid"] == os.getpid()
     assert info["events_path"].endswith("events.jsonl")
-    assert info["app_version"] == "1.2.1"
+    assert info["app_version"] == APP_VERSION
     assert json.loads((tmp_path / "runtime.json").read_text(encoding="utf-8"))["port"] == 51234
 
 

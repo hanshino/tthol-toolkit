@@ -4,6 +4,7 @@ import pytest
 
 from services import logsetup
 from services.diag_buffer import DiagnosticsBuffer
+from services.backup import APP_VERSION
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +61,7 @@ def test_startup_header_is_the_first_event(tmp_path, monkeypatch):
     events = list(reversed(buf.query()))
     assert events[0].cat == "startup"
     assert events[0].detail is not None
-    assert events[0].detail["app_version"] == "1.2.1"
+    assert events[0].detail["app_version"] == APP_VERSION
     assert "static_base" in events[0].detail
     assert events[0].detail["events_path"] == str(tmp_path / "events.jsonl")
 
