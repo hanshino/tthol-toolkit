@@ -1,81 +1,123 @@
+---
+description: Re-discover the player HP pointer chain after a game update
+---
+
 # tthol-update-scan
 
-Re-discover the static pointer chain after a game update.
+Re-derive `PLAYER_HP_CHAIN_BASE` / `PLAYER_HP_CHAIN_OFFSETS` after a game
+update moves them. Until that is done every automatic locate fails and users
+are stuck on the manual-HP fallback.
 
 ## When to use
 
-After `tthola.dat` is updated and `uv run reader.py` fails with pointer chain errors,
-or the character data is clearly wrong (impossible stats).
+`/tthol-diag` reports `E_LOCATE_EXHAUSTED` whose `detail.chain_walk` first hop
+is not a plausible heap pointer (`0x1`, `0xffffffff`, `0x0`) while a scan still
+finds the character. That combination means the constants moved, not that the
+user is logged out.
 
-## Prerequisites
+## What you need
 
-- Cheat Engine is open and attached to `tthola.dat`
-- CE Lua bridge is running (`dofile(...)` executed, `Server Listening` message visible)
-- CE MCP tools are available (`mcp__cheatengine__ping` works)
+- **Two game clients running at the same time**, each logged in to a
+  character. This is not optional: the discovery scan returns hundreds of
+  chains that resolve correctly *right now*, and only intersecting two
+  independently-started processes tells you which of them survive a restart.
+  Picking the "cleanest looking" offsets from a single process is how you get
+  a chain that breaks again on the next launch.
+- Cheat Engine is **optional** — used only to double-check a candidate. The
+  discovery itself is pure `pymem`.
 
 ## Steps
 
-### 1. Confirm the pointer chain is broken
+### 1. Confirm the chain really is dead
 
-Run reader.py without arguments:
+```bash
+uv run python -c "
+import pymem, struct, reader
+pm = pymem.Pymem(<pid>)
+print(hex(struct.unpack('<I', pm.read_bytes(reader.PLAYER_HP_CHAIN_BASE, 4))[0]))
+"
 ```
-uv run reader.py
+A heap pointer means the chain is fine and the problem is elsewhere — stop.
+
+### 2. Find each character's HP address
+
+Ask each client's current HP, then locate. **Try both layouts** — a compat
+character (`+0`=maxHP, `+4`=currentHP) fails `compat_mode=False` silently, and
+`auto_detect.py` is compat-blind so it reports zero candidates rather than an
+error:
+
+```bash
+uv run python -c "
+import pymem, reader
+pm = pymem.Pymem(<pid>); kb = reader.load_knowledge()
+for compat in (False, True):
+    a = reader.locate_character(pm, <hp>, kb, None, compat_mode=compat)
+    if a: print(hex(a), compat, reader.read_character_name(pm, a))
+"
 ```
-If it prints `[X] Pointer chain failed`, proceed. If it works, the chain is still valid — stop here.
 
-### 2. Find the current HP address via fallback scan
+### 3. Run the cross-process intersection
 
-Ask the user for their current HP value, then run:
+```bash
+uv run find_stable_chain.py <pid1>:<hp1> <pid2>:<hp2>
 ```
-uv run reader.py <hp_value>
-```
-This uses the full memory scan. Note the `hp_addr` from the output (e.g. `0x1A2B3C4D`).
 
-### 3. Update deep_pointer_scan.py and run it
+Takes a few minutes per process (a 5-level reverse BFS over all memory). It
+scans for every address holding the HP value, walks pointers back toward the
+loaded modules, then keeps only the chains present in **both** processes.
+Ignore anything not in `tthola.dat` — `nvd3dum.dll` and friends produce
+plausible-looking chains that are pure coincidence.
 
-Edit line `target = 0x...` in `deep_pointer_scan.py` to the hp_addr found above.
-Then run:
-```
-uv run deep_pointer_scan.py
-```
-Wait for output. Look for results under `tthola.dat+0x...` (static module entries only).
-Ignore entries from `nvd3dum.dll`, `nvgpucomp32.dll`, `ucrtbase.dll`, or other DLLs.
+### 4. Verify a candidate independently
 
-### 4. Select the best chain
+Cheat Engine is a second opinion from outside your own code. The MCP tools are
+only present if CE's Lua bridge was running *before* Claude Code started; if
+they are missing, talk to the named pipe directly:
 
-From the `tthola.dat` results, pick the chain with the cleanest (smallest, round-ish) offsets.
-Use CE MCP to verify it returns the correct HP value:
 ```python
-mcp__cheatengine__read_pointer_chain(base=<static_addr>, offsets=[<off1>, <off2>])
+# \\.\pipe\CE_MCP_Bridge_v99 -- 4-byte LE length prefix, then JSON-RPC.
+# Open it with ctypes.windll.kernel32.CreateFileW; pywin32's CreateFile
+# fails against this pipe with ERROR_PATH_NOT_FOUND.
+call("read_pointer_chain", {"base": "tthola.dat+<rva>", "offsets": [...]})
 ```
-Confirm `final_value` matches the known HP.
+`offsets` are decimal in the JSON. Confirm the final value equals the known HP
+in both processes.
 
-### 5. Update reader.py constants
+### 5. Update reader.py
 
-Edit the two constants near the top of `reader.py`:
 ```python
-STATIC_BASE = <new_static_addr>       # tthola.dat + 0x...
-STATIC_OFFSETS = [<off1>, <off2>]
+PLAYER_HP_CHAIN_BASE = 0x<module_base + rva>
+PLAYER_HP_CHAIN_OFFSETS = [<off1>, <off2>, ...]
 ```
+Note the base is the **absolute** address (`tthola.dat` loads at `0x400000`),
+not the RVA the scan prints.
 
-### 6. Verify
+### 6. Verify end to end
 
-Run without HP value to confirm instant locate:
+```bash
+uv run pytest tests/test_hp_chain.py -q
+uv run python -c "
+import pymem, reader
+print(reader.read_hp_from_player_chain(pymem.Pymem(<pid>)))
+"
 ```
-uv run reader.py
-```
-Expected output: `[OK] Character located via pointer chain at 0x... (0.000s)`
+Then restart the app and confirm a character locates with no manual HP:
+`uv run diag.py summary` should show the new `player_hp_chain_base`, and the
+dashboard should reach `link: ok` on its own.
 
 ### 7. Update MEMORY.md
 
-Update the static pointer chain entry in MEMORY.md:
-```
-`[[<STATIC_BASE>]+<off1>]+<off2>` → 角色 struct HP base
-```
+Replace the 層二 entry's constants and clear the staleness note.
 
 ## Notes
 
-- The chain semantics: `read(STATIC_BASE)` → add off1 → read that → add off2 = HP base
-- Offsets typically stay in range 0x00~0xFFF (struct member offsets)
-- Large offsets like `0xE45` are valid but unusual — prefer chains with offsets < 0x200 if multiple options exist
-- After updating, the GUI worker also picks up the change automatically (it calls `locate_via_pointer_chain`)
+- `deep_pointer_scan.py` no longer exists; `find_stable_chain.py` replaced it.
+  `STATIC_BASE` / `STATIC_OFFSETS` (層一, the session-only chain) were removed
+  from `reader.py` — do not reintroduce them.
+- Offsets are struct member offsets, normally `0x00`–`0xFFF`.
+- The chain resolves to the engine charobject, **not** the flat display struct
+  the scan locates. HP sits at the last offset; `read_hp_pair_from_chain` uses
+  the same chain minus its final hop.
+- Until this is done, users recover through the 目前血量 box on the dashboard
+  error, which locates by scan. Say so when triaging rather than telling them
+  to press 重偵 — with a dead chain 重偵 re-runs the same dead chain.
