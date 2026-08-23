@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { get, post } from '../../api/client';
+import { reportClientError } from '../../diag/report';
 import { Panel } from '../../primitives';
 
 type Status = {
@@ -25,7 +26,11 @@ export function AutoClickTab({ pid }: { pid: number }) {
     try {
       const s = await get<Status>(`/api/characters/${pid}/autoclick/status`);
       setStatus(s);
-    } catch { /* worker may be gone; leave status as-is */ }
+    } catch (e) {
+      // Worker may be gone: intentionally not surfaced, but still recorded so
+      // the timeline is complete.
+      reportClientError(e, { component: 'AutoClickTab.refresh', silent: true });
+    }
   };
 
   useEffect(() => {

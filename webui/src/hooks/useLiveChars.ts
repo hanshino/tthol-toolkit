@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { get, openWorldSocket } from '../api/client';
+import { reportClientError } from '../diag/report';
 import type { WorldSnapshot } from '../api/types';
 
 export function useLiveChars(): WorldSnapshot {
@@ -15,7 +16,11 @@ export function useLiveChars(): WorldSnapshot {
         const initial = await get<WorldSnapshot>('/api/world');
         if (!cancelled) setSnap(initial);
       } catch (e) {
-        console.warn('initial /api/world failed', e);
+        // The WS reconnect loop below covers the UX; record it so a "nothing
+        // loads" report has a first cause in the timeline. A console.warn is no
+        // better than swallowing it: the WebView2 console is invisible to the
+        // user and absent from the bundle.
+        reportClientError(e, { component: 'useLiveChars', silent: true });
       }
 
       ws = openWorldSocket((frame) => setSnap(frame as WorldSnapshot));

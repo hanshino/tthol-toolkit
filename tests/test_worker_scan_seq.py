@@ -16,7 +16,8 @@ def _make_worker():
         on_stats=lambda _r: None,
         on_inventory=lambda items: captured.__setitem__("inv", items),
         on_warehouse=lambda items: captured.__setitem__("wh", items),
-        on_error=lambda _m: None,
+        # on_error now takes keyword cat/code/detail alongside the message.
+        on_error=lambda _m, **_kw: None,
     )
     return w, captured
 

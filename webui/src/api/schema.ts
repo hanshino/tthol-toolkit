@@ -513,6 +513,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/diagnostics/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Events */
+        get: operations["events_api_diagnostics_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Summary */
+        get: operations["summary_api_diagnostics_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/verbose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Verbose */
+        get: operations["get_verbose_api_diagnostics_verbose_get"];
+        /** Put Verbose */
+        put: operations["put_verbose_api_diagnostics_verbose_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/client-error": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Client Error */
+        post: operations["client_error_api_diagnostics_client_error_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bundle */
+        get: operations["bundle_api_diagnostics_bundle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -645,6 +731,7 @@ export interface components {
             inventory?: components["schemas"]["Item"][] | null;
             /** Warehouse */
             warehouse?: components["schemas"]["Item"][] | null;
+            last_error?: components["schemas"]["ErrorInfo"] | null;
         };
         /**
          * CharacterRow
@@ -672,6 +759,7 @@ export interface components {
              * @default []
              */
             buffs: components["schemas"]["BuffInfo"][];
+            last_error?: components["schemas"]["ErrorInfo"] | null;
         };
         /** CharacterStats */
         CharacterStats: {
@@ -703,6 +791,19 @@ export interface components {
             mingzhong: number;
             /** Shanduo */
             shanduo: number;
+        };
+        /** ClientErrorRequest */
+        ClientErrorRequest: {
+            /** Message */
+            message: string;
+            /** Url */
+            url?: string | null;
+            /** Stack */
+            stack?: string | null;
+            /** Component */
+            component?: string | null;
+            /** Ua */
+            ua?: string | null;
         };
         /** ConnectOptions */
         ConnectOptions: {
@@ -742,6 +843,70 @@ export interface components {
         CreateAccountRequest: {
             /** Name */
             name: string;
+        };
+        /**
+         * DiagEventModel
+         * @description Wire form of services.diag_events.DiagEvent.
+         */
+        DiagEventModel: {
+            /** V */
+            v: number;
+            /** Ts */
+            ts: number;
+            /** Level */
+            level: string;
+            /** Logger */
+            logger: string;
+            /** Pid */
+            pid?: number | null;
+            /** Char */
+            char?: string | null;
+            /** Cat */
+            cat: string;
+            /** Code */
+            code?: string | null;
+            /** Message */
+            message: string;
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** DiagSummary */
+        DiagSummary: {
+            /** Environment */
+            environment: {
+                [key: string]: unknown;
+            };
+            /** Sessions */
+            sessions: {
+                [key: string]: unknown;
+            }[];
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Events Path */
+            events_path?: string | null;
+            /** Verbose */
+            verbose: boolean;
+        };
+        /**
+         * ErrorInfo
+         * @description Last error reported by a session's worker, surfaced on the character row.
+         *
+         *     `code` is the stable identifier (services.diag_events.ErrorCode); `message`
+         *     is prose and may be reworded, so consumers should switch on `code`.
+         */
+        ErrorInfo: {
+            /** Ts */
+            ts: number;
+            /** Message */
+            message: string;
+            /** Cat */
+            cat: string;
+            /** Code */
+            code?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -962,6 +1127,11 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VerboseState */
+        VerboseState: {
+            /** Verbose */
+            verbose: boolean;
         };
         /** Vitals */
         Vitals: {
@@ -1917,6 +2087,168 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    events_api_diagnostics_events_get: {
+        parameters: {
+            query?: {
+                since?: number | null;
+                level?: string | null;
+                pid?: number | null;
+                cat?: string | null;
+                code?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagEventModel"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summary_api_diagnostics_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagSummary"];
+                };
+            };
+        };
+    };
+    get_verbose_api_diagnostics_verbose_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerboseState"];
+                };
+            };
+        };
+    };
+    put_verbose_api_diagnostics_verbose_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerboseState"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerboseState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    client_error_api_diagnostics_client_error_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientErrorRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerboseState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bundle_api_diagnostics_bundle_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

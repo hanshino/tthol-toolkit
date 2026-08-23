@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { TopNav, type PageKey } from './components/TopNav';
 import { useLiveChars } from './hooks/useLiveChars';
 import { Dashboard } from './pages/Dashboard';
 import { Treasury } from './pages/Treasury';
 import { Snapshots } from './pages/Snapshots';
+import { Diagnostics } from './pages/Diagnostics';
 import { CharDetail } from './pages/CharDetail';
 import type { CharacterRow } from './api/types';
 
@@ -19,14 +21,19 @@ export function App() {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--tt-bg)', color: 'var(--tt-text)' }}>
       <TopNav page={page} onNav={(k) => { setPage(k); setSelectedPid(null); }} linkedCount={linked} totalCount={snap.chars.length} />
       <main style={{ flex: 1 }}>
-        {page === 'dashboard' && (
-          <Dashboard chars={snap.chars} onPick={(c) => { setSelectedPid(c.pid); setPage('detail'); }} />
-        )}
-        {page === 'treasury'  && <Treasury />}
-        {page === 'snapshots' && <Snapshots />}
-        {page === 'detail' && liveSelected && (
-          <CharDetail char={liveSelected} onBack={() => setPage('dashboard')} />
-        )}
+        {/* Keyed on `page` so navigating away from a crashed page clears the
+            fallback instead of stranding the user on it. */}
+        <ErrorBoundary key={page} component={page}>
+          {page === 'dashboard' && (
+            <Dashboard chars={snap.chars} onPick={(c) => { setSelectedPid(c.pid); setPage('detail'); }} />
+          )}
+          {page === 'treasury'  && <Treasury />}
+          {page === 'snapshots' && <Snapshots />}
+          {page === 'diagnostics' && <Diagnostics />}
+          {page === 'detail' && liveSelected && (
+            <CharDetail char={liveSelected} onBack={() => setPage('dashboard')} />
+          )}
+        </ErrorBoundary>
       </main>
     </div>
   );

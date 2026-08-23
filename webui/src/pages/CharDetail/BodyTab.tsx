@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { get } from '../../api/client';
+import { describeError, reportClientError } from '../../diag/report';
 import { BuffChips, Panel, StatNum } from '../../primitives';
 import type { BuffInfo } from '../../api/types';
 
@@ -14,15 +15,26 @@ interface Detail {
 
 export function BodyTab({ pid }: { pid: number }) {
   const [d, setD] = useState<Detail | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     const fetchOnce = () =>
-      get<Detail>(`/api/characters/${pid}`).then(x => { if (alive) setD(x); }).catch(() => {});
+      get<Detail>(`/api/characters/${pid}`)
+        .then(x => { if (alive) { setD(x); setErr(null); } })
+        .catch(e => {
+          if (!alive) return;
+          setErr(describeError(e));
+          reportClientError(e, { component: 'BodyTab' });
+        });
     fetchOnce();                              // immediate
     const id = setInterval(fetchOnce, 3000); // keep stats + buffs fresh, like the dashboard
     return () => { alive = false; clearInterval(id); };
   }, [pid]);
-  if (!d) return <div style={{ color: 'var(--tt-mute)' }}>讀取中…</div>;
+  if (!d) {
+    return err
+      ? <div role="status" style={{ color: 'var(--tt-bad)', fontSize: 13 }}>讀取失敗：{err}</div>
+      : <div style={{ color: 'var(--tt-dim)' }}>讀取中…</div>;
+  }
   const six = [
     ['外功', d.stats.waigong], ['內力', d.stats.neili], ['根骨', d.stats.genggu],
     ['身法', d.stats.shenfa], ['技巧', d.stats.jiqiao], ['玄學', d.stats.xuanxue],

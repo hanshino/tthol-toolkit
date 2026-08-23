@@ -11,10 +11,10 @@ States:
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 import threading
+import time
 from collections.abc import Callable
 
 import pymem
@@ -34,10 +34,13 @@ from reader import (
     read_all_fields,
     read_character_name,
     read_hp_from_player_chain,
+    read_hp_pair_from_chain,
     read_inventory,
     verify_structure,
     verify_structure_shifted,
 )
+from services import diagnostics
+from services.diag_events import ErrorCode
 from services.map_db import all_stage_names
 from warehouse_scan import (
     SLOT_SIZE,
@@ -52,7 +55,36 @@ LOCATE_RETRY_INTERVAL = 3.0
 LOCATE_MAX_RETRIES = 10
 MAP_RESCAN_EVERY = 5  # locate_map_name walks the heap; cache between polls
 
-log = logging.getLogger("tthol.worker")
+
+class RelocateWindow:
+    """Rate-limits repeated relocate reports inside a sliding window.
+
+    The existing log shows `lost lock` / `re-acquired` cycling every ~9s during
+    a bad session, which displaces the evidence. Frequency is itself the
+    signal, so past the threshold the individual lines drop to DEBUG and the
+    window closes with one summary count.
+    """
+
+    def __init__(self, window_seconds: float = 60.0, threshold: int = 2) -> None:
+        self._window = window_seconds
+        self._threshold = threshold
+        self._start: float | None = None
+        self._count = 0
+
+    def should_log_at_info(self, now: float) -> bool:
+        if self._start is None:
+            self._start = now
+        self._count += 1
+        return self._count <= self._threshold
+
+    def roll(self, now: float) -> int | None:
+        """Close the window if it has elapsed; returns the count, or None."""
+        if self._start is None or now - self._start < self._window:
+            return None
+        count = self._count
+        self._start = None
+        self._count = 0
+        return count
 
 
 class ReaderWorker(threading.Thread):
@@ -65,7 +97,7 @@ class ReaderWorker(threading.Thread):
         on_stats: Callable[[list[tuple[str, int]]], None],
         on_inventory: Callable[[list[tuple[int, int, str]]], None],
         on_warehouse: Callable[[list[tuple[int, int, str]]], None],
-        on_error: Callable[[str], None],
+        on_error: Callable[..., None],
         on_buffs: Callable[[list[tuple[int, str, str]]], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
@@ -81,8 +113,11 @@ class ReaderWorker(threading.Thread):
         self._compat_mode = False
         self._stop_event = threading.Event()
         self._wake_event = threading.Event()
+        self._has_run = False
         self._scan_inventory = False
         self._scan_warehouse = False
+        self._log = diagnostics.bind(pid)
+        self._relocate_window = RelocateWindow()
         self._knowledge = load_knowledge()
         self._display_fields = get_display_fields(self._knowledge)
         self._item_db = load_item_db()
@@ -95,6 +130,19 @@ class ReaderWorker(threading.Thread):
     # ------------------------------------------------------------------
     # Public API (called from main thread)
     # ------------------------------------------------------------------
+    def start(self) -> None:
+        self._has_run = True
+        super().start()
+
+    def has_run(self) -> bool:
+        """True once start() has been called, alive or not.
+
+        is_alive() reads False both before the first start and after the thread
+        exits, but start() may only ever be called once -- owners need the two
+        cases separated so they can rebuild instead of raising RuntimeError.
+        """
+        return self._has_run
+
     def connect(
         self,
         hp_value: int | None = None,
@@ -134,11 +182,10 @@ class ReaderWorker(threading.Thread):
 
         hp_addr = self._locate_with_retries(pm, "WAITING")
         if hp_addr is None:
-            log.warning("initial locate failed after %d retries; disconnecting", LOCATE_MAX_RETRIES)
             self._cb_state("DISCONNECTED")
             return
 
-        log.info("located character at 0x%08X (compat=%s)", hp_addr, self._compat_mode)
+        self._log.info("located character at 0x%08X (compat=%s)", hp_addr, self._compat_mode)
         self._cb_state("LOCATED")
         char_name = read_character_name(pm, hp_addr)
         failure_count = 0
@@ -165,19 +212,35 @@ class ReaderWorker(threading.Thread):
                 if score < 0.8:
                     failure_count += 1
                     if failure_count >= FAILURE_THRESHOLD:
-                        log.info(
-                            "lost lock (validation score < 0.8 x%d); re-locating", FAILURE_THRESHOLD
-                        )
+                        now = time.time()
+                        lock_extra = {
+                            "cat": "locate",
+                            "code": ErrorCode.E_LOCK_LOST,
+                            "detail": {"score": score, "hp_addr": hex(hp_addr)},
+                        }
+                        if self._relocate_window.should_log_at_info(now):
+                            self._log.info(
+                                "lost lock (validation score < 0.8 x%d); re-locating",
+                                FAILURE_THRESHOLD,
+                                extra=lock_extra,
+                            )
+                        else:
+                            self._log.debug("lost lock (suppressed); re-locating", extra=lock_extra)
+                        rolled = self._relocate_window.roll(now)
+                        if rolled is not None:
+                            self._log.info(
+                                "relocated %d times in the last 60s",
+                                rolled,
+                                extra={"cat": "locate", "detail": {"relocates": rolled}},
+                            )
                         self._cb_state("READ_ERROR")
                         hp_addr = self._locate_with_retries(pm, "RESCANNING")
                         if hp_addr is None:
-                            log.warning("re-locate failed after retries; disconnecting")
-                            self._cb_error(
-                                "Character not found -- press 重偵 or enter the HP value"
-                            )
                             self._cb_state("DISCONNECTED")
                             return
-                        log.info("re-acquired at 0x%08X (compat=%s)", hp_addr, self._compat_mode)
+                        self._log.info(
+                            "re-acquired at 0x%08X (compat=%s)", hp_addr, self._compat_mode
+                        )
                         self._cb_state("LOCATED")
                         char_name = read_character_name(pm, hp_addr)
                         failure_count = 0
@@ -188,6 +251,18 @@ class ReaderWorker(threading.Thread):
                     if map_tick % MAP_RESCAN_EVERY == 0 or not map_name:
                         map_name = locate_map_name(pm, valid_names=self._stage_names)
                     map_tick += 1
+                    # HP comes straight from the engine charobject pointer chain
+                    # (no scan): authoritative and independent of the flat-struct
+                    # lock, so it stays correct even if the scan locked a wrong
+                    # same-HP candidate. Falls back to the flat struct's HP when
+                    # the chain is unavailable.
+                    hp_pair = read_hp_pair_from_chain(pm)
+                    if hp_pair is not None:
+                        cur, mx = hp_pair
+                        fields = [
+                            (n, cur if n == "血量" else mx if n == "最大血量" else v)
+                            for n, v in fields
+                        ]
                     self._cb_stats([("角色名稱", char_name), ("地圖名稱", map_name)] + fields)
                     statuses = read_active_statuses(pm, hp_addr, self._knowledge)
                     self._cb_buffs(
@@ -197,20 +272,18 @@ class ReaderWorker(threading.Thread):
             except Exception as exc:
                 failure_count += 1
                 if failure_count >= FAILURE_THRESHOLD:
-                    log.info("read exception (%s); reconnecting + re-locating", exc)
+                    self._log.info("read exception (%s); reconnecting + re-locating", exc)
                     self._cb_state("READ_ERROR")
                     pm = self._connect_process()
                     if pm is None:
-                        log.warning("process gone; disconnecting")
+                        self._log.warning("process gone; disconnecting")
                         self._cb_state("DISCONNECTED")
                         return
                     hp_addr = self._locate_with_retries(pm, "RESCANNING")
                     if hp_addr is None:
-                        log.warning("re-locate failed after retries; disconnecting")
-                        self._cb_error("Character not found -- press 重偵 or enter the HP value")
                         self._cb_state("DISCONNECTED")
                         return
-                    log.info("re-acquired at 0x%08X (compat=%s)", hp_addr, self._compat_mode)
+                    self._log.info("re-acquired at 0x%08X (compat=%s)", hp_addr, self._compat_mode)
                     self._cb_state("LOCATED")
                     char_name = read_character_name(pm, hp_addr)
                     failure_count = 0
@@ -229,7 +302,12 @@ class ReaderWorker(threading.Thread):
         try:
             return pymem.Pymem(self._pid)
         except Exception as e:
-            self._cb_error(f"Cannot connect to PID {self._pid}: {e}")
+            self._cb_error(
+                f"Cannot connect to PID {self._pid}: {e}",
+                cat="locate",
+                code=ErrorCode.E_PROC_GONE,
+                detail={"pid": self._pid, "exc": repr(e)},
+            )
             return None
 
     def _locate_with_retries(self, pm, waiting_state: str):
@@ -252,7 +330,25 @@ class ReaderWorker(threading.Thread):
             if attempt == 0:
                 self._cb_state(waiting_state)
             self._stop_event.wait(LOCATE_RETRY_INTERVAL)
+        self._report_locate_exhausted(pm)
         return None
+
+    def _report_locate_exhausted(self, pm) -> None:
+        """Single owner of the exhaustion report.
+
+        Each of the three callers used to report (or forget to report) this for
+        itself; the initial-locate caller forgot, which is precisely the one a
+        user hits first. Reporting where the exhaustion happens makes that
+        omission unrepresentable.
+        """
+        self._cb_error(
+            "Character not found -- press 重偵 or enter the HP value",
+            cat="locate",
+            code=ErrorCode.E_LOCATE_EXHAUSTED,
+            detail=diagnostics.snapshot_locate_failure(
+                pm, knowledge=self._knowledge, hp_value=self._hp_value
+            ),
+        )
 
     def _locate(self, pm, silent: bool = False):
         # Try both the normal and the 4-byte-shifted (compat) layout, preferring
@@ -278,14 +374,23 @@ class ReaderWorker(threading.Thread):
                     if addr is not None:
                         self._compat_mode = compat
                         return addr
-        except Exception:
-            pass
+        except Exception as exc:
+            # Debug, not warning: this fires on every retry and is expected
+            # before login. The exhaustion report carries the durable signal.
+            self._log.debug(
+                "player HP chain read failed: %s",
+                exc,
+                extra={"cat": "locate", "detail": {"exc": repr(exc)}},
+            )
 
         # Fallback: manual HP value provided by user
         if self._hp_value is None:
             if not silent:
                 self._cb_error(
-                    "Cannot locate character -- try entering your current HP value manually"
+                    "Cannot locate character -- try entering your current HP value manually",
+                    cat="locate",
+                    code=ErrorCode.E_CHAIN_READ,
+                    detail=diagnostics.snapshot_locate_failure(pm, knowledge=self._knowledge),
                 )
             return None
         try:
@@ -303,7 +408,16 @@ class ReaderWorker(threading.Thread):
             return None
         except Exception as e:
             if not silent:
-                self._cb_error(f"Scan failed: {e}")
+                self._cb_error(
+                    f"Scan failed: {e}",
+                    cat="locate",
+                    code=ErrorCode.E_SCAN_FAILED,
+                    detail={
+                        "exc": repr(e),
+                        "hp_value": self._hp_value,
+                        "compat_tried": [False, True],
+                    },
+                )
             return None
 
     def _do_inventory_scan(self, pm):
@@ -314,7 +428,12 @@ class ReaderWorker(threading.Thread):
         try:
             inv_match = locate_inventory(pm)
             if inv_match is None:
-                self._cb_error("Inventory not found in memory")
+                self._cb_error(
+                    "Inventory not found in memory",
+                    cat="inventory",
+                    code=ErrorCode.E_INV_NOT_FOUND,
+                    detail={"hp_addr": None, "scan_ms": None},
+                )
                 self._cb_inventory([])
                 return
             inv_start = find_inventory_start(pm, inv_match)
@@ -322,7 +441,12 @@ class ReaderWorker(threading.Thread):
             named = [(item_id, qty, self._item_db.get(item_id, "???")) for item_id, qty in items]
             self._cb_inventory(named)
         except Exception as e:
-            self._cb_error(f"Inventory scan error: {e}")
+            self._cb_error(
+                f"Inventory scan error: {e}",
+                cat="inventory",
+                code=ErrorCode.E_SCAN_FAILED,
+                detail={"exc": repr(e), "hp_value": self._hp_value, "compat_tried": []},
+            )
             self._cb_inventory([])
 
     def _do_warehouse_scan(self, pm):
@@ -351,7 +475,16 @@ class ReaderWorker(threading.Thread):
             warehouse_arrays = sorted(set(warehouse_arrays))
 
             if not warehouse_arrays:
-                self._cb_error("Warehouse not found -- open warehouse UI in game first")
+                self._cb_error(
+                    "Warehouse not found -- open warehouse UI in game first",
+                    cat="warehouse",
+                    code=ErrorCode.E_WH_NOT_FOUND,
+                    detail={
+                        "hp_addr": None,
+                        "inv_range": [inv_start, inv_end],
+                        "arrays_seen": len(all_arrays),
+                    },
+                )
                 self._cb_warehouse([])
                 return
 
@@ -361,5 +494,10 @@ class ReaderWorker(threading.Thread):
             named = [(item_id, qty, self._item_db.get(item_id, "???")) for item_id, qty, _ in raw]
             self._cb_warehouse(named)
         except Exception as e:
-            self._cb_error(f"Warehouse scan error: {e}")
+            self._cb_error(
+                f"Warehouse scan error: {e}",
+                cat="warehouse",
+                code=ErrorCode.E_SCAN_FAILED,
+                detail={"exc": repr(e), "hp_value": self._hp_value, "compat_tried": []},
+            )
             self._cb_warehouse([])

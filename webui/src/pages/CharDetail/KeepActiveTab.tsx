@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { get, post } from '../../api/client';
+import { reportClientError } from '../../diag/report';
 import { Panel } from '../../primitives';
 
 type Status = {
@@ -17,7 +18,11 @@ export function KeepActiveTab({ pid }: { pid: number }) {
     try {
       const s = await get<Status>(`/api/characters/${pid}/keep-active/status`);
       setStatus(s);
-    } catch { /* manager may be missing on non-Windows; leave status as-is */ }
+    } catch (e) {
+      // Manager may be absent off-Windows: intentionally not surfaced, but
+      // still recorded so the timeline is complete.
+      reportClientError(e, { component: 'KeepActiveTab.refresh', silent: true });
+    }
   };
 
   useEffect(() => {
