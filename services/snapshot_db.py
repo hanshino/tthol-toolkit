@@ -12,6 +12,7 @@ checksum is SHA256 of the canonical items JSON string.
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import sqlite3
@@ -19,8 +20,17 @@ from datetime import datetime
 from pathlib import Path
 
 from services._paths import app_root, bundled
+from services.diag_events import ErrorCode
+from services.item_types import label_for
+
+log = logging.getLogger("tthol.snapshot_db")
 
 ITEM_NAME_DB = bundled("tthol.sqlite")
+
+# Codes that never carried a Chinese label, even in the DB this table was
+# derived from: money and untyped rows. Blank is correct for them, so they must
+# not trip the unmapped-type warning.
+_UNLABELLED_TYPE_CODES = frozenset({0, 30, 49})
 
 
 def _default_db_path() -> Path:
@@ -46,21 +56,56 @@ _ITEM_MAPS_CACHE: tuple[dict[int, str], dict[int, str]] | None = None
 
 
 def _load_item_maps() -> tuple[dict[int, str], dict[int, str]]:
-    """Load (id->name, id->type) from tthol.sqlite once per process."""
+    """Load (id->name, id->Chinese type) from tthol.sqlite once per process.
+
+    The type label is reconstructed from (type_code, equip_slot) because the DB
+    only carries English enums; see services.item_types.
+
+    A failure here used to be swallowed whole, which turned an upstream column
+    rename into every item rendering as "???" with nothing logged anywhere. It
+    is reported now, and the caches are left empty so the next call retries.
+    """
     global _ITEM_MAPS_CACHE
     if _ITEM_MAPS_CACHE is not None:
         return _ITEM_MAPS_CACHE
     name_map: dict[int, str] = {}
     type_map: dict[int, str] = {}
+    unmapped: set[tuple[int, str]] = set()
     try:
-        with sqlite3.connect(str(ITEM_NAME_DB)) as name_con:
+        with sqlite3.connect(f"file:{ITEM_NAME_DB}?mode=ro", uri=True) as name_con:
             name_con.text_factory = lambda b: b.decode("utf-8", errors="replace")
-            for r in name_con.execute("SELECT id, name, type FROM items"):
-                name_map[r[0]] = r[1]
-                if r[2]:
-                    type_map[r[0]] = r[2]
-    except sqlite3.OperationalError:
-        pass
+            rows = name_con.execute(
+                "SELECT id, name, type_code, COALESCE(equip_slot, '') FROM items"
+            ).fetchall()
+    except sqlite3.Error as exc:
+        log.error(
+            "item name/type lookup failed against %s -- items will render unnamed",
+            ITEM_NAME_DB,
+            extra={"cat": "db", "code": ErrorCode.E_ITEM_DB, "detail": {"exc": repr(exc)}},
+        )
+        return ({}, {})
+
+    for item_id, name, type_code, equip_slot in rows:
+        name_map[item_id] = name
+        label = label_for(type_code, equip_slot)
+        if label:
+            type_map[item_id] = label
+        elif type_code not in _UNLABELLED_TYPE_CODES:
+            unmapped.add((type_code, equip_slot))
+
+    if unmapped:
+        # Not fatal -- the column renders blank -- but it means the DB grew a
+        # type the table does not know, and silence is how that goes unnoticed.
+        log.warning(
+            "%d item type(s) have no Chinese label; 類型 will be blank for them",
+            len(unmapped),
+            extra={
+                "cat": "db",
+                "code": ErrorCode.E_ITEM_DB,
+                "detail": {"unmapped": sorted(unmapped)[:20]},
+            },
+        )
+
     _ITEM_MAPS_CACHE = (name_map, type_map)
     return _ITEM_MAPS_CACHE
 

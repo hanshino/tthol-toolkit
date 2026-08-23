@@ -45,6 +45,7 @@ message text is prose and changes between versions.
 | `E_SCAN_FAILED` | A scan raised | `exc`, `hp_value`, `compat_tried` | Usually a read against freed memory |
 | `E_INV_NOT_FOUND` | Inventory pattern not found | `hp_addr`, `scan_ms` | The scan returns an empty list on this path, so the UI shows "no items". An empty inventory and an unscannable one look identical without this code — that is the whole reason it exists |
 | `E_WH_NOT_FOUND` | No warehouse slot array found | `hp_addr`, `inv_range`, `arrays_seen` | The warehouse UI was not open in game; the structure only exists while it is |
+| `E_ITEM_DB` | The bundled item DB did not answer as expected | `exc`, or `unmapped` | ERROR means the `items` query failed and every item renders unnamed — almost always an upstream schema change in `tthol_data` (this is how `items.type` → `type_code`/`type_name` slipped through). WARNING means new item types have no Chinese label; only the 類型 column is affected, and the fix is to regenerate `services/item_types.py` |
 | `E_API_5XX` | An endpoint raised | `path`, `method`, `status`, `traceback` | A real backend bug — read the traceback |
 | `E_CLIENT` | A browser-side error | `url`, `stack`, `component`, `ua` | Frontend bug; correlate by timestamp with backend events |
 

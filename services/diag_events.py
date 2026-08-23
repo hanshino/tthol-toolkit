@@ -28,6 +28,7 @@ class ErrorCode:
     E_SCAN_FAILED = "E_SCAN_FAILED"
     E_INV_NOT_FOUND = "E_INV_NOT_FOUND"
     E_WH_NOT_FOUND = "E_WH_NOT_FOUND"
+    E_ITEM_DB = "E_ITEM_DB"
     E_API_5XX = "E_API_5XX"
     E_CLIENT = "E_CLIENT"
 
