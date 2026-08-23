@@ -65,10 +65,14 @@ class CharSession:
         self._inv_seq: int = 0
         self._wh_seq: int = 0
         self._last_error: ErrorInfo | None = None
+        self._last_hp: int | None = None
         self._log = diagnostics.bind(pid)
         self._lock = threading.Lock()
-        self._worker = ReaderWorker(
-            pid=pid,
+        self._worker = self._make_worker()
+
+    def _make_worker(self) -> ReaderWorker:
+        return ReaderWorker(
+            pid=self.pid,
             on_state=self._on_state,
             on_stats=self._on_stats,
             on_inventory=self._on_inv,
@@ -77,11 +81,33 @@ class CharSession:
             on_buffs=self._on_buffs,
         )
 
+    @property
+    def last_hp(self) -> int | None:
+        """The manual HP this session was last started with, if any.
+
+        Kept so a rebuild can reuse it: with the pointer chain stale, a manual
+        HP is the only input that can locate at all.
+        """
+        return self._last_hp
+
     def start(self, hp: int | None = None, compat_mode: bool = False) -> None:
+        if hp is not None:
+            self._last_hp = hp
+        if self._worker.is_alive():
+            # Already running: only refresh the inputs. Replacing a live worker
+            # would orphan its thread.
+            self._worker._hp_value = hp
+            self._worker._compat_mode = compat_mode
+            return
+        if self._worker.has_run():
+            # A thread that ran and exited still reports is_alive() False, but
+            # Thread.start() may only be called once -- the old guard let the
+            # second call raise RuntimeError, so every reconnect after a locate
+            # timeout returned 500 with no way back short of restarting the app.
+            self._worker = self._make_worker()
         self._worker._hp_value = hp
         self._worker._compat_mode = compat_mode
-        if not self._worker.is_alive():
-            self._worker.start()
+        self._worker.start()
 
     def stop(self) -> None:
         self._worker.stop()

@@ -40,7 +40,7 @@ message text is prose and changes between versions.
 |---|---|---|---|
 | `E_PROC_GONE` | Cannot attach to the game process | `pid`, `exc` | Game closed, or the reader lacks rights to open the process |
 | `E_CHAIN_READ` | The player HP pointer chain did not resolve | the full snapshot | Not logged into a character yet, or the chain constants are stale after a game update |
-| `E_LOCATE_EXHAUSTED` | Locate retried to its bound and gave up | the full snapshot: `chain_hp`, `compat_false`, `compat_true`, `bytes_hex`, `score` | See the decision tree below |
+| `E_LOCATE_EXHAUSTED` | Locate retried to its bound and gave up | the full snapshot: `chain_walk`, `chain_hp`, `compat_false`, `compat_true`, `bytes_hex`, `score` | See the decision tree below |
 | `E_LOCK_LOST` | Validation score fell below 0.8 three times | `score`, `hp_addr` | The character struct moved (map change). Normal in ones and twos; a `relocated N times in the last 60s` line means something worse |
 | `E_SCAN_FAILED` | A scan raised | `exc`, `hp_value`, `compat_tried` | Usually a read against freed memory |
 | `E_INV_NOT_FOUND` | Inventory pattern not found | `hp_addr`, `scan_ms` | The scan returns an empty list on this path, so the UI shows "no items". An empty inventory and an unscannable one look identical without this code — that is the whole reason it exists |
@@ -50,21 +50,37 @@ message text is prose and changes between versions.
 
 ## 4. Decision tree for `E_LOCATE_EXHAUSTED`
 
-Read `detail.bytes_hex` — the first 32 bytes at the last known address:
+**Start with `detail.chain_walk`** — the raw deref sequence from
+`PLAYER_HP_CHAIN_BASE`, one entry per hop, formatted `<ptr>+<offset>`.
+
+- First hop is not a plausible heap pointer (`0x1`, `0xffffffff`, `0x0`) →
+  **the chain constant is stale; the game was updated.** `chain_hp` reads
+  `null`, which on its own is indistinguishable from "not logged in" — the
+  walk is what separates the two. Confirm in one step: `uv run auto_detect.py`.
+  If it finds a character while the chain is dead, the constant has moved for
+  certain. The fix is `/tthol-update-scan`; the user's stopgap is the 目前血量
+  box on the dashboard error, which locates by scan instead.
+- The walk reaches its last hop but `chain_hp` is `null` → the chain resolves
+  and the HP failed its sanity bound. Suspect a changed offset rather than a
+  changed base.
+- The walk is empty, or its first entry reads `<...Error at 0x...>` → the base
+  address itself is unreadable. Check the process really is `tthola.dat` and
+  is still alive.
+
+Then read `detail.bytes_hex` — the first 32 bytes at the last known address:
 
 - Starts `cdcdcdcd` — the block was freed. The struct moved; normal during a
   map change, a problem if it repeats.
 - Starts `fdfdfdfd` — the game was restarted. The session is stale; the
   UI's 重偵 button rebuilds it.
-- Anything else — read `detail.chain_hp`:
-  - An integer, but both `compat_false` and `compat_true` are `null` → the HP
-    value is right but no candidate passed structure validation. Suspect
-    `knowledge.json` drift; compare `knowledge_sha8` in the summary against
-    the repo.
-  - A string starting `<` (a captured exception) → the chain read itself
-    failed. Treat as `E_CHAIN_READ`.
-  - `null` and `hp_value` is also `null` → the user never supplied an HP value
-    and the chain was unavailable. Expected before login.
+- `chain_hp` is an integer, but both `compat_false` and `compat_true` are
+  `null` → the HP value is right but no candidate passed structure validation.
+  Suspect `knowledge.json` drift; compare `knowledge_sha8` in the summary
+  against the repo.
+- `chain_hp` is a string starting `<` (a captured exception) → the chain read
+  itself raised. Treat as `E_CHAIN_READ`.
+- `chain_walk` is healthy and `hp_value` is `null` → no HP was supplied and the
+  chain was momentarily unavailable. Expected before login.
 
 ## 5. Correlate frontend and backend
 
@@ -95,5 +111,9 @@ raises only the `tthol` logger to DEBUG and resets to INFO on restart.
   post-mortem triage works after the user has closed the app. If the pointer
   is missing entirely, the CLI still tries
   `%LOCALAPPDATA%\tthol-reader\logs\events.jsonl` and says so on stderr.
+- Locate exhaustion is reported once, by the retry loop itself
+  (`ReaderWorker._report_locate_exhausted`), not by its three callers. If you
+  add another caller, do not re-report — and do not add a bare log line beside
+  it, which is exactly how the initial-locate path went blind.
 - The ring buffer holds 1000 events; `events.jsonl` holds 5 MB × 5 rotations.
   For anything older than that, ask for a bundle taken closer to the incident.

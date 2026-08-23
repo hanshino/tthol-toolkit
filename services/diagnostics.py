@@ -78,6 +78,34 @@ def _probe(fn) -> Any:
         return f"<{type(exc).__name__}: {exc}>"
 
 
+def _chain_walk(pm: Any) -> list[str]:
+    """Each deref of the player HP chain, as raw hex.
+
+    `chain_hp: null` alone cannot separate "no character yet" from "the base
+    constant is stale after a game update" -- both read as null, and the two
+    call for completely different responses (wait vs. re-run the pointer scan).
+    The raw hops separate them: a first hop of 0x1 or 0xffffffff is not a heap
+    pointer, so the constant moved.
+    """
+    import struct
+
+    import reader
+
+    walk: list[str] = []
+    addr = reader.PLAYER_HP_CHAIN_BASE
+    for off in reader.PLAYER_HP_CHAIN_OFFSETS:
+        try:
+            ptr = struct.unpack("<I", pm.read_bytes(addr, 4))[0]
+        except Exception as exc:
+            walk.append(f"<{type(exc).__name__} at {addr:#x}>")
+            break
+        walk.append(f"{ptr:#x}+{off:#x}")
+        if ptr == 0 or ptr > 0x7FFFFFFF:
+            break
+        addr = ptr + off
+    return walk
+
+
 def snapshot_locate_failure(
     pm: Any,
     hp_addr: int | None = None,
@@ -98,6 +126,7 @@ def snapshot_locate_failure(
         "failed_fields": failed_fields,
         "process_alive": pm is not None,
         "chain_hp": None,
+        "chain_walk": None,
         "compat_false": None,
         "compat_true": None,
         "bytes_hex": None,
@@ -108,6 +137,7 @@ def snapshot_locate_failure(
     import reader
 
     snap["chain_hp"] = _probe(lambda: reader.read_hp_from_player_chain(pm))
+    snap["chain_walk"] = _chain_walk(pm)
     if isinstance(hp_addr, int):
         snap["bytes_hex"] = _probe(lambda: pm.read_bytes(hp_addr, 32).hex())
 

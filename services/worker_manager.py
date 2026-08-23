@@ -11,6 +11,7 @@ from services.api_types import (
     CharacterRow,
     ConnectRequest,
     ConnectResult,
+    ErrorInfo,
     Position,
     SaveSnapshotResult,
     Vitals,
@@ -71,7 +72,7 @@ class WorkerManager:
         rows = []
         for pid in live_pids:
             sess = self._sessions[pid]
-            r = sess.row() or _placeholder_row(pid, sess.link)
+            r = sess.row() or _placeholder_row(pid, sess.link, sess.last_error)
             if self._autoclick is not None:
                 r = r.model_copy(update={"autoclick": self._autoclick.status(pid)})
             rows.append(r)
@@ -140,11 +141,16 @@ class WorkerManager:
         if pid not in live_pids:
             return ConnectResult(ok=False, error="Process not running")
         old = self._sessions.pop(pid, None)
+        hp = None
         if old is not None:
+            hp = old.last_hp
             old.stop()
         new_sess = CharSession(pid)
         self._sessions[pid] = new_sess
-        new_sess.start()
+        # Carry the manual HP over: when the pointer chain has gone stale it is
+        # the only input that can locate, and dropping it made 重偵 a button
+        # that could never succeed.
+        new_sess.start(hp=hp)
         return ConnectResult(ok=True)
 
     def focus(self, pid: int) -> None:
@@ -178,12 +184,20 @@ class WorkerManager:
             await asyncio.sleep(interval)
 
 
-def _placeholder_row(pid: int, link: str) -> CharacterRow:
+def _placeholder_row(pid: int, link: str, last_error: ErrorInfo | None = None) -> CharacterRow:
+    """Stand-in for a character that has not located yet.
+
+    It must carry last_error: row() is None precisely while a character has
+    never located, which is exactly when there is an error worth showing. An
+    earlier version dropped it, so the dashboard could only display errors for
+    characters that were already working.
+    """
     return CharacterRow(
         pid=pid,
         name="(連線中)",
         sect="",
         link=link,  # type: ignore[arg-type]
+        last_error=last_error,
         level=0,
         vitals=Vitals(hp=0, hp_max=0, mp=0, mp_max=0, weight=0, weight_max=0),
         position=Position(map_name=None, x=0, y=0),

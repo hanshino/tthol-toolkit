@@ -19,6 +19,7 @@ def test_world_snapshot_emits_placeholder_for_unconnected(mock_find, mock_sess_c
     mock_sess = mock_sess_cls.return_value
     mock_sess.row.return_value = None
     mock_sess.link = "weak"
+    mock_sess.last_error = None
     wm = WorkerManager()
     snap = wm.world_snapshot()
     assert len(snap.chars) == 1
@@ -43,6 +44,7 @@ def test_rescan_replaces_dead_session(mock_find, mock_sess_cls):
     mock_find.return_value = [{"pid": 4242}]
     wm = WorkerManager()
     old_sess = mock_sess_cls.return_value
+    old_sess.last_hp = 48377
     wm._sessions[4242] = old_sess
     new_sess = type(old_sess)()
     mock_sess_cls.return_value = new_sess
@@ -52,7 +54,9 @@ def test_rescan_replaces_dead_session(mock_find, mock_sess_cls):
     assert result.ok is True
     old_sess.stop.assert_called_once()
     assert wm._sessions[4242] is new_sess
-    new_sess.start.assert_called_once_with()
+    # The manual HP has to survive the rebuild: with a stale pointer chain it
+    # is the only input that can locate at all.
+    new_sess.start.assert_called_once_with(hp=48377)
 
 
 @patch("services.worker_manager.find_tthol_processes")

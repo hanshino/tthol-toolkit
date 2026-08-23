@@ -113,6 +113,7 @@ class ReaderWorker(threading.Thread):
         self._compat_mode = False
         self._stop_event = threading.Event()
         self._wake_event = threading.Event()
+        self._has_run = False
         self._scan_inventory = False
         self._scan_warehouse = False
         self._log = diagnostics.bind(pid)
@@ -129,6 +130,19 @@ class ReaderWorker(threading.Thread):
     # ------------------------------------------------------------------
     # Public API (called from main thread)
     # ------------------------------------------------------------------
+    def start(self) -> None:
+        self._has_run = True
+        super().start()
+
+    def has_run(self) -> bool:
+        """True once start() has been called, alive or not.
+
+        is_alive() reads False both before the first start and after the thread
+        exits, but start() may only ever be called once -- owners need the two
+        cases separated so they can rebuild instead of raising RuntimeError.
+        """
+        return self._has_run
+
     def connect(
         self,
         hp_value: int | None = None,
@@ -168,9 +182,6 @@ class ReaderWorker(threading.Thread):
 
         hp_addr = self._locate_with_retries(pm, "WAITING")
         if hp_addr is None:
-            self._log.warning(
-                "initial locate failed after %d retries; disconnecting", LOCATE_MAX_RETRIES
-            )
             self._cb_state("DISCONNECTED")
             return
 
@@ -225,18 +236,6 @@ class ReaderWorker(threading.Thread):
                         self._cb_state("READ_ERROR")
                         hp_addr = self._locate_with_retries(pm, "RESCANNING")
                         if hp_addr is None:
-                            self._log.warning("re-locate failed after retries; disconnecting")
-                            self._cb_error(
-                                "Character not found -- press 重偵 or enter the HP value",
-                                cat="locate",
-                                code=ErrorCode.E_LOCATE_EXHAUSTED,
-                                detail=diagnostics.snapshot_locate_failure(
-                                    pm,
-                                    hp_addr=hp_addr,
-                                    knowledge=self._knowledge,
-                                    hp_value=self._hp_value,
-                                ),
-                            )
                             self._cb_state("DISCONNECTED")
                             return
                         self._log.info(
@@ -282,15 +281,6 @@ class ReaderWorker(threading.Thread):
                         return
                     hp_addr = self._locate_with_retries(pm, "RESCANNING")
                     if hp_addr is None:
-                        self._log.warning("re-locate failed after retries; disconnecting")
-                        self._cb_error(
-                            "Character not found -- press 重偵 or enter the HP value",
-                            cat="locate",
-                            code=ErrorCode.E_LOCATE_EXHAUSTED,
-                            detail=diagnostics.snapshot_locate_failure(
-                                pm, knowledge=self._knowledge, hp_value=self._hp_value
-                            ),
-                        )
                         self._cb_state("DISCONNECTED")
                         return
                     self._log.info("re-acquired at 0x%08X (compat=%s)", hp_addr, self._compat_mode)
@@ -340,7 +330,25 @@ class ReaderWorker(threading.Thread):
             if attempt == 0:
                 self._cb_state(waiting_state)
             self._stop_event.wait(LOCATE_RETRY_INTERVAL)
+        self._report_locate_exhausted(pm)
         return None
+
+    def _report_locate_exhausted(self, pm) -> None:
+        """Single owner of the exhaustion report.
+
+        Each of the three callers used to report (or forget to report) this for
+        itself; the initial-locate caller forgot, which is precisely the one a
+        user hits first. Reporting where the exhaustion happens makes that
+        omission unrepresentable.
+        """
+        self._cb_error(
+            "Character not found -- press 重偵 or enter the HP value",
+            cat="locate",
+            code=ErrorCode.E_LOCATE_EXHAUSTED,
+            detail=diagnostics.snapshot_locate_failure(
+                pm, knowledge=self._knowledge, hp_value=self._hp_value
+            ),
+        )
 
     def _locate(self, pm, silent: bool = False):
         # Try both the normal and the 4-byte-shifted (compat) layout, preferring
@@ -366,8 +374,14 @@ class ReaderWorker(threading.Thread):
                     if addr is not None:
                         self._compat_mode = compat
                         return addr
-        except Exception:
-            pass
+        except Exception as exc:
+            # Debug, not warning: this fires on every retry and is expected
+            # before login. The exhaustion report carries the durable signal.
+            self._log.debug(
+                "player HP chain read failed: %s",
+                exc,
+                extra={"cat": "locate", "detail": {"exc": repr(exc)}},
+            )
 
         # Fallback: manual HP value provided by user
         if self._hp_value is None:

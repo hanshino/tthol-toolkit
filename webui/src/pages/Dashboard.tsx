@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { post } from '../api/client';
 import { describeError, reportClientError } from '../diag/report';
-import type { CharacterRow, OkResponse } from '../api/types';
+import type { CharacterRow, ConnectResult, OkResponse } from '../api/types';
 import { Bar, BuffChips, LinkDot, Panel, StatNum } from '../primitives';
 
 export function Dashboard({
@@ -21,6 +21,26 @@ export function Dashboard({
       reportClientError(e, { component: 'Dashboard.rescan' });
     } finally {
       setRescanning(null);
+    }
+  };
+  const [hpDraft, setHpDraft] = useState<Record<number, string>>({});
+  const [relocating, setRelocating] = useState<number | null>(null);
+  const handleRelocate = async (pid: number) => {
+    const hp = Number(hpDraft[pid]);
+    if (!Number.isInteger(hp) || hp <= 0) {
+      setRescanError('請輸入目前血量（正整數）');
+      return;
+    }
+    setRelocating(pid);
+    setRescanError(null);
+    try {
+      await post<ConnectResult>(`/api/characters/${pid}/relocate`, { hp });
+      setHpDraft(d => ({ ...d, [pid]: '' }));
+    } catch (e) {
+      setRescanError(describeError(e));
+      reportClientError(e, { component: 'Dashboard.relocate' });
+    } finally {
+      setRelocating(null);
     }
   };
   const lowHp = useMemo(
@@ -91,14 +111,26 @@ export function Dashboard({
               </div>
               <BuffChips buffs={c.buffs} />
               {c.last_error && (
-                <div style={{
-                  padding: '6px 8px', border: '1px solid var(--tt-bad)',
-                  color: 'var(--tt-text)', fontSize: 11, lineHeight: 1.5,
-                }}>
+                <div
+                  role="alert"
+                  style={{
+                    padding: '6px 8px', border: '1px solid var(--tt-bad)',
+                    color: 'var(--tt-text)', fontSize: 11, lineHeight: 1.5,
+                  }}
+                >
                   <span style={{
                     color: 'var(--tt-bad)', fontFamily: 'var(--tt-font-serif)', marginRight: 6,
                   }}>錯</span>
                   {friendlyError(c.last_error)}
+                  {c.last_error.code === 'E_LOCATE_EXHAUSTED' && (
+                    <HpRescue
+                      pid={c.pid}
+                      value={hpDraft[c.pid] ?? ''}
+                      busy={relocating === c.pid}
+                      onChange={v => setHpDraft(d => ({ ...d, [c.pid]: v }))}
+                      onSubmit={() => handleRelocate(c.pid)}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -153,6 +185,59 @@ function VitalCell({ tone, v, m }: { tone: 'hp' | 'mp' | 'weight'; v: number; m:
 }
 
 
+function HpRescue({
+  pid, value, busy, onChange, onSubmit,
+}: {
+  pid: number; value: string; busy: boolean;
+  onChange: (v: string) => void; onSubmit: () => void;
+}) {
+  const id = `hp-rescue-${pid}`;
+  return (
+    <div
+      onClick={e => e.stopPropagation()}
+      onKeyDown={e => e.stopPropagation()}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8, marginTop: 8,
+        paddingTop: 8, borderTop: '1px solid var(--tt-line-soft)', flexWrap: 'wrap',
+      }}
+    >
+      <label htmlFor={id} style={{ color: 'var(--tt-dim)', letterSpacing: 1 }}>
+        目前血量
+      </label>
+      <input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={1}
+        value={value}
+        disabled={busy}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') onSubmit(); }}
+        style={{
+          width: 96, padding: '5px 8px', fontSize: 12,
+          fontFamily: 'var(--tt-font-mono)',
+          background: 'var(--tt-panel)', color: 'var(--tt-text)',
+          border: '1px solid var(--tt-line-soft)',
+        }}
+      />
+      <button
+        className="is-ghost"
+        onClick={onSubmit}
+        disabled={busy || value.trim() === ''}
+        style={{
+          fontSize: 11, padding: '6px 10px', letterSpacing: 2,
+          color: 'var(--tt-gold)', cursor: 'pointer',
+        }}
+      >
+        {busy ? '定位中…' : '用血量定位'}
+      </button>
+      <span style={{ color: 'var(--tt-dim)', fontSize: 10 }}>
+        在遊戲中查看角色目前血量，填入後即可掃描定位
+      </span>
+    </div>
+  );
+}
+
 function friendlyError(e: NonNullable<CharacterRow['last_error']>): string {
   switch (e.code) {
     case 'E_WH_NOT_FOUND':
@@ -160,7 +245,10 @@ function friendlyError(e: NonNullable<CharacterRow['last_error']>): string {
     case 'E_INV_NOT_FOUND':
       return '找不到背包資料 — 可換張地圖後按「↻ 重偵」';
     case 'E_LOCATE_EXHAUSTED':
-      return '找不到角色 — 請確認已登入，或按「↻ 重偵」';
+      // Not necessarily a login problem: when a game update invalidates the
+      // pointer chain, 重偵 re-runs the same dead chain and can never succeed.
+      // Manual HP is the fallback that still works, so lead with it.
+      return '找不到角色 — 若已登入仍失敗，請於下方輸入目前血量定位';
     case 'E_PROC_GONE':
       return '無法連上遊戲程式 — 遊戲可能已關閉';
     case 'E_CHAIN_READ':
