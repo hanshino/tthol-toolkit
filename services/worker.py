@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from reader import (
     WAREHOUSE_COUNT_OFFSET,
     get_display_fields,
+    is_char_object,
     load_item_db,
     load_knowledge,
     load_status_db,
@@ -67,6 +68,9 @@ FREED_FILL = struct.unpack("<i", b"\xdd" * 4)[0]
 # retries come quickly; the attempt count (LOCATE_MAX_RETRIES) is unchanged.
 QUICK_RETRY_INTERVAL = 0.5
 QUICK_RETRIES = 4
+# A lock outside a CCharObject is provisional (seen: a look-alike block found
+# while the client was still logging in); look for the real one this often.
+PROVISIONAL_RECHECK_EVERY = 5  # polls (~15 s)
 
 
 class RelocateWindow:
@@ -158,6 +162,8 @@ class ReaderWorker(threading.Thread):
         # they move, so samples equal to them are held back.
         self._stale_tiles: tuple[int, int] | None = None
         self._stage_bounds: dict[int, tuple[int, int] | None] = {}
+        # Whether the current lock sits inside a CCharObject (set on each locate).
+        self._lock_is_obj = False
         self._item_db = load_item_db()
         self._status_db = load_status_db()
         try:
@@ -229,7 +235,6 @@ class ReaderWorker(threading.Thread):
         self._cb_state("LOCATED")
         char_name = read_character_name(pm, hp_addr)
         failure_count = 0
-        struct_fields = self._knowledge["character_structure"]["fields"]
         map_name = ""
         stage_id = None
         map_tick = 0
@@ -245,10 +250,7 @@ class ReaderWorker(threading.Thread):
 
             try:
                 fields = read_all_fields(pm, hp_addr, self._display_fields, self._compat_mode)
-                if self._compat_mode:
-                    score = verify_structure_shifted(pm, hp_addr, struct_fields)
-                else:
-                    score = verify_structure(pm, hp_addr, struct_fields)
+                score = self._score(pm, hp_addr)
 
                 if score < 0.8:
                     failure_count += 1
@@ -299,6 +301,17 @@ class ReaderWorker(threading.Thread):
                         stage_id = None
                         map_name = locate_map_name(pm, valid_names=self._stage_names)
                     map_tick += 1
+                    if not self._lock_is_obj and map_tick % PROVISIONAL_RECHECK_EVERY == 0:
+                        better = self._find_char_object(pm, hp_addr)
+                        if better is not None:
+                            hp_addr = better
+                            char_name = read_character_name(pm, hp_addr)
+                            self._log.info(
+                                "moved provisional lock to CCharObject at 0x%08X",
+                                hp_addr,
+                                extra={"cat": "locate"},
+                            )
+                            continue
                     # HP comes straight from the engine charobject pointer chain
                     # (no scan): authoritative and independent of the flat-struct
                     # lock, so it stays correct even if the scan locked a wrong
@@ -399,6 +412,13 @@ class ReaderWorker(threading.Thread):
         for attempt in range(LOCATE_MAX_RETRIES + 1):
             addr = self._locate(pm, silent=True)
             if addr is not None:
+                self._lock_is_obj = is_char_object(pm, addr)
+                if not self._lock_is_obj:
+                    self._log.info(
+                        "locked outside a CCharObject at 0x%08X; provisional",
+                        addr,
+                        extra={"cat": "locate"},
+                    )
                 return addr
             if self._stop_event.is_set():
                 return None
@@ -459,9 +479,7 @@ class ReaderWorker(threading.Thread):
             # map's position until the character takes a step.
             self._stale_tiles = (x, y)
             self._send_position(stage[0], stage[1], -1, -1)
-        struct_fields = self._knowledge["character_structure"]["fields"]
-        verify = verify_structure_shifted if self._compat_mode else verify_structure
-        if verify(pm, hp_addr, struct_fields) < 0.8:
+        if self._score(pm, hp_addr) < 0.8:
             return x == FREED_FILL and y == FREED_FILL
         if (x, y) == self._stale_tiles:
             return False
@@ -470,6 +488,26 @@ class ReaderWorker(threading.Thread):
             return False
         self._send_position(stage[0], stage[1], x, y)
         return False
+
+    def _score(self, pm, hp_addr: int) -> float:
+        """Structure score of the lock; 0 once a CCharObject lock stops being one.
+
+        verify_structure alone keeps passing a block whose memory was reused,
+        so a lock taken inside a CCharObject must stay inside one.
+        """
+        if self._lock_is_obj and not is_char_object(pm, hp_addr):
+            return 0.0
+        fields = self._knowledge["character_structure"]["fields"]
+        verify = verify_structure_shifted if self._compat_mode else verify_structure
+        return verify(pm, hp_addr, fields)
+
+    def _find_char_object(self, pm, current: int) -> int | None:
+        """A CCharObject lock for the character, if one now exists and differs from `current`."""
+        addr = self._locate(pm, silent=True)
+        if addr is None or addr == current or not is_char_object(pm, addr):
+            return None
+        self._lock_is_obj = True
+        return addr
 
     def _trusted_stage(self, stage: tuple[int, str] | None) -> bool:
         """The id and name must name the same DB stage. Mid map change CStage can

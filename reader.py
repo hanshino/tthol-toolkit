@@ -335,7 +335,10 @@ def locate_character(pm, hp_value, knowledge, offset_filters=None, compat_mode=F
     if not candidates:
         return None
 
-    candidates.sort(key=lambda x: x[1], reverse=True)
+    # verify_structure alone passes look-alike blocks (a stale copy scored 1.0
+    # even after its memory was reused), so a candidate inside a live
+    # CCharObject wins over any other.
+    candidates.sort(key=lambda c: (is_char_object(pm, c[0]), c[1]), reverse=True)
     return candidates[0][0]
 
 

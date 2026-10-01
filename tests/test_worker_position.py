@@ -218,3 +218,54 @@ def test_position_ws_receives_frames():
         loop.run_until_complete(push())
         msg = ws.receive_json()
         assert msg["pos"]["7"]["x"] == 3
+
+
+# --------------------------------------------------------------------------
+# Lock must sit inside a CCharObject (2026-10-01: a second client locked onto
+# a look-alike block that verify_structure scored 1.0).
+# --------------------------------------------------------------------------
+
+
+def test_score_drops_when_a_char_object_lock_stops_being_one(worker, monkeypatch):
+    worker._lock_is_obj = True
+    monkeypatch.setattr(W, "is_char_object", lambda _pm, _a: False)
+    assert worker._score(object(), HP) == 0.0
+    monkeypatch.setattr(W, "is_char_object", lambda _pm, _a: True)
+    assert worker._score(object(), HP) == 1.0
+
+
+def test_provisional_lock_moves_to_a_char_object(worker, monkeypatch):
+    real = HP + 0x100
+    monkeypatch.setattr(W, "is_char_object", lambda _pm, a: a == real)
+    worker._locate = lambda _pm, silent=False: real
+    assert worker._find_char_object(object(), HP) == real
+    assert worker._lock_is_obj is True
+
+
+def test_provisional_lock_stays_when_no_char_object_exists(worker, monkeypatch):
+    monkeypatch.setattr(W, "is_char_object", lambda _pm, _a: False)
+    worker._locate = lambda _pm, silent=False: HP + 0x100
+    assert worker._find_char_object(object(), HP) is None
+    assert worker._lock_is_obj is False
+
+
+def test_locate_character_prefers_a_char_object(monkeypatch):
+    import reader
+
+    fake, real = 0x1B13D804, 0x1B13F000
+    hp = struct.pack("<i", 907)
+
+    class PM:
+        process_handle = None
+
+        def read_bytes(self, base, size):
+            buf = bytearray(size)
+            for a in (fake, real):
+                buf[a - base : a - base + 4] = hp
+            return bytes(buf)
+
+    monkeypatch.setattr(reader, "get_memory_regions", lambda _h: [(0x1B13D000, 0x3000)])
+    monkeypatch.setattr(reader, "verify_structure", lambda _pm, _a, _f: 1.0)
+    monkeypatch.setattr(reader, "is_char_object", lambda _pm, a: a == real)
+    kn = {"character_structure": {"fields": {}}}
+    assert reader.locate_character(PM(), 907, kn) == real
