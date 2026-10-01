@@ -122,3 +122,20 @@ def test_avatar_none_without_head_art_or_doll_tables(tmp_path):
         )
         is None
     )
+
+
+def test_reads_equipment_slots_and_skips_bad_pointers():
+    from reader import EQUIP_SLOTS, ITEM_ID_OFFSET, read_equipment
+
+    pm = FakePm()
+    _char(pm)
+    cap_off, body_off = EQUIP_SLOTS[0][0], EQUIP_SLOTS[1][0]
+    pm.u32(OBJ + cap_off, 0x28629F40)
+    pm.write(0x28629F40 + ITEM_ID_OFFSET, struct.pack("<i", 50401))
+    pm.u32(OBJ + body_off, 0x00000044)  # not a heap pointer
+    got = read_equipment(pm, HP)
+    assert got[0] == ("CAP", 50401)
+    assert got[1] == ("BODY", None)
+    assert [slot for slot, _ in got] == [slot for _, slot in EQUIP_SLOTS]
+    assert all(iid is None for _, iid in got[2:])
+    assert read_equipment(FakePm(), HP) is None

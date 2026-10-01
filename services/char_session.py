@@ -14,6 +14,7 @@ from services.api_types import (
     CharacterDetail,
     CharacterRow,
     CharacterStats,
+    EquipSlot,
     ErrorInfo,
     Item,
     Position,
@@ -83,6 +84,7 @@ class CharSession:
         self._money: int | None = None
         self._appearance: dict | None = None
         self._avatar: Avatar | None = None
+        self._equipment: list[EquipSlot] | None = None
         self._latest_buffs: list[BuffInfo] = []
         self._inv_seq: int = 0
         self._wh_seq: int = 0
@@ -108,6 +110,7 @@ class CharSession:
             on_pet_inventory=self._on_pet,
             on_money=self._on_money,
             on_appearance=self._on_appearance,
+            on_equipment=self._on_equipment,
         )
 
     @property
@@ -220,6 +223,7 @@ class CharSession:
                 pet_inventory=self._latest_pet or None,
                 warehouse=self._latest_wh or None,
                 money=self._money,
+                equipment=self._equipment,
                 inventory_updated_at=self._inv_ts,
                 warehouse_updated_at=self._wh_ts,
                 warehouse_open=self._wh_open,
@@ -292,6 +296,10 @@ class CharSession:
     def _on_money(self, money: int) -> None:
         with self._lock:
             self._money = money
+
+    def _on_equipment(self, slots: list[tuple[str, int | None, str | None]]) -> None:
+        with self._lock:
+            self._equipment = [EquipSlot(slot=s, item_id=i, name=n) for s, i, n in slots]
 
     def _on_appearance(self, appearance: dict) -> None:
         # Read every poll but rarely changes; only rebuild the layers on change.

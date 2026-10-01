@@ -94,3 +94,7 @@ Cheat Engine（CE MCP bridge）在 `0x4190a4` 下只記錄的硬體中斷點。�
 - sequence 編碼：性別基底（男 100000 / 女 300000）+ 圖層序號 × 1000 + 部件號；頭 = 0、帽 = 1。陣列第 3 格以後的順序跟 `doll_slots` 不同，頭像用不到，沒追。
 - 讀法：`reader.read_appearance`；圖：`services/doll_catalog.py` 查 `doll_frame_images`（`action='wait'`，dir 6 沒有圖，依 `doll_slot_rules` 用 dir 8 左右翻轉）。
 - 未確認：髮色 1（黑色）畫出來偏棕／橄欖色，要對照遊戲畫面確認 `+0x29C` 與標籤對應是否有偏移。紫（8）、黃（5）看起來吻合。
+
+## 已接進程式
+
+`reader.read_equipment`（10 欄，略過一直是空的 `+0x374` HEAD）每輪跟背包一起讀，經 `CharacterDetail.equipment` 送到「根脈」分頁的「披掛」區。外裝欄仍未定位，所以披掛只顯示本體裝備；頭像則用實際繪製的 sequence，會顯示外裝。

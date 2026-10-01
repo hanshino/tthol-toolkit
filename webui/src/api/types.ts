@@ -22,6 +22,7 @@ export type ClientErrorRequest = S['ClientErrorRequest'];
 export type CreateAccountRequest = S['CreateAccountRequest'];
 export type DiagEventModel = S['DiagEventModel'];
 export type DiagSummary = S['DiagSummary'];
+export type EquipSlot = S['EquipSlot'];
 export type ErrorInfo = S['ErrorInfo'];
 export type Item = S['Item'];
 export type ItemMeta = S['ItemMeta'];

@@ -853,6 +853,8 @@ export interface components {
             warehouse?: components["schemas"]["Item"][] | null;
             /** Money */
             money?: number | null;
+            /** Equipment */
+            equipment?: components["schemas"]["EquipSlot"][] | null;
             /** Inventory Updated At */
             inventory_updated_at?: number | null;
             /** Warehouse Updated At */
@@ -1038,6 +1040,21 @@ export interface components {
             anchor_x: number;
             /** Anchor Y */
             anchor_y: number;
+        };
+        /**
+         * EquipSlot
+         * @description One worn-gear slot; item_id is None when the slot is empty.
+         */
+        EquipSlot: {
+            /**
+             * Slot
+             * @enum {string}
+             */
+            slot: "CAP" | "BODY" | "FOOT" | "WING" | "HORSE" | "ORNAMENT_1" | "ORNAMENT_2" | "ORNAMENT_3" | "HAND_L" | "HAND_R";
+            /** Item Id */
+            item_id?: number | null;
+            /** Name */
+            name?: string | null;
         };
         /**
          * ErrorInfo

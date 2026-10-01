@@ -119,6 +119,31 @@ class BuffInfo(_Base):
     kind: Literal["buff", "debuff"] = "buff"
 
 
+# ---- Equipment -------------------------------------------------------------
+
+
+EquipSlotKey = Literal[
+    "CAP",
+    "BODY",
+    "FOOT",
+    "WING",
+    "HORSE",
+    "ORNAMENT_1",
+    "ORNAMENT_2",
+    "ORNAMENT_3",
+    "HAND_L",
+    "HAND_R",
+]
+
+
+class EquipSlot(_Base):
+    """One worn-gear slot; item_id is None when the slot is empty."""
+
+    slot: EquipSlotKey
+    item_id: int | None = None
+    name: str | None = None
+
+
 # ---- Avatar (paper-doll head) --------------------------------------------
 
 
@@ -199,6 +224,8 @@ class CharacterDetail(_Base):
     pet_inventory: list[Item] | None = None
     warehouse: list[Item] | None = None
     money: int | None = None
+    # Worn gear in reader.EQUIP_SLOTS order; None until first read.
+    equipment: list[EquipSlot] | None = None
     # Epoch seconds of the last successful read; None until the first one.
     inventory_updated_at: float | None = None
     warehouse_updated_at: float | None = None

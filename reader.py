@@ -982,6 +982,49 @@ def read_appearance(pm, hp_addr):
     }
 
 
+# Equipment: one item-instance pointer per slot in the CCharObject (0 = empty),
+# item id at ITEM_ID_OFFSET of the instance. Offsets are relative to the
+# CCharObject. +0x374 (HEAD) holds the base hairstyle and is always empty, so it
+# is skipped. Outfit (EXTRA_*) slots are stored elsewhere, not yet located. See
+# docs/plans/2026-10-01-equipment-reading-investigation.md.
+EQUIP_SLOTS = (
+    (0x378, "CAP"),
+    (0x37C, "BODY"),
+    (0x380, "FOOT"),
+    (0x384, "WING"),
+    (0x388, "HORSE"),
+    (0x38C, "ORNAMENT_1"),
+    (0x390, "ORNAMENT_2"),
+    (0x394, "ORNAMENT_3"),
+    (0x398, "HAND_L"),
+    (0x39C, "HAND_R"),  # also two-handed (HANDS) weapons
+)
+
+
+def read_equipment(pm, hp_addr):
+    """Equipped items as [(slot, item_id or None)] in EQUIP_SLOTS order, or None
+    if hp_addr is not in a CCharObject. A slot whose pointer or id looks wrong
+    (being swapped mid-read) reads as empty."""
+    if not is_char_object(pm, hp_addr):
+        return None
+    obj = hp_addr - CHAR_OBJ_HP_OFFSET
+    ptrs = struct.unpack(
+        f"<{len(EQUIP_SLOTS)}I", pm.read_bytes(obj + EQUIP_SLOTS[0][0], 4 * len(EQUIP_SLOTS))
+    )
+    slots = []
+    for (_off, slot), ptr in zip(EQUIP_SLOTS, ptrs):
+        item_id = None
+        if HEAP_MIN_PTR <= ptr <= 0x7FFFFFFF:
+            try:
+                value = pm.read_int(ptr + ITEM_ID_OFFSET)
+            except Exception:
+                value = 0
+            if 0 < value <= MAX_ITEM_ID:
+                item_id = value
+        slots.append((slot, item_id))
+    return slots
+
+
 def _window_list(pm):
     """Child-window pointers of the window manager; empty when unreachable (not logged in)."""
     try:
