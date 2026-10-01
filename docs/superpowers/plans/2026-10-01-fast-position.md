@@ -2,7 +2,7 @@
 
 **Goal:** Show the player's position on the minimap at ~10 Hz instead of once every 3 s (worst case ~6 s stale today), with multi-boxing (many clients) costing the UI no more than a single character does. Also: fix the dot sitting on the click destination while walking, and cut the ~10 s minimap blackout after a map change to under 1 s.
 
-**Status:** draft, reviewed by advisor 2026-10-01; revised after the Task 0 probe (same day).
+**Status:** implemented 2026-10-01 (see Outcome at the end).
 
 ## Why it is slow today (measured 2026-10-01 against a live client)
 
@@ -80,7 +80,7 @@ Decision: `POS_INTERVAL = 0.1` catches every step at speed 15 with <=100 ms lag.
   - store `self._pos` (a `Position`, built through `_position()`)
 - **Change `_position()`**: derive `px/py` from the tile center (`x*TILE_PX + TILE_PX//2`) instead of HP+636/+640. This fixes the walking-dot bug in the 3 s row too. It can ship first as its own small change. Keep the raw HP+636/+640 out of `Position`; it is the move target. If a destination marker is ever wanted, it gets its own field.
   - bump `self._pos_seq`
-- Add `pos_snapshot() -> tuple[int, Position | None]` for the hub.
+- Add `position() -> tuple[int, Position]` for the hub.
 
 ### Task 3 — PositionHub + `/ws/pos` (`services/events.py`, `services/worker_manager.py`, `services/api/position_ws.py`, `app.py`)
 
@@ -152,3 +152,21 @@ Decision: `POS_INTERVAL = 0.1` catches every step at speed 15 with <=100 ms lag.
 - Movement prediction or extrapolation beyond a CSS transition.
 - Sub-tile live position. That would need a diff-probe across the whole CCharObject while walking, which is a separate RE task.
 - CLI tools (`reader.py --loop`).
+
+## Outcome (2026-10-01)
+
+Verified live:
+- The user confirmed in the app that walking is smooth: the dot moves with the character.
+- Map-change relocate ran three times in a worker script: freed struct to `LOCATED` in ~0.65 s each, down from ~10 s.
+- In-map room teleports show up correctly in the raw probe.
+
+Not verified in the UI: the room-teleport jump with no slide, map-swap timing, zero `/ws/pos` frames while idle, and two or more clients at once.
+
+Bugs found while implementing:
+- The stale-tile hold also applied to the very first sample, so the dot stayed hidden until the first step. Fixed: the hold only applies after a real stage change.
+- A torn CStage read (the old id with the new name) was seen mid map change. Fixed: `_trusted_stage` requires the id and name to match one DB row (`map_db.stage_names_by_id`).
+- `useLivePosition` passed a new subscribe function each render. React resubscribed on every render, which closed the socket, cleared the store and fell back to the 3 s row, so the dot oscillated between two positions. Fixed: a stable subscribe per pid, plus a 5 s idle close.
+
+Known and pre-existing: the first `_auto_read_items` after locate takes ~9 s (later calls take ~1 ms), so the first data after connecting arrives ~10 s late. The cause has not been investigated yet.
+
+After a map change the game reads the tiles as -1 until the first step, so the dot stays hidden until the character moves.

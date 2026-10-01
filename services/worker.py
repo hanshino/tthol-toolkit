@@ -388,7 +388,7 @@ class ReaderWorker(threading.Thread):
 
         The character struct lives on the heap and is reallocated on events like
         map changes, so its address moves; a single locate attempt can land in
-        the brief window where the old block is already freed (0xCDCDCDCD) and
+        the brief window where the old block is already freed (0xDDDDDDDD) and
         the new one is not yet valid. Retrying a bounded number of times lets a
         moved struct self-heal, without spinning forever for a genuinely
         logged-out character (recovery past the bound is via the UI 重偵 button).
