@@ -1075,6 +1075,11 @@ export interface components {
              * @default []
              */
             enhance_extra: components["schemas"]["ItemStat"][];
+            /**
+             * Inlays
+             * @default []
+             */
+            inlays: components["schemas"]["Inlay"][];
         };
         /**
          * ErrorInfo
@@ -1097,6 +1102,20 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * Inlay
+         * @description 真元 / 魂石 set into a piece of gear, grouped by kind.
+         */
+        Inlay: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Count */
+            count: number;
+            /** Effect */
+            effect: string;
         };
         /** Item */
         Item: {

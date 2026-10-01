@@ -129,6 +129,7 @@ def test_reads_equipment_slots_and_skips_bad_pointers():
         ENHANCE_OFFSET,
         EQUIP_SLOTS,
         ITEM_ID_OFFSET,
+        INLAY_OFFSETS,
         ITEM_STATS_OFFSET,
         read_equipment,
     )
@@ -143,10 +144,19 @@ def test_reads_equipment_slots_and_skips_bad_pointers():
     # hp 950 flat (flag 1), mp 650 with a potion-only flag, def 89, mdef 35
     pm.write(inst + ITEM_STATS_OFFSET, struct.pack("<hhhh", 950, 1, 650, 2))
     pm.write(inst + ITEM_STATS_OFFSET + 0x24, struct.pack("<hh", 89, 35))
+    # two 巨斧手小真元 sockets, filled from the back
+    pm.write(inst + INLAY_OFFSETS[2], struct.pack("<H", 10737))
+    pm.write(inst + INLAY_OFFSETS[3], struct.pack("<H", 10737))
     pm.u32(OBJ + body_off, 0x00000044)  # not a heap pointer
     got = read_equipment(pm, HP)
-    assert got[0] == ("CAP", 50401, 5, {"hp": 950, "extra_def": 89, "magic_def": 35})
-    assert got[1] == ("BODY", None, 0, {})
+    assert got[0] == (
+        "CAP",
+        50401,
+        5,
+        {"hp": 950, "extra_def": 89, "magic_def": 35},
+        [10737, 10737],
+    )
+    assert got[1] == ("BODY", None, 0, {}, [])
     assert [g[0] for g in got] == [slot for _, slot in EQUIP_SLOTS]
     assert all(g[1] is None for g in got[2:])
     assert read_equipment(FakePm(), HP) is None
@@ -203,3 +213,28 @@ def test_enhancement_raw_values_outside_n_plus_10_read_as_zero():
         pm.write(0x28629F40 + ITEM_ID_OFFSET, struct.pack("<i", 50401))
         pm.write(0x28629F40 + ENHANCE_OFFSET, bytes([raw]))
         assert read_equipment(pm, HP)[0][2] == want, raw
+
+
+def test_inlays_group_by_stone_and_keep_the_first_effect_line(tmp_path):
+    from services.equip_stats import InlayTable
+
+    db = tmp_path / "c.sqlite"
+    con = sqlite3.connect(db)
+    con.executescript(
+        """
+        CREATE TABLE items (id INT, name TEXT);
+        CREATE TABLE compounds (id INT, type TEXT, material_core_id INT, help TEXT);
+        INSERT INTO items VALUES (25929, '巨斧手小真元'), (26651, '信風魂珠');
+        INSERT INTO compounds VALUES
+            (10737, 'ITEM_COMPOUND_EQUIPMENT', 25929, '防禦+27'),
+            (10860, 'ITEM_COMPOUND_EQUIPMENT', 26651, '閃躲+25~70\\n\\n強化失敗將導致裝備毀損消失。'),
+            (1, 'ITEM_COMPOUND_ITEM', 25929, 'not an inlay');
+        """
+    )
+    con.commit()
+    con.close()
+    got = InlayTable(db).inlays([10737, 10860, 10737, 1, 999])
+    assert [(i.item_id, i.name, i.count, i.effect) for i in got] == [
+        (25929, "巨斧手小真元", 2, "防禦+27"),
+        (26651, "信風魂珠", 1, "閃躲+25~70"),
+    ]

@@ -48,7 +48,7 @@ from reader import (
 )
 from services import diagnostics
 from services.api_types import EquipSlot
-from services.equip_stats import enhance_bonus, enhance_extra, to_stats
+from services.equip_stats import enhance_bonus, enhance_extra, inlays, to_stats
 from services.diag_events import ErrorCode
 from services.map_db import all_stage_names
 
@@ -543,8 +543,9 @@ class ReaderWorker(threading.Thread):
                             stats=to_stats(stats),
                             enhance=enhance_bonus(iid, plus) if iid else [],
                             enhance_extra=enhance_extra(iid, plus) if iid else [],
+                            inlays=inlays(sockets),
                         )
-                        for slot, iid, plus, stats in gear
+                        for slot, iid, plus, stats, sockets in gear
                     ]
                 )
         except Exception as exc:

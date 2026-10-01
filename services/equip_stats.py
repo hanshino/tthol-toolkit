@@ -20,7 +20,7 @@ import threading
 from pathlib import Path
 
 from services._paths import bundled
-from services.api_types import ItemStat
+from services.api_types import Inlay, ItemStat
 from services.item_catalog import STAT_COLUMNS
 
 log = logging.getLogger("tthol.equip_stats")
@@ -143,3 +143,66 @@ def enhance_bonus(item_id: int, level: int) -> list[ItemStat]:
 
 def enhance_extra(item_id: int, level: int) -> list[ItemStat]:
     return to_stats(_table.extra(item_id, level))
+
+
+# compounds types that set a stone into gear (weapons / armour, ornaments)
+INLAY_COMPOUND_TYPES = ("ITEM_COMPOUND_EQUIPMENT", "ITEM_COMPOUND_ORNAMENT")
+
+
+class InlayTable:
+    def __init__(self, db_path: Path = DB_PATH) -> None:
+        self._db_path = db_path
+        # compounds.id -> (stone item id, stone name, effect)
+        self._rows: dict[int, tuple[int, str, str]] | None = None
+        self._lock = threading.Lock()
+
+    def _load(self) -> dict[int, tuple[int, str, str]]:
+        try:
+            con = sqlite3.connect(f"file:{self._db_path}?mode=ro", uri=True)
+        except sqlite3.Error as exc:
+            log.error("inlay table unavailable: %s", exc, extra={"cat": "items"})
+            return {}
+        try:
+            con.text_factory = lambda b: b.decode("utf-8", errors="replace")
+            placeholders = ",".join("?" * len(INLAY_COMPOUND_TYPES))
+            rows = con.execute(
+                "SELECT c.id, c.material_core_id, i.name, c.help FROM compounds c"
+                " JOIN items i ON i.id = c.material_core_id"
+                f" WHERE c.type IN ({placeholders})",
+                INLAY_COMPOUND_TYPES,
+            ).fetchall()
+        except sqlite3.Error as exc:
+            log.warning("compounds missing; gear shows no inlays: %s", exc)
+            return {}
+        finally:
+            con.close()
+        # help is "防禦+27" or "閃躲+25~70\n\n強化失敗將導致裝備毀損消失。" (literal \n)
+        return {
+            cid: (core, name, (help_ or "").replace("\\n", "\n").split("\n")[0].strip())
+            for cid, core, name, help_ in rows
+        }
+
+    def inlays(self, compound_ids: list[int]) -> list[Inlay]:
+        """Inlays grouped by stone, in first-socket order; unknown ids skipped."""
+        with self._lock:
+            if self._rows is None:
+                self._rows = self._load()
+            rows = self._rows
+        grouped: dict[int, Inlay] = {}
+        for cid in compound_ids:
+            row = rows.get(cid)
+            if row is None:
+                continue
+            core, name, effect = row
+            if core in grouped:
+                grouped[core].count += 1
+            else:
+                grouped[core] = Inlay(item_id=core, name=name, count=1, effect=effect)
+        return list(grouped.values())
+
+
+_inlays = InlayTable()
+
+
+def inlays(compound_ids: list[int]) -> list[Inlay]:
+    return _inlays.inlays(compound_ids)

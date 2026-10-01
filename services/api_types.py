@@ -122,6 +122,15 @@ class BuffInfo(_Base):
 # ---- Equipment -------------------------------------------------------------
 
 
+class Inlay(_Base):
+    """真元 / 魂石 set into a piece of gear, grouped by kind."""
+
+    item_id: int  # the 真元 / 魂石 item (for its icon and name)
+    name: str
+    count: int
+    effect: str  # compounds.help first line, e.g. 防禦+27 or 閃躲+25~70
+
+
 EquipSlotKey = Literal[
     "CAP",
     "BODY",
@@ -150,6 +159,7 @@ class EquipSlot(_Base):
     # Milestone bonuses unlocked at or below the current level (the tooltip's
     # "(+x)"), on top of `stats` and `enhance`.
     enhance_extra: list[ItemStat] = []
+    inlays: list[Inlay] = []
 
 
 # ---- Avatar (paper-doll head) --------------------------------------------

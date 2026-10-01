@@ -14,7 +14,10 @@ const SLOT_LABEL: Record<EquipSlot['slot'], string> = {
 
 export function BodyTab({ detail, error }: { detail: CharacterDetail | null; error: string | null }) {
   const gear = detail?.equipment ?? [];
-  const meta = useItemMeta(gear.flatMap(g => (g.item_id ? [g.item_id] : [])));
+  // Gear plus the 真元 / 魂石 set into it (for their icons).
+  const meta = useItemMeta(gear.flatMap(g => [
+    ...(g.item_id ? [g.item_id] : []), ...(g.inlays ?? []).map(i => i.item_id),
+  ]));
   const [selected, setSelected] = useState<EquipSlot['slot'] | null>(null);
 
   if (!detail) {
@@ -66,6 +69,7 @@ export function BodyTab({ detail, error }: { detail: CharacterDetail | null; err
       </div>
       <ItemDetail entry={current ? toEntry(current, meta.get(current.item_id!)) : undefined}>
         {current && <GearStats slot={current} />}
+        {current && <GearInlays slot={current} meta={meta} />}
       </ItemDetail>
     </div>
   );
@@ -86,7 +90,10 @@ function GearRow({ slot, meta, selected, onSelect }: {
   }
   const name = meta?.name || slot.name || `#${slot.item_id}`;
   const plus = slot.plus > 0 ? `+${slot.plus}` : '';
-  const sub = [meta?.type_label, meta?.level ? `Lv.${meta.level}` : ''].filter(Boolean).join(' · ');
+  const sockets = (slot.inlays ?? []).reduce((n, i) => n + i.count, 0);
+  const sub = [
+    meta?.type_label, meta?.level ? `Lv.${meta.level}` : '', sockets ? `鑲嵌 ${sockets}` : '',
+  ].filter(Boolean).join(' · ');
   return (
     <button
       type="button" className="body-gear-row" aria-pressed={selected} onClick={onSelect}
@@ -137,6 +144,28 @@ function GearStats({ slot }: { slot: EquipSlot }) {
           );
         })}
       </dl>
+    </div>
+  );
+}
+
+/** 真元 / 魂石 set into the item, one row per kind. */
+function GearInlays({ slot, meta }: { slot: EquipSlot; meta: Map<number, ItemMeta> }) {
+  const inlays = slot.inlays ?? [];
+  if (inlays.length === 0) return null;
+  return (
+    <div className="inv-d-sec">
+      <span className="inv-d-label">鑲嵌</span>
+      <div className="body-inlays">
+        {inlays.map(i => (
+          <div key={i.item_id} className="body-inlay">
+            <span className="inv-row-icon"><ItemIcon name={i.name} meta={meta.get(i.item_id)} size={28} /></span>
+            <span className="inv-row-name">
+              <span>{i.name}{i.count > 1 && <span className="body-count">×{i.count}</span>}</span>
+              <span className="inv-row-sub">{i.effect}{i.count > 1 ? ' / 顆' : ''}</span>
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

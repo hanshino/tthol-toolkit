@@ -1038,6 +1038,20 @@ ITEM_STATS_SIZE = 0x46
 FLAT_STAT_FLAGS = (0, 1)
 
 
+# 真元 / 魂石 inlays: u16 compounds.id per socket, 0 = empty. Sockets fill
+# from the last one backwards (one inlay sits at +0x232, three fill
+# +0x22A..+0x232). Verified 2026-10-01 against the in-game tooltip: two
+# 巨斧手小真元 (防禦+27) on a cap with base 防禦 35 read back as 89.
+INLAY_OFFSETS = (0x226, 0x22A, 0x22E, 0x232)
+
+
+def read_item_inlays(pm, ptr):
+    """compounds.id of each filled socket, in socket order."""
+    raw = pm.read_bytes(ptr + INLAY_OFFSETS[0], INLAY_OFFSETS[-1] - INLAY_OFFSETS[0] + 2)
+    ids = [struct.unpack_from("<H", raw, off - INLAY_OFFSETS[0])[0] for off in INLAY_OFFSETS]
+    return [i for i in ids if i]
+
+
 def read_item_stats(pm, ptr):
     """Non-zero stats of an item instance as {items column: value}."""
     raw = pm.read_bytes(ptr + ITEM_STATS_OFFSET, ITEM_STATS_SIZE)
@@ -1049,10 +1063,11 @@ def read_item_stats(pm, ptr):
 
 
 def read_equipment(pm, hp_addr):
-    """Equipped items as [(slot, item_id or None, plus, stats)] in EQUIP_SLOTS
-    order, or None if hp_addr is not in a CCharObject. plus is the enhancement
-    level (0 when none); stats is read_item_stats() of the instance. A slot whose
-    pointer or id looks wrong (being swapped mid-read) reads as empty."""
+    """Equipped items as [(slot, item_id or None, plus, stats, inlays)] in
+    EQUIP_SLOTS order, or None if hp_addr is not in a CCharObject. plus is the
+    enhancement level (0 when none); stats / inlays are read_item_stats() /
+    read_item_inlays() of the instance. A slot whose pointer or id looks wrong
+    (being swapped mid-read) reads as empty."""
     if not is_char_object(pm, hp_addr):
         return None
     obj = hp_addr - CHAR_OBJ_HP_OFFSET
@@ -1061,21 +1076,22 @@ def read_equipment(pm, hp_addr):
     )
     slots = []
     for (_off, slot), ptr in zip(EQUIP_SLOTS, ptrs):
-        item_id, plus, stats = None, 0, {}
+        item_id, plus, stats, inlays = None, 0, {}, []
         if HEAP_MIN_PTR <= ptr <= 0x7FFFFFFF:
             try:
                 value = pm.read_int(ptr + ITEM_ID_OFFSET)
                 raw = pm.read_bytes(ptr + ENHANCE_OFFSET, 1)[0]
                 stats = read_item_stats(pm, ptr)
+                inlays = read_item_inlays(pm, ptr)
             except Exception:
-                value, raw, stats = 0, 0, {}
+                value, raw, stats, inlays = 0, 0, {}, []
             if 0 < value <= MAX_ITEM_ID:
                 item_id = value
                 if ENHANCE_BIAS < raw <= ENHANCE_BIAS + MAX_ENHANCE:
                     plus = raw - ENHANCE_BIAS
             else:
-                stats = {}
-        slots.append((slot, item_id, plus, stats))
+                stats, inlays = {}, []
+        slots.append((slot, item_id, plus, stats, inlays))
     return slots
 
 
