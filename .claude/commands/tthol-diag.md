@@ -45,7 +45,7 @@ message text is prose and changes between versions.
 | `E_SCAN_FAILED` | A scan raised | `exc`, `hp_value`, `compat_tried` | Usually a read against freed memory |
 | `E_INV_NOT_FOUND` | Inventory pattern not found | `hp_addr`, `scan_ms` | The scan returns an empty list on this path, so the UI shows "no items". An empty inventory and an unscannable one look identical without this code — that is the whole reason it exists |
 | `E_WH_NOT_FOUND` | No warehouse slot array found | `hp_addr`, `inv_range`, `arrays_seen` | The warehouse UI was not open in game; the structure only exists while it is |
-| `E_ITEM_DB` | The bundled item DB did not answer as expected | `exc`, or `unmapped` | ERROR means the `items` query failed and every item renders unnamed — almost always an upstream schema change in `tthol_data` (this is how `items.type` → `type_code`/`type_name` slipped through). WARNING means new item types have no Chinese label; only the 類型 column is affected, and the fix is to regenerate `services/item_types.py` |
+| `E_ITEM_DB` | The bundled item DB did not answer as expected | `exc`, or `unmapped` | ERROR means the `items` query failed and every item renders unnamed — almost always an upstream schema change in `tthol_data`. WARNING means new item types have no Chinese label; only the 類型 column is affected, and the fix is to regenerate `services/item_types.py` |
 | `E_API_5XX` | An endpoint raised | `path`, `method`, `status`, `traceback` | A real backend bug — read the traceback |
 | `E_CLIENT` | A browser-side error | `url`, `stack`, `component`, `ua` | Frontend bug; correlate by timestamp with backend events |
 
@@ -59,7 +59,9 @@ message text is prose and changes between versions.
   `null`, which on its own is indistinguishable from "not logged in" — the
   walk is what separates the two. Confirm in one step: `uv run auto_detect.py`.
   If it finds a character while the chain is dead, the constant has moved for
-  certain. The fix is `/tthol-update-scan`; the user's stopgap is the 目前血量
+  certain. It is compat-blind, so finding nothing does not rule out a logged-in
+  compat character — try both layouts as in step 2 of `/tthol-update-scan`.
+  The fix is `/tthol-update-scan`; the user's stopgap is the 目前血量
   box on the dashboard error, which locates by scan instead.
 - The walk reaches its last hop but `chain_hp` is `null` → the chain resolves
   and the HP failed its sanity bound. Suspect a changed offset rather than a
@@ -114,7 +116,7 @@ raises only the `tthol` logger to DEBUG and resets to INFO on restart.
   `%LOCALAPPDATA%\tthol-reader\logs\events.jsonl` and says so on stderr.
 - Locate exhaustion is reported once, by the retry loop itself
   (`ReaderWorker._report_locate_exhausted`), not by its three callers. If you
-  add another caller, do not re-report — and do not add a bare log line beside
-  it, which is exactly how the initial-locate path went blind.
+  add another caller, do not re-report, and do not substitute a bare log line:
+  only the structured event carries the `code` and snapshot this triage reads.
 - The ring buffer holds 1000 events; `events.jsonl` holds 5 MB × 5 rotations.
   For anything older than that, ask for a bundle taken closer to the incident.

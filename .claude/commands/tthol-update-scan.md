@@ -111,9 +111,9 @@ Replace the 層二 entry's constants and clear the staleness note.
 
 ## Notes
 
-- `deep_pointer_scan.py` no longer exists; `find_stable_chain.py` replaced it.
-  `STATIC_BASE` / `STATIC_OFFSETS` (層一, the session-only chain) were removed
-  from `reader.py` — do not reintroduce them.
+- Do not add a session-only static chain (`STATIC_BASE` / `STATIC_OFFSETS`)
+  to `reader.py`: it breaks on every game restart, which the player HP chain
+  does not.
 - Offsets are struct member offsets, normally `0x00`–`0xFFF`.
 - The chain resolves to the engine charobject, **not** the flat display struct
   the scan locates. HP sits at the last offset; `read_hp_pair_from_chain` uses
