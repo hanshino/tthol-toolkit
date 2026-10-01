@@ -34,11 +34,13 @@ uv run pytest
 
 ## Architecture
 
-**No stable static pointer chain exists.** Heap pointers are ephemeral (`0xFDFDFDFD` after restart). Two approaches locate character data:
+The character struct lives on the heap and moves (`0xFDFDFDFD` after restart), so it is always located by scanning for an HP value and validating the structure around it. The HP value comes from one of three places:
 
-1. **`reader.py`** — Fast scan (~0.4s): scans all memory for a known HP value, validates with structure scoring (>= 0.8 match). `auto_detect.py` imports shared utilities from here.
-2. **`auto_detect.py`** — Auto-detect (~14s): pattern-matches the character struct by checking multiple field constraints (HP/MP ranges, level ratio, combat stat bounds) without any known value.
-3. **`knowledge.json`** — Structure knowledge base defining field offsets relative to HP address (offset 0). Source of truth for the character struct layout.
+1. **Player HP chain** — `reader.PLAYER_HP_CHAIN_BASE` / `PLAYER_HP_CHAIN_OFFSETS` resolve to the engine charobject and yield current HP with no user input; the app's worker then scans for that HP. Fixed for a given game build; a game patch moves the root — re-derive with `/tthol-update-scan`.
+2. **`reader.py`** — Fast scan (~0.4s) for a known HP value (from the chain, or typed by the user), validated with structure scoring (>= 0.8 match). `auto_detect.py` imports shared utilities from here.
+3. **`auto_detect.py`** — Auto-detect (~14s): pattern-matches the character struct by checking multiple field constraints (HP/MP ranges, level ratio, combat stat bounds) without any known value.
+
+**`knowledge.json`** is the structure knowledge base defining field offsets relative to the HP address (offset 0) — the source of truth for the character struct layout.
 
 All character fields are `int32` at 4-byte aligned offsets from the HP base address. See `knowledge.json` for the full offset table.
 

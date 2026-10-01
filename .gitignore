@@ -25,6 +25,7 @@ pointers.json
 # Reverse-engineering / diagnostic scratch scripts (kept locally, not the app)
 _bx_profile.py
 probe_buff.py
+_route_solver.py
 
 # AHK/game scripts
 *.Q
