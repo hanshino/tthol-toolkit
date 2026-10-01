@@ -143,6 +143,10 @@ class EquipSlot(_Base):
     item_id: int | None = None
     name: str | None = None
     plus: int = 0  # enhancement level (+N); 0 when not enhanced
+    # The item's own stats with 真元 inlays applied, read from the instance.
+    stats: list[ItemStat] = []
+    # Bonus of the current enhancement level (strong_formula), on top of `stats`.
+    enhance: list[ItemStat] = []
 
 
 # ---- Avatar (paper-doll head) --------------------------------------------

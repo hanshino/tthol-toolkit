@@ -1060,6 +1060,16 @@ export interface components {
              * @default 0
              */
             plus: number;
+            /**
+             * Stats
+             * @default []
+             */
+            stats: components["schemas"]["ItemStat"][];
+            /**
+             * Enhance
+             * @default []
+             */
+            enhance: components["schemas"]["ItemStat"][];
         };
         /**
          * ErrorInfo

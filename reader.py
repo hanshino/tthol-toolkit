@@ -1005,13 +1005,51 @@ EQUIP_SLOTS = (
 ENHANCE_OFFSET = 0x221
 ENHANCE_BIAS = 10
 MAX_ENHANCE = 20
+# The instance holds the item's stats in items-table column order, int16 each,
+# hp / mp followed by their flag. Values are the item's own stats with 真元
+# inlays applied (enhancement bonuses are not included). Verified against the
+# DB on 33 bag items and against the in-game tooltip.
+ITEM_STATS_OFFSET = 0x1B0
+ITEM_STAT_FIELDS = (
+    # (column, offset from ITEM_STATS_OFFSET)
+    ("hp", 0x00),
+    ("hp_flag", 0x02),
+    ("mp", 0x04),
+    ("mp_flag", 0x06),
+    ("str", 0x08),
+    ("pow", 0x0C),
+    ("vit", 0x10),
+    ("dex", 0x14),
+    ("agi", 0x18),
+    ("wis", 0x1C),
+    ("atk", 0x20),
+    ("matk", 0x22),
+    ("extra_def", 0x24),
+    ("magic_def", 0x26),
+    ("hit", 0x28),
+    ("dodge", 0x2A),
+    ("critical_hit", 0x30),
+    ("run_speed", 0x44),
+)
+ITEM_STATS_SIZE = 0x46
+FLAT_STAT_FLAG = 1  # hp / mp count as a flat bonus only with this flag
+
+
+def read_item_stats(pm, ptr):
+    """Non-zero stats of an item instance as {items column: value}."""
+    raw = pm.read_bytes(ptr + ITEM_STATS_OFFSET, ITEM_STATS_SIZE)
+    vals = {col: struct.unpack_from("<h", raw, off)[0] for col, off in ITEM_STAT_FIELDS}
+    for col in ("hp", "mp"):
+        if vals.pop(f"{col}_flag") != FLAT_STAT_FLAG:
+            vals[col] = 0
+    return {col: v for col, v in vals.items() if v}
 
 
 def read_equipment(pm, hp_addr):
-    """Equipped items as [(slot, item_id or None, plus)] in EQUIP_SLOTS order, or
-    None if hp_addr is not in a CCharObject. plus is the enhancement level (0 when
-    none). A slot whose pointer or id looks wrong (being swapped mid-read) reads
-    as empty."""
+    """Equipped items as [(slot, item_id or None, plus, stats)] in EQUIP_SLOTS
+    order, or None if hp_addr is not in a CCharObject. plus is the enhancement
+    level (0 when none); stats is read_item_stats() of the instance. A slot whose
+    pointer or id looks wrong (being swapped mid-read) reads as empty."""
     if not is_char_object(pm, hp_addr):
         return None
     obj = hp_addr - CHAR_OBJ_HP_OFFSET
@@ -1020,18 +1058,21 @@ def read_equipment(pm, hp_addr):
     )
     slots = []
     for (_off, slot), ptr in zip(EQUIP_SLOTS, ptrs):
-        item_id, plus = None, 0
+        item_id, plus, stats = None, 0, {}
         if HEAP_MIN_PTR <= ptr <= 0x7FFFFFFF:
             try:
                 value = pm.read_int(ptr + ITEM_ID_OFFSET)
                 raw = pm.read_bytes(ptr + ENHANCE_OFFSET, 1)[0]
+                stats = read_item_stats(pm, ptr)
             except Exception:
-                value, raw = 0, 0
+                value, raw, stats = 0, 0, {}
             if 0 < value <= MAX_ITEM_ID:
                 item_id = value
                 if ENHANCE_BIAS < raw <= ENHANCE_BIAS + MAX_ENHANCE:
                     plus = raw - ENHANCE_BIAS
-        slots.append((slot, item_id, plus))
+            else:
+                stats = {}
+        slots.append((slot, item_id, plus, stats))
     return slots
 
 

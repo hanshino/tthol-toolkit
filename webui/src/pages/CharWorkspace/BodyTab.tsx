@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { CharacterDetail, EquipSlot, ItemMeta } from '../../api/types';
+import type { CharacterDetail, EquipSlot, ItemMeta, ItemStat } from '../../api/types';
 import { ItemIcon } from '../../components/items/ItemCells';
 import { ItemDetail } from '../../components/items/ItemDetail';
 import type { Entry } from '../../components/items/entries';
@@ -34,7 +34,7 @@ export function BodyTab({ detail, error }: { detail: CharacterDetail | null; err
 
   const worn = gear.filter(g => g.item_id);
   const current = worn.find(g => g.slot === selected) ?? worn[0];
-  const bonus = sumStats(worn.map(g => meta.get(g.item_id!)));
+  const bonus = sumStats(worn.flatMap(g => [...g.stats, ...g.enhance]));
 
   // Buffs live in the workspace header, so this tab shows stats and worn gear.
   return (
@@ -58,13 +58,15 @@ export function BodyTab({ detail, error }: { detail: CharacterDetail | null; err
           <Panel title="六屬"><Grid pairs={six} /></Panel>
           <Panel title="七戰"><Grid pairs={seven} /></Panel>
           {bonus.length > 0 && (
-            <Panel title={<>裝備加成 <span className="body-note">不含強化</span></>}>
+            <Panel title={<>裝備加成 <span className="body-note">含真元、強化</span></>}>
               <Grid pairs={bonus} signed />
             </Panel>
           )}
         </div>
       </div>
-      <ItemDetail entry={current ? toEntry(current, meta.get(current.item_id!)) : undefined} />
+      <ItemDetail entry={current ? toEntry(current, meta.get(current.item_id!)) : undefined}>
+        {current && <GearStats slot={current} />}
+      </ItemDetail>
     </div>
   );
 }
@@ -100,6 +102,33 @@ function GearRow({ slot, meta, selected, onSelect }: {
   );
 }
 
+/** Stats as the game tooltip shows them: own value (with 真元) then "+x" from enhancement. */
+function GearStats({ slot }: { slot: EquipSlot }) {
+  const enh = new Map(slot.enhance.map(s => [s.label, s.value]));
+  const rows = [
+    ...slot.stats.map(s => ({ label: s.label, value: s.value, plus: enh.get(s.label) ?? 0 })),
+    ...slot.enhance.filter(e => !slot.stats.some(s => s.label === e.label))
+      .map(e => ({ label: e.label, value: 0, plus: e.value })),
+  ];
+  if (rows.length === 0) return null;
+  return (
+    <div className="inv-d-sec">
+      <span className="inv-d-label">屬性{slot.enhance.length > 0 && <span className="body-note">金色為 +{slot.plus} 強化加成</span>}</span>
+      <dl className="inv-stats">
+        {rows.map(r => (
+          <div key={r.label} style={{ display: 'contents' }}>
+            <dt>{r.label}</dt>
+            <dd>
+              {r.value !== 0 && (r.value > 0 ? `+${r.value}` : r.value)}
+              {r.plus !== 0 && <span className="body-plus">+{r.plus}</span>}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function toEntry(slot: EquipSlot, meta: ItemMeta | undefined): Entry {
   return {
     key: slot.slot,
@@ -109,17 +138,16 @@ function toEntry(slot: EquipSlot, meta: ItemMeta | undefined): Entry {
     qty: 1,
     stacks: 1,
     sources: [],
-    meta,
+    // The DB stats are the bare item; GearStats shows the live ones instead.
+    meta: meta && { ...meta, stats: [] },
     category: meta?.category ?? 'gear',
   };
 }
 
-/** Base item stats summed over the worn gear, in first-seen label order. */
-function sumStats(metas: (ItemMeta | undefined)[]): [string, number][] {
+/** Stats summed over the worn gear, in first-seen label order. */
+function sumStats(stats: ItemStat[]): [string, number][] {
   const total = new Map<string, number>();
-  for (const m of metas) {
-    for (const st of m?.stats ?? []) total.set(st.label, (total.get(st.label) ?? 0) + st.value);
-  }
+  for (const st of stats) total.set(st.label, (total.get(st.label) ?? 0) + st.value);
   return [...total].filter(([, v]) => v !== 0);
 }
 

@@ -297,9 +297,9 @@ class CharSession:
         with self._lock:
             self._money = money
 
-    def _on_equipment(self, slots: list[tuple[str, int | None, str | None, int]]) -> None:
+    def _on_equipment(self, slots: list[EquipSlot]) -> None:
         with self._lock:
-            self._equipment = [EquipSlot(slot=s, item_id=i, name=n, plus=p) for s, i, n, p in slots]
+            self._equipment = slots
 
     def _on_appearance(self, appearance: dict) -> None:
         # Read every poll but rarely changes; only rebuild the layers on change.

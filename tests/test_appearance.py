@@ -125,21 +125,69 @@ def test_avatar_none_without_head_art_or_doll_tables(tmp_path):
 
 
 def test_reads_equipment_slots_and_skips_bad_pointers():
-    from reader import ENHANCE_OFFSET, EQUIP_SLOTS, ITEM_ID_OFFSET, read_equipment
+    from reader import (
+        ENHANCE_OFFSET,
+        EQUIP_SLOTS,
+        ITEM_ID_OFFSET,
+        ITEM_STATS_OFFSET,
+        read_equipment,
+    )
 
     pm = FakePm()
     _char(pm)
     cap_off, body_off = EQUIP_SLOTS[0][0], EQUIP_SLOTS[1][0]
-    pm.u32(OBJ + cap_off, 0x28629F40)
-    pm.write(0x28629F40 + ITEM_ID_OFFSET, struct.pack("<i", 50401))
-    pm.write(0x28629F40 + ENHANCE_OFFSET, bytes([15]))  # stored as N + 10
+    inst = 0x28629F40
+    pm.u32(OBJ + cap_off, inst)
+    pm.write(inst + ITEM_ID_OFFSET, struct.pack("<i", 50401))
+    pm.write(inst + ENHANCE_OFFSET, bytes([15]))  # stored as N + 10
+    # hp 950 flat (flag 1), mp 650 with a non-flat flag, def 89, mdef 35
+    pm.write(inst + ITEM_STATS_OFFSET, struct.pack("<hhhh", 950, 1, 650, 2))
+    pm.write(inst + ITEM_STATS_OFFSET + 0x24, struct.pack("<hh", 89, 35))
     pm.u32(OBJ + body_off, 0x00000044)  # not a heap pointer
     got = read_equipment(pm, HP)
-    assert got[0] == ("CAP", 50401, 5)
-    assert got[1] == ("BODY", None, 0)
-    assert [slot for slot, _, _ in got] == [slot for _, slot in EQUIP_SLOTS]
-    assert all(iid is None for _, iid, _ in got[2:])
+    assert got[0] == ("CAP", 50401, 5, {"hp": 950, "extra_def": 89, "magic_def": 35})
+    assert got[1] == ("BODY", None, 0, {})
+    assert [g[0] for g in got] == [slot for _, slot in EQUIP_SLOTS]
+    assert all(g[1] is None for g in got[2:])
     assert read_equipment(FakePm(), HP) is None
+
+
+def _strong_db(path):
+    con = sqlite3.connect(path)
+    con.executescript(
+        """
+        CREATE TABLE items (id INT, strong_equipment INT);
+        CREATE TABLE strong_equipment (id INT, name TEXT, list TEXT);
+        CREATE TABLE strong_formula (id INT, bonus_type TEXT, bonus_value TEXT);
+        INSERT INTO items VALUES (50401, 132), (21514, 0);
+        INSERT INTO strong_formula VALUES
+            (34614, 'ITEM_BONUS_DEF', '8'),
+            (34615, 'ITEM_BONUS_DEF', '10'),
+            (34641, 'ITEM_BONUS_MDEF', '24');
+        """
+    )
+    con.execute(
+        "INSERT INTO strong_equipment VALUES (132, '160~179', ?)",
+        (
+            '{"max":20,"data":[{"common":34614,"level":4},'
+            '{"common":34615,"bonus":34641,"level":5}]}',
+        ),
+    )
+    con.commit()
+    con.close()
+
+
+def test_enhance_bonus_is_the_current_level_row_not_a_running_sum(tmp_path):
+    from services.equip_stats import EnhanceTable, to_stats
+
+    db = tmp_path / "s.sqlite"
+    _strong_db(db)
+    table = EnhanceTable(db)
+    # 160 cap +5 shows 防禦 89+10 in game: only the level-5 common row counts.
+    assert table.bonus(50401, 5) == {"extra_def": 10}
+    assert table.bonus(50401, 0) == {}
+    assert table.bonus(21514, 5) == {}
+    assert [(s.label, s.value) for s in to_stats({"extra_def": 10, "hp": 0})] == [("防禦", 10)]
 
 
 def test_enhancement_raw_values_outside_n_plus_10_read_as_zero():

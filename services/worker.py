@@ -47,6 +47,8 @@ from reader import (
     verify_structure_shifted,
 )
 from services import diagnostics
+from services.api_types import EquipSlot
+from services.equip_stats import enhance_bonus, to_stats
 from services.diag_events import ErrorCode
 from services.map_db import all_stage_names
 
@@ -104,7 +106,7 @@ class ReaderWorker(threading.Thread):
         on_pet_inventory: Callable[[list[tuple[int, int, str]]], None] | None = None,
         on_money: Callable[[int], None] | None = None,
         on_appearance: Callable[[dict], None] | None = None,
-        on_equipment: Callable[[list[tuple[str, int | None, str | None, int]]], None] | None = None,
+        on_equipment: Callable[[list[EquipSlot]], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._pid = pid
@@ -533,8 +535,15 @@ class ReaderWorker(threading.Thread):
             if gear is not None:
                 self._cb_equipment(
                     [
-                        (slot, iid, self._item_db.get(iid) if iid else None, plus)
-                        for slot, iid, plus in gear
+                        EquipSlot(
+                            slot=slot,
+                            item_id=iid,
+                            name=self._item_db.get(iid) if iid else None,
+                            plus=plus,
+                            stats=to_stats(stats),
+                            enhance=enhance_bonus(iid, plus) if iid else [],
+                        )
+                        for slot, iid, plus, stats in gear
                     ]
                 )
         except Exception as exc:
