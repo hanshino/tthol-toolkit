@@ -22,34 +22,33 @@ def _make_worker():
     return w, captured
 
 
-def _raise(_pm):
+def _raise(*_args):
     raise RuntimeError("simulated scan failure")
 
 
 def test_inventory_not_found_still_fires_callback(monkeypatch):
     w, captured = _make_worker()
-    monkeypatch.setattr(worker_mod, "locate_inventory", lambda _pm: None)
-    w._do_inventory_scan(pm=None)
+    monkeypatch.setattr(worker_mod, "read_inventory", lambda _pm, _hp: None)
+    w._do_inventory_scan(pm=None, hp_addr=0)
     assert captured["inv"] == []
 
 
 def test_inventory_error_still_fires_callback(monkeypatch):
     w, captured = _make_worker()
-    monkeypatch.setattr(worker_mod, "locate_inventory", _raise)
-    w._do_inventory_scan(pm=None)
+    monkeypatch.setattr(worker_mod, "read_inventory", _raise)
+    w._do_inventory_scan(pm=None, hp_addr=0)
     assert captured["inv"] == []
 
 
 def test_warehouse_not_found_still_fires_callback(monkeypatch):
     w, captured = _make_worker()
-    monkeypatch.setattr(worker_mod, "locate_inventory", lambda _pm: None)
-    monkeypatch.setattr(worker_mod, "locate_all_slot_arrays", lambda _pm: [])
+    monkeypatch.setattr(worker_mod, "read_warehouse", lambda _pm: None)
     w._do_warehouse_scan(pm=None)
     assert captured["wh"] == []
 
 
 def test_warehouse_error_still_fires_callback(monkeypatch):
     w, captured = _make_worker()
-    monkeypatch.setattr(worker_mod, "locate_inventory", _raise)
+    monkeypatch.setattr(worker_mod, "read_warehouse", _raise)
     w._do_warehouse_scan(pm=None)
     assert captured["wh"] == []

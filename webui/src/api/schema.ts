@@ -731,6 +731,15 @@ export interface components {
             inventory?: components["schemas"]["Item"][] | null;
             /** Warehouse */
             warehouse?: components["schemas"]["Item"][] | null;
+            /** Inventory Updated At */
+            inventory_updated_at?: number | null;
+            /** Warehouse Updated At */
+            warehouse_updated_at?: number | null;
+            /**
+             * Warehouse Open
+             * @default false
+             */
+            warehouse_open: boolean;
             last_error?: components["schemas"]["ErrorInfo"] | null;
         };
         /**

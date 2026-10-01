@@ -64,6 +64,9 @@ class CharSession:
         self._latest_buffs: list[BuffInfo] = []
         self._inv_seq: int = 0
         self._wh_seq: int = 0
+        self._inv_ts: float | None = None
+        self._wh_ts: float | None = None
+        self._wh_open: bool = False
         self._last_error: ErrorInfo | None = None
         self._last_hp: int | None = None
         self._log = diagnostics.bind(pid)
@@ -79,6 +82,7 @@ class CharSession:
             on_warehouse=self._on_wh,
             on_error=self._on_error,
             on_buffs=self._on_buffs,
+            on_warehouse_open=self._on_wh_open,
         )
 
     @property
@@ -188,6 +192,9 @@ class CharSession:
                 buffs=list(self._latest_buffs),
                 inventory=self._latest_inv or None,
                 warehouse=self._latest_wh or None,
+                inventory_updated_at=self._inv_ts,
+                warehouse_updated_at=self._wh_ts,
+                warehouse_open=self._wh_open,
                 last_error=self._last_error,
             )
 
@@ -245,6 +252,7 @@ class CharSession:
                 for iid, qty, name in items
             ]
             self._inv_seq += 1
+            self._inv_ts = time.time()
 
     def _on_wh(self, items: list[tuple[int, int, str]]) -> None:
         with self._lock:
@@ -253,3 +261,8 @@ class CharSession:
                 for iid, qty, name in items
             ]
             self._wh_seq += 1
+            self._wh_ts = time.time()
+
+    def _on_wh_open(self, is_open: bool) -> None:
+        with self._lock:
+            self._wh_open = is_open

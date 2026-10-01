@@ -22,32 +22,28 @@ import pymem
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from reader import (
-    find_inventory_start,
+    WAREHOUSE_COUNT_OFFSET,
     get_display_fields,
     load_item_db,
     load_knowledge,
     load_status_db,
     locate_character,
-    locate_inventory,
     locate_map_name,
+    locate_warehouse,
     read_active_statuses,
     read_all_fields,
     read_character_name,
     read_hp_from_player_chain,
     read_hp_pair_from_chain,
     read_inventory,
+    read_item_container,
+    read_warehouse,
     verify_structure,
     verify_structure_shifted,
 )
 from services import diagnostics
 from services.diag_events import ErrorCode
 from services.map_db import all_stage_names
-from warehouse_scan import (
-    SLOT_SIZE,
-    locate_all_slot_arrays,
-    read_slot_array,
-    walk_back_to_start,
-)
 
 POLL_INTERVAL = 3.0
 FAILURE_THRESHOLD = 3
@@ -99,6 +95,7 @@ class ReaderWorker(threading.Thread):
         on_warehouse: Callable[[list[tuple[int, int, str]]], None],
         on_error: Callable[..., None],
         on_buffs: Callable[[list[tuple[int, str, str]]], None] | None = None,
+        on_warehouse_open: Callable[[bool], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._pid = pid
@@ -108,6 +105,7 @@ class ReaderWorker(threading.Thread):
         self._cb_warehouse = on_warehouse
         self._cb_error = on_error
         self._cb_buffs = on_buffs or (lambda _b: None)
+        self._cb_warehouse_open = on_warehouse_open or (lambda _o: None)
         self._hp_value: int | None = None
         self._offset_filters = None
         self._compat_mode = False
@@ -196,7 +194,7 @@ class ReaderWorker(threading.Thread):
         while not self._stop_event.is_set():
             if self._scan_inventory:
                 self._scan_inventory = False
-                self._do_inventory_scan(pm)
+                self._do_inventory_scan(pm, hp_addr)
 
             if self._scan_warehouse:
                 self._scan_warehouse = False
@@ -268,6 +266,7 @@ class ReaderWorker(threading.Thread):
                     self._cb_buffs(
                         [(g, self._status_db.get(g, f"group {g}"), kind) for g, kind in statuses]
                     )
+                    self._auto_read_items(pm, hp_addr)
 
             except Exception as exc:
                 failure_count += 1
@@ -420,26 +419,23 @@ class ReaderWorker(threading.Thread):
                 )
             return None
 
-    def _do_inventory_scan(self, pm):
+    def _do_inventory_scan(self, pm, hp_addr):
         # Every exit path must call self._cb_inventory(...) so the session's
         # _inv_seq advances and the waiting API request returns promptly.
         # Otherwise a not-found / error path leaves the request blocked for the
         # full INVENTORY_SCAN_TIMEOUT before it 504s.
         try:
-            inv_match = locate_inventory(pm)
-            if inv_match is None:
+            items = read_inventory(pm, hp_addr)
+            if items is None:
                 self._cb_error(
                     "Inventory not found in memory",
                     cat="inventory",
                     code=ErrorCode.E_INV_NOT_FOUND,
-                    detail={"hp_addr": None, "scan_ms": None},
+                    detail={"hp_addr": hex(hp_addr)},
                 )
                 self._cb_inventory([])
                 return
-            inv_start = find_inventory_start(pm, inv_match)
-            items = read_inventory(pm, inv_start)
-            named = [(item_id, qty, self._item_db.get(item_id, "???")) for item_id, qty in items]
-            self._cb_inventory(named)
+            self._cb_inventory(self._name_items(items))
         except Exception as e:
             self._cb_error(
                 f"Inventory scan error: {e}",
@@ -455,44 +451,17 @@ class ReaderWorker(threading.Thread):
         # Otherwise a not-found / error path leaves the request blocked for the
         # full WAREHOUSE_SCAN_TIMEOUT (60s) before it 504s.
         try:
-            # Find inventory range for exclusion
-            inv_match = locate_inventory(pm)
-            if inv_match:
-                inv_start = find_inventory_start(pm, inv_match)
-                inv_end = inv_start + SLOT_SIZE * 60
-            else:
-                inv_start = inv_end = 0
-
-            all_arrays = locate_all_slot_arrays(pm)
-            warehouse_arrays = []
-            for addr in all_arrays:
-                arr_start = walk_back_to_start(pm, addr)
-                if inv_start and inv_start <= arr_start < inv_end:
-                    continue
-                if inv_start and inv_start <= addr < inv_end:
-                    continue
-                warehouse_arrays.append(arr_start)
-            warehouse_arrays = sorted(set(warehouse_arrays))
-
-            if not warehouse_arrays:
+            items = read_warehouse(pm)
+            if items is None:
                 self._cb_error(
                     "Warehouse not found -- open warehouse UI in game first",
                     cat="warehouse",
                     code=ErrorCode.E_WH_NOT_FOUND,
-                    detail={
-                        "hp_addr": None,
-                        "inv_range": [inv_start, inv_end],
-                        "arrays_seen": len(all_arrays),
-                    },
+                    detail={},
                 )
                 self._cb_warehouse([])
                 return
-
-            # Use the largest array (most items = warehouse)
-            best = max(warehouse_arrays, key=lambda a: len(read_slot_array(pm, a)))
-            raw = read_slot_array(pm, best)
-            named = [(item_id, qty, self._item_db.get(item_id, "???")) for item_id, qty, _ in raw]
-            self._cb_warehouse(named)
+            self._cb_warehouse(self._name_items(items))
         except Exception as e:
             self._cb_error(
                 f"Warehouse scan error: {e}",
@@ -501,3 +470,29 @@ class ReaderWorker(threading.Thread):
                 detail={"exc": repr(e), "hp_value": self._hp_value, "compat_tried": []},
             )
             self._cb_warehouse([])
+
+    def _auto_read_items(self, pm, hp_addr):
+        """Refresh bag + warehouse on every poll; both are direct reads (~1 ms).
+
+        The warehouse is read whenever its window is open in game, and the last
+        read is kept after it closes. Failures here are routine (warehouse
+        closed, a container being reallocated mid-read) so they only log at
+        debug; the explicit scan requests still report errors.
+        """
+        try:
+            items = read_inventory(pm, hp_addr)
+            if items is not None:
+                self._cb_inventory(self._name_items(items))
+        except Exception as exc:
+            self._log.debug("auto inventory read failed: %s", exc, extra={"cat": "inventory"})
+        try:
+            data = locate_warehouse(pm)
+            self._cb_warehouse_open(data is not None)
+            if data is not None:
+                items = read_item_container(pm, data + WAREHOUSE_COUNT_OFFSET)
+                self._cb_warehouse(self._name_items(items))
+        except Exception as exc:
+            self._log.debug("auto warehouse read failed: %s", exc, extra={"cat": "warehouse"})
+
+    def _name_items(self, items):
+        return [(item_id, qty, self._item_db.get(item_id, "???")) for item_id, qty in items]

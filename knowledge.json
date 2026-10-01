@@ -87,17 +87,46 @@
     }
   },
   "inventory_structure": {
-    "description": "背包物品陣列，每槽固定 2272 bytes (0x8E0)",
-    "locate_method": "掃描已知物品ID，匹配特徵模式: [8 bytes zeros][item_id][pointer][24+ bytes zeros]",
-    "slot_size": 2272,
-    "slot_fields": {
-      "0": { "name": "物品ID", "type": "int32" },
-      "4": { "name": "物品指針", "type": "pointer", "note": "指向物品實例結構" },
-      "108": { "name": "未知常數", "type": "int32", "sample_value": 1 },
-      "112": { "name": "未知常數", "type": "int32", "sample_value": 4000 }
+    "description": "背包 / 寵物背包：CCharObject 內的 (數量, 指標陣列) 配對，直接讀取，不掃描。HP 位址 = CCharObject + 0x2C8",
+    "locate_method": "以 HP 位址為基準直接讀；驗證 [hp_addr - 0x2C8] == CCharObject vtable (reader.CHAR_OBJ_VTABLE)",
+    "fields_relative_to_hp": {
+      "144": {
+        "name": "銀兩",
+        "type": "int32"
+      },
+      "148": {
+        "name": "背包道具數",
+        "type": "int32"
+      },
+      "152": {
+        "name": "背包陣列",
+        "type": "pointer",
+        "note": "指向 ptr[背包道具數]，每個指向道具實例"
+      },
+      "156": {
+        "name": "寵物背包道具數",
+        "type": "int32"
+      },
+      "160": {
+        "name": "寵物背包陣列",
+        "type": "pointer"
+      }
     },
     "item_instance_fields": {
-      "0": { "name": "數量", "type": "int32" }
+      "5": {
+        "name": "物品ID",
+        "type": "int32",
+        "note": "未對齊"
+      },
+      "16": {
+        "name": "數量",
+        "type": "int32"
+      },
+      "20": {
+        "name": "物品名稱",
+        "type": "big5",
+        "note": "null 結尾，與 items.name 一致"
+      }
     },
     "item_db": {
       "file": "tthol.sqlite",
@@ -105,27 +134,24 @@
       "encoding": "utf-8",
       "key_column": "id",
       "name_column": "name"
-    }
+    },
+    "verified": "2026-10-01 兩個角色，清單與銀兩與遊戲畫面一致；詳見 docs/plans/2026-10-01-inventory-direct-read.md"
   },
   "warehouse_structure": {
-    "description": "倉庫物品陣列，結構與背包完全相同，每槽 2272 bytes (0x8E0)",
-    "lifecycle": "僅在倉庫 UI 開啟時存在於記憶體，關閉即釋放",
-    "locate_method": "需已知一對相鄰道具ID，掃描記憶體中以 0x8E0 間距出現的配對",
-    "slot_size": 2272,
-    "max_slots": 80,
-    "slot_fields": {
-      "0": { "name": "物品ID", "type": "int32" },
-      "4": { "name": "物品指針", "type": "pointer", "note": "指向物品實例結構" }
+    "description": "倉庫：CCharData 內的 (數量, 指標陣列) 配對，道具實例格式與背包相同",
+    "lifecycle": "只有倉庫 UI 開著時才找得到（視窗關閉即釋放；CCharData 本身會留著但沒有穩定路徑）",
+    "locate_method": "[[0x00804B90]+0x128] = CWndManagerEx，其中是子視窗指標列表；找出 [wnd+0x138]-0x1A0 的 vtable 為 CCharData (reader.CHAR_DATA_VTABLE) 的視窗。倉庫視窗在列表中的位置會變",
+    "fields_relative_to_char_data": {
+      "420": {
+        "name": "倉庫道具數",
+        "type": "int32"
+      },
+      "424": {
+        "name": "倉庫陣列",
+        "type": "pointer"
+      }
     },
-    "item_instance_fields": {
-      "0": { "name": "數量", "type": "int32" }
-    },
-    "verified_sample": {
-      "anchor_pair": [26968, 55220],
-      "total_items_found": 54,
-      "array_base": "0x24A8A964",
-      "note": "地址每次開啟倉庫都會變動"
-    }
+    "verified": "2026-10-01 兩個角色（67 格、53 格），與遊戲畫面一致"
   },
   "locate_method": {
     "description": "每次遊戲啟動做一次快速掃描定位（約0.4秒）",

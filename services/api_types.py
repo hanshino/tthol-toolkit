@@ -142,6 +142,11 @@ class CharacterDetail(_Base):
     buffs: list[BuffInfo] = []
     inventory: list[Item] | None = None
     warehouse: list[Item] | None = None
+    # Epoch seconds of the last successful read; None until the first one.
+    inventory_updated_at: float | None = None
+    warehouse_updated_at: float | None = None
+    # True while the warehouse window is open in game (read live each poll).
+    warehouse_open: bool = False
     last_error: ErrorInfo | None = None
 
 

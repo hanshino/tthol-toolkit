@@ -40,9 +40,9 @@ def test_inventory_not_found_carries_its_code_and_still_unblocks_the_request(mon
     inv: list = []
     w = _worker(errors)
     w._cb_inventory = inv.append
-    monkeypatch.setattr(W, "locate_inventory", lambda _pm: None)
+    monkeypatch.setattr(W, "read_inventory", lambda _pm, _hp: None)
 
-    w._do_inventory_scan(pm=object())
+    w._do_inventory_scan(pm=object(), hp_addr=0x1B9559A8)
 
     assert errors and errors[0][1]["code"] == ErrorCode.E_INV_NOT_FOUND
     assert errors[0][1]["cat"] == "inventory"
@@ -57,8 +57,7 @@ def test_warehouse_not_found_carries_its_code(monkeypatch):
     wh: list = []
     w = _worker(errors)
     w._cb_warehouse = wh.append
-    monkeypatch.setattr(W, "locate_inventory", lambda _pm: None)
-    monkeypatch.setattr(W, "locate_all_slot_arrays", lambda _pm: [])
+    monkeypatch.setattr(W, "read_warehouse", lambda _pm: None)
 
     w._do_warehouse_scan(pm=object())
 
@@ -74,11 +73,11 @@ def test_scan_exception_reports_scan_failed(monkeypatch):
     w = _worker(errors)
     w._cb_inventory = inv.append
 
-    def boom(_pm):
+    def boom(_pm, _hp):
         raise RuntimeError("read failed")
 
-    monkeypatch.setattr(W, "locate_inventory", boom)
-    w._do_inventory_scan(pm=object())
+    monkeypatch.setattr(W, "read_inventory", boom)
+    w._do_inventory_scan(pm=object(), hp_addr=0x1B9559A8)
 
     assert errors[0][1]["code"] == ErrorCode.E_SCAN_FAILED
     assert inv == [[]]
