@@ -2,47 +2,48 @@ import { useEffect, useState } from 'react';
 import { get, post } from '../../api/client';
 import { describeError, reportClientError } from '../../diag/report';
 import type { CharacterDetail, Item, SaveSnapshotResult } from '../../api/types';
-import { Panel } from '../../primitives';
+import { LinkDot, Panel, type LinkStatus } from '../../primitives';
 
 type Source = Item['source'];
 
+// The worker re-reads the bag every poll (~3 s); older than this means it stalled.
+const STALE_MS = 10_000;
+
+function clock(ts: number) {
+  return new Date(ts * 1000).toLocaleTimeString('zh-TW', { hour12: false });
+}
+
+function StatusLine({ label, status, text }: { label: string; status: LinkStatus; text: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--tt-dim)' }}>
+      <LinkDot status={status} />
+      <span style={{ color: 'var(--tt-text)', minWidth: 28 }}>{label}</span>
+      <span>{text}</span>
+    </div>
+  );
+}
+
 export function ItemsTab({ pid }: { pid: number }) {
-  const [items, setItems] = useState<Item[]>([]);
+  const [detail, setDetail] = useState<CharacterDetail | null>(null);
   const [filter, setFilter] = useState<Source | 'all'>('all');
-  const [scanning, setScanning] = useState<Source | null>(null);
   const [saving, setSaving] = useState<Source | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    get<CharacterDetail>(`/api/characters/${pid}`)
-      .then(d => {
-        if (cancelled) return;
-        const cached = [...(d.inventory ?? []), ...(d.warehouse ?? [])];
-        if (cached.length) setItems(cached);
-      })
-      .catch(e => {
-        if (cancelled) return;
-        setToast(`讀取失敗：${describeError(e)}`);
-        reportClientError(e, { component: 'ItemsTab' });
-      });
-    return () => { cancelled = true; };
+    const fetchOnce = () => {
+      get<CharacterDetail>(`/api/characters/${pid}`)
+        .then(d => { if (!cancelled) setDetail(d); })
+        .catch(e => {
+          if (cancelled) return;
+          setToast(`讀取失敗：${describeError(e)}`);
+          reportClientError(e, { component: 'ItemsTab' });
+        });
+    };
+    fetchOnce();
+    const id = setInterval(fetchOnce, 3000); // bag + warehouse are re-read by the worker every poll
+    return () => { cancelled = true; clearInterval(id); };
   }, [pid]);
-
-  const scan = async (source: Source) => {
-    if (scanning) return;
-    setScanning(source);
-    setToast(null);
-    try {
-      const fresh = await post<Item[]>(`/api/characters/${pid}/${source}/scan`);
-      setItems(prev => [...prev.filter(i => i.source !== source), ...fresh]);
-    } catch (e) {
-      setToast(`掃描失敗：${describeError(e)}`);
-      reportClientError(e, { component: 'ItemsTab.scan' });
-    } finally {
-      setScanning(null);
-    }
-  };
 
   const saveSnapshot = async (source: Source) => {
     if (saving) return;
@@ -59,30 +60,38 @@ export function ItemsTab({ pid }: { pid: number }) {
     }
   };
 
+  const inventory = detail?.inventory ?? [];
+  const warehouse = detail?.warehouse ?? [];
+  const items = [...inventory, ...warehouse];
   const visible = items.filter(i => filter === 'all' || i.source === filter);
-  const hasInventory = items.some(i => i.source === 'inventory');
-  const hasWarehouse = items.some(i => i.source === 'warehouse');
+
+  const invTs = detail?.inventory_updated_at ?? null;
+  const invFresh = invTs !== null && Date.now() - invTs * 1000 < STALE_MS;
+  const invStatus: LinkStatus = invFresh ? 'ok' : 'weak';
+  const invText = invTs === null
+    ? '等待角色定位後自動讀取…'
+    : invFresh ? `自動更新中 · ${clock(invTs)}` : `暫停更新 · 最後讀取 ${clock(invTs)}`;
+
+  const whTs = detail?.warehouse_updated_at ?? null;
+  const whOpen = detail?.warehouse_open ?? false;
+  const whStatus: LinkStatus = whOpen ? 'ok' : 'weak';
+  const whText = whOpen
+    ? `倉庫開啟中 · 自動更新${whTs !== null ? ` · ${clock(whTs)}` : ''}`
+    : whTs === null
+      ? '尚未讀取 — 在遊戲中開啟倉庫即可自動讀取'
+      : `倉庫已關閉 · 顯示 ${clock(whTs)} 的內容`;
+
   return (
     <Panel title="行囊 / 庫房">
+      <div style={{ display: 'grid', gap: 4, marginBottom: 12 }}>
+        <StatusLine label="行囊" status={invStatus} text={invText} />
+        <StatusLine label="庫房" status={whStatus} text={whText} />
+      </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        <button
-          className="is-primary"
-          onClick={() => scan('inventory')}
-          disabled={scanning !== null}
-        >
-          {scanning === 'inventory' ? '掃描中…' : '掃描行囊'}
-        </button>
-        <button
-          className="is-primary"
-          onClick={() => scan('warehouse')}
-          disabled={scanning !== null}
-        >
-          {scanning === 'warehouse' ? '掃描中…' : '掃描庫房'}
-        </button>
         <button
           className="is-ghost"
           onClick={() => saveSnapshot('inventory')}
-          disabled={!hasInventory || saving !== null}
+          disabled={inventory.length === 0 || saving !== null}
           title="將目前行囊內容存入留影"
         >
           {saving === 'inventory' ? '保存中…' : '↧ 留影身'}
@@ -90,7 +99,7 @@ export function ItemsTab({ pid }: { pid: number }) {
         <button
           className="is-ghost"
           onClick={() => saveSnapshot('warehouse')}
-          disabled={!hasWarehouse || saving !== null}
+          disabled={warehouse.length === 0 || saving !== null}
           title="將目前庫房內容存入留影"
         >
           {saving === 'warehouse' ? '保存中…' : '↧ 留影庫'}
@@ -114,15 +123,19 @@ export function ItemsTab({ pid }: { pid: number }) {
         }}>{toast}</div>
       )}
       <div style={{ display: 'grid', gap: 4 }}>
-        {visible.map(i => (
-          <div key={`${i.source}-${i.item_id}`} style={{ display: 'flex', justifyContent: 'space-between', padding: 6, borderBottom: '1px solid var(--tt-line-soft)' }}>
+        {visible.map((i, idx) => (
+          // The same item can fill several slots (e.g. four stacks of one potion),
+          // so item_id alone is not a unique key.
+          <div key={`${i.source}-${idx}-${i.item_id}`} style={{ display: 'flex', justifyContent: 'space-between', padding: 6, borderBottom: '1px solid var(--tt-line-soft)' }}>
             <span>{i.name}</span>
             <span style={{ fontFamily: 'var(--tt-font-mono)', color: 'var(--tt-dim)' }}>×{i.quantity}</span>
           </div>
         ))}
         {visible.length === 0 && (
           <div style={{ color: 'var(--tt-mute)', fontSize: 12, padding: 12 }}>
-            尚無資料 — 點擊上方「掃描行囊」或「掃描庫房」開始
+            {filter === 'warehouse' || (filter === 'all' && invTs === null)
+              ? '尚無資料 — 角色定位後會自動讀取行囊；開啟遊戲中的倉庫即可讀取庫房'
+              : '沒有道具'}
           </div>
         )}
       </div>

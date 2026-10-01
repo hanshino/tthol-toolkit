@@ -34,7 +34,7 @@ uv run auto_detect.py
 uv run auto_detect.py --loop
 
 # Warehouse scan (warehouse UI must be open in game)
-uv run warehouse_scan.py <current_hp>
+uv run warehouse_scan.py
 
 # Full test suite
 uv run pytest
@@ -53,14 +53,14 @@ uv run ruff format --check .
 ## High-level architecture
 
 - `knowledge.json` is the source of truth for the game memory layout. Character field offsets are defined relative to the HP base address, and inventory / warehouse slot structure metadata also lives there.
-- `reader.py` is the core memory-access module. It owns memory-region enumeration, character location / validation, field reads, inventory scanning, item-name lookup, and the reusable helpers imported by other entry points.
+- `reader.py` is the core memory-access module. It owns memory-region enumeration, character location / validation, field reads, inventory / warehouse reads, item-name lookup, and the reusable helpers imported by other entry points.
 - Character location is a two-step flow inside `services/worker.py`: `read_hp_from_player_chain()` reads the current HP from a stable pointer chain, then `locate_character()` scans memory for the flat struct. Manual HP entry is the fallback when the chain does not work.
 - `auto_detect.py` is a separate slower scanner that does not need a known HP value. It pattern-matches a plausible character struct directly from memory using multiple field constraints.
 - `app.py` is the only entry point: PyInstaller bundles it as `tthol-reader.exe`. It starts uvicorn in a daemon thread serving FastAPI from `services/api/`, then opens a pywebview window pointed at the local server. In dev mode (`--dev`) the window targets the Vite dev server on :5173 instead of the bundled `webui/dist`. There is no separate splash or update-check stage — double-clicking the exe goes straight into the app.
 - `services/worker_manager.py` owns one `ReaderWorker` per detected `tthola.dat` PID, plus the tick loop that publishes a `WorldSnapshot` every 1.5s into the WebSocket pubsub at `/ws/world`. The frontend reconciles state from `GET /api/world` (initial) + `/ws/world` (live).
 - `services/worker.py` is the per-character polling thread. It owns the connection / waiting / located / read-error / rescanning state machine and performs on-demand inventory + warehouse scans. Locate retries are bounded (`LOCATE_MAX_RETRIES = 10`); after the cap the worker exits and the React UI's "↻ 重偵" button calls `/api/characters/{pid}/rescan` to rebuild the session.
 - Snapshot persistence is in `services/snapshot_db.py`, backed by `%APPDATA%\御心鑒\snapshots.db` (with one-shot migration from a legacy `tthol_inventory.db` in the install root). Both the Treasury page and the Snapshots page read from that DB.
-- `warehouse_scan.py` reuses the inventory-slot pattern matcher but finds all candidate slot arrays, excludes the known inventory range, and treats the largest remaining array as the warehouse. Warehouse data only exists while the warehouse UI is open in game.
+- Inventory and warehouse are read directly, with no memory scan. The located HP struct sits inside the engine's `CCharObject` (`hp_addr - 0x2C8`), which holds item containers as (count, pointer-array) pairs: `reader.read_inventory(pm, hp_addr)`. The warehouse is a `CCharData` reached through the open warehouse window in the window-manager list: `reader.read_warehouse(pm)`, which returns `None` while the warehouse UI is closed. `warehouse_scan.py` is a CLI over it.
 - `webui/` is a Vite + React + TypeScript SPA. Types in `webui/src/api/schema.ts` are generated from FastAPI's `/openapi.json` via `scripts/gen_openapi.py`; do not hand-edit them.
 
 ## Key conventions

@@ -57,7 +57,6 @@ hiddenimports = [
     "win32process",
     # Local scripts imported by services.worker via top-level names
     "reader",
-    "warehouse_scan",
     "auto_detect",
 ]
 

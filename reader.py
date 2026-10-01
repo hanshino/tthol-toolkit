@@ -660,8 +660,37 @@ def format_status(fields_data, char_name="", map_name=""):
 # ============================================================
 # Inventory
 # ============================================================
-INVENTORY_SLOT_SIZE = 2272  # 0x8E0 bytes per slot
-MAX_INVENTORY_SLOTS = 60
+# The HP-based char struct lives inside the engine's CCharObject (MSVC RTTI
+# name), which holds the item containers as (count, pointer-array) pairs. Each
+# array entry points to an item instance. No memory scan is needed once hp_addr
+# is known. See docs/plans/2026-10-01-inventory-direct-read.md.
+# Vtables are fixed for a given tthola.dat build; re-derive from RTTI after a
+# client patch (procedure in docs/plans/2026-10-01-equipment-reading-investigation.md).
+CHAR_OBJ_VTABLE = 0x005F5DC4  # CCharObject
+CHAR_DATA_VTABLE = 0x005F99E0  # CCharData (holds the warehouse items)
+CHAR_OBJ_HP_OFFSET = 0x2C8  # hp_addr == CCharObject + 0x2C8
+
+MONEY_OFFSET = 0x90  # int32, relative to hp_addr
+INVENTORY_COUNT_OFFSET = 0x94  # int32 count, followed by ptr -> item ptr[count]
+PET_INVENTORY_COUNT_OFFSET = 0x9C
+
+ITEM_ID_OFFSET = 0x05  # int32, unaligned, in the item instance
+ITEM_QTY_OFFSET = 0x10  # int32
+MAX_CONTAINER_ITEMS = 500  # sanity bound on a container count
+MAX_ITEM_ID = 99999  # items.id tops out in the 5-digit range
+
+# Warehouse: only exists while the warehouse window is open. The window manager
+# (first hop of the player HP chain) holds a list of child windows; the
+# warehouse window's +0x138 points 0x1A0 into a CCharData whose
+# +0x1A4/+0x1A8 is the (count, array) pair. Its index in the list varies.
+WINDOW_MANAGER_OFFSET = 0x128  # [PLAYER_HP_CHAIN_BASE] + 0x128 -> CWndManagerEx
+WINDOW_LIST_START = 0x24  # child-window pointers start here
+WINDOW_LIST_MAX = 256  # observed ~90 entries; read in chunks, stop at unmapped memory
+WINDOW_LIST_CHUNK = 64
+HEAP_MIN_PTR = 0x01000000  # pointer floor; windows live as low as 0x04xxxxxx, below HEAP_MIN_ADDR
+WAREHOUSE_WND_DATA_OFFSET = 0x138
+WAREHOUSE_DATA_DELTA = 0x1A0  # [wnd+0x138] == CCharData + 0x1A0
+WAREHOUSE_COUNT_OFFSET = 0x1A4  # relative to CCharData
 
 
 def load_item_db():
@@ -791,104 +820,109 @@ def load_status_db():
             conn.close()
 
 
-def locate_inventory(pm):
-    """Locate inventory array by pattern-matching the slot structure.
-    Pattern: [8 zero bytes][item_id 1000-65535][valid pointer][24 zero bytes]
-    Verified by checking the next slot at +2272 bytes has the same pattern."""
-    regions = get_memory_regions(pm.process_handle)
-    zero8 = b"\x00" * 8
-    zero24 = b"\x00" * 24
+def _read_u32(pm, addr):
+    return struct.unpack("<I", pm.read_bytes(addr, 4))[0]
 
-    for base, size in regions:
-        if size < INVENTORY_SLOT_SIZE * 2:
+
+def read_item_container(pm, count_addr):
+    """Read a (count, pointer-array) item container. Returns [(item_id, qty)].
+
+    count_addr holds the int32 count; the next dword points to an array of
+    `count` item-instance pointers. Raises ValueError on an implausible count or
+    array pointer. A single unreadable or implausible entry (the game may be
+    reallocating the container mid-read) is skipped rather than failing the list.
+    """
+    count = pm.read_int(count_addr)
+    if not 0 <= count <= MAX_CONTAINER_ITEMS:
+        raise ValueError(f"implausible item count {count} at 0x{count_addr:08X}")
+    if count == 0:
+        return []
+    arr = _read_u32(pm, count_addr + 4)
+    if not HEAP_MIN_PTR <= arr <= 0x7FFFFFFF:
+        raise ValueError(f"implausible item array pointer 0x{arr:08X}")
+    ptrs = struct.unpack(f"<{count}I", pm.read_bytes(arr, 4 * count))
+    items = []
+    for ptr in ptrs:
+        if not HEAP_MIN_PTR <= ptr <= 0x7FFFFFFF:
             continue
         try:
-            buffer = pm.read_bytes(base, size)
+            item_id = struct.unpack("<i", pm.read_bytes(ptr + ITEM_ID_OFFSET, 4))[0]
+            qty = pm.read_int(ptr + ITEM_QTY_OFFSET)
         except Exception:
             continue
+        if 0 < item_id <= MAX_ITEM_ID:
+            items.append((item_id, qty))
+    return items
 
-        # Scan for the pattern at 4-byte alignment
-        for pos in range(8, len(buffer) - INVENTORY_SLOT_SIZE - 32, 4):
-            # Quick check: preceded by 8 zero bytes
-            if buffer[pos - 8 : pos] != zero8:
-                continue
-            # Read item_id candidate
-            item_id = struct.unpack("<i", buffer[pos : pos + 4])[0]
-            if not (1000 <= item_id <= 65535):
-                continue
-            # Check valid pointer at +4
-            ptr = struct.unpack("<I", buffer[pos + 4 : pos + 8])[0]
-            if not (0x01000000 <= ptr <= 0x7FFFFFFF):
-                continue
-            # Check 24 zero bytes after pointer
-            if buffer[pos + 8 : pos + 32] != zero24:
-                continue
-            # Verify next slot at +SLOT_SIZE
-            ns = pos + INVENTORY_SLOT_SIZE
-            if ns + 32 > len(buffer):
-                continue
-            next_id = struct.unpack("<i", buffer[ns : ns + 4])[0]
-            if not (1000 <= next_id <= 65535):
-                continue
-            next_ptr = struct.unpack("<I", buffer[ns + 4 : ns + 8])[0]
-            if not (0x01000000 <= next_ptr <= 0x7FFFFFFF):
-                continue
-            if buffer[ns + 8 : ns + 32] != zero24:
-                continue
-            return base + pos
 
+def is_char_object(pm, hp_addr):
+    """True when hp_addr sits at the expected offset inside a CCharObject."""
+    try:
+        return _read_u32(pm, hp_addr - CHAR_OBJ_HP_OFFSET) == CHAR_OBJ_VTABLE
+    except Exception:
+        return False
+
+
+def read_inventory(pm, hp_addr):
+    """Bag contents as [(item_id, qty)], or None if hp_addr is not in a CCharObject."""
+    if not is_char_object(pm, hp_addr):
+        return None
+    return read_item_container(pm, hp_addr + INVENTORY_COUNT_OFFSET)
+
+
+def read_pet_inventory(pm, hp_addr):
+    """Pet bag contents as [(item_id, qty)], or None if hp_addr is not in a CCharObject."""
+    if not is_char_object(pm, hp_addr):
+        return None
+    return read_item_container(pm, hp_addr + PET_INVENTORY_COUNT_OFFSET)
+
+
+def read_money(pm, hp_addr):
+    """Carried money (銀兩), or None if hp_addr is not in a CCharObject."""
+    if not is_char_object(pm, hp_addr):
+        return None
+    return pm.read_int(hp_addr + MONEY_OFFSET)
+
+
+def _window_list(pm):
+    """Child-window pointers of the window manager; empty when unreachable (not logged in)."""
+    try:
+        wm = _read_u32(pm, _read_u32(pm, PLAYER_HP_CHAIN_BASE) + WINDOW_MANAGER_OFFSET)
+    except Exception:
+        return []
+    if not HEAP_MIN_PTR <= wm <= 0x7FFFFFFF:
+        return []
+    windows = []
+    for i in range(0, WINDOW_LIST_MAX, WINDOW_LIST_CHUNK):
+        addr = wm + WINDOW_LIST_START + 4 * i
+        try:
+            chunk = pm.read_bytes(addr, 4 * WINDOW_LIST_CHUNK)
+        except Exception:
+            break
+        windows.extend(struct.unpack(f"<{WINDOW_LIST_CHUNK}I", chunk))
+    return windows
+
+
+def locate_warehouse(pm):
+    """Address of the warehouse CCharData, or None when the warehouse window is closed."""
+    for wnd in _window_list(pm):
+        if not HEAP_MIN_PTR <= wnd <= 0x7FFFFFFF:
+            continue
+        try:
+            data = _read_u32(pm, wnd + WAREHOUSE_WND_DATA_OFFSET) - WAREHOUSE_DATA_DELTA
+            if data >= HEAP_MIN_PTR and _read_u32(pm, data) == CHAR_DATA_VTABLE:
+                return data
+        except Exception:
+            continue
     return None
 
 
-def find_inventory_start(pm, first_match_addr):
-    """Walk backwards from a matched slot to find the first inventory slot."""
-    addr = first_match_addr
-    while True:
-        prev = addr - INVENTORY_SLOT_SIZE
-        try:
-            item_id = pm.read_int(prev)
-            if 1000 <= item_id <= 65535:
-                # Verify pattern: preceded by zeros, has valid pointer
-                ptr = struct.unpack("<I", pm.read_bytes(prev + 4, 4))[0]
-                if 0x01000000 <= ptr <= 0x7FFFFFFF:
-                    addr = prev
-                    continue
-        except Exception:
-            pass
-        break
-    return addr
-
-
-def read_inventory(pm, inv_base):
-    """Read all inventory slots. Returns list of (item_id, quantity)."""
-    items = []
-    empty_streak = 0
-    for i in range(MAX_INVENTORY_SLOTS):
-        addr = inv_base + i * INVENTORY_SLOT_SIZE
-        try:
-            item_id = pm.read_int(addr)
-        except Exception:
-            break
-
-        if item_id == 0:
-            empty_streak += 1
-            if empty_streak > 3:
-                break
-            continue
-
-        if item_id < 0 or item_id > 65535:
-            break
-
-        empty_streak = 0
-        # Follow pointer to read quantity
-        try:
-            ptr = struct.unpack("<I", pm.read_bytes(addr + 4, 4))[0]
-            qty = pm.read_int(ptr)
-        except Exception:
-            qty = -1
-
-        items.append((item_id, qty))
-    return items
+def read_warehouse(pm):
+    """Warehouse contents as [(item_id, qty)], or None when the window is closed."""
+    data = locate_warehouse(pm)
+    if data is None:
+        return None
+    return read_item_container(pm, data + WAREHOUSE_COUNT_OFFSET)
 
 
 def format_inventory(items, item_db):
@@ -985,18 +1019,11 @@ def main():
         if not item_db:
             print("  [!] Item DB (tthol.sqlite) not found, showing IDs only")
 
-        print("Locating inventory...")
-        t0 = time.time()
-        inv_base = locate_inventory(pm)
-        if inv_base is None:
-            print("[X] Cannot locate inventory array")
+        items = read_inventory(pm, hp_addr)
+        if items is None:
+            print("[X] Located struct is not inside a CCharObject; cannot read inventory")
             return
-
-        inv_start = find_inventory_start(pm, inv_base)
-        elapsed = time.time() - t0
-        print(f"[OK] Inventory at 0x{inv_start:08X} ({elapsed:.2f}s)\n")
-
-        items = read_inventory(pm, inv_start)
+        print(f"Money: {read_money(pm, hp_addr)}\n")
         print(format_inventory(items, item_db))
 
     # Loop mode
