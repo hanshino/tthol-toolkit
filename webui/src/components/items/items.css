@@ -189,3 +189,10 @@ button.tr-row:focus-visible { outline: 1px solid var(--tt-gold); outline-offset:
 @media (max-width: 900px) {
   .tr-split { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Character name that jumps to that character's 行囊 (帳房 / 留影). */
+button.tr-holder-link {
+  padding: 0; background: transparent; border: 0; letter-spacing: 0;
+  font: inherit; color: var(--tt-gold); text-align: left; cursor: pointer;
+}
+button.tr-holder-link:hover:not(:disabled) { background: transparent; text-decoration: underline; }
