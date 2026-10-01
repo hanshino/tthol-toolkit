@@ -107,3 +107,102 @@ def warps_from_stage(stage_id: int) -> list[dict]:
             seen.add(key)
             out.append(dict(r))
         return out
+
+
+# ---- Minimap -------------------------------------------------------------
+# Every minimap coordinate is a map pixel with a top-left origin: the space of
+# map_images, map_placements.raw_x/raw_y and the player's pixel position
+# (reader HP+636/+640). map_placements.tile_y is bottom-origin, so it is not used.
+
+
+def minimap_base(stage_id: int) -> dict | None:
+    """Stage name plus map pixel size and image row; None for an unknown stage."""
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT s.id AS stage_id, s.name AS name,
+                   i.url AS url, i.origin AS origin, i.tile_px AS tile_px,
+                   COALESCE(i.map_w_tiles, d.width) AS w_tiles,
+                   COALESCE(i.map_h_tiles, d.height) AS h_tiles
+            FROM stages s
+            LEFT JOIN map_images i ON i.stage_id = s.id
+            LEFT JOIN map_dims d ON d.stage_id = s.id
+            WHERE s.id = ?
+            """,
+            (stage_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def minimap_warps(stage_id: int) -> list[dict]:
+    """One entry per walk-on warp zone: its centroid and every destination.
+
+    A zone is the set of `arrival` points sharing an event tag; map_warps
+    `map_event` rows say where that tag's script sends the player. Zones whose
+    script does something else (traps, dialogue) have no warp row and are left
+    out. Auto (`mpc_sec3`) warps carry no point and cannot be placed.
+    """
+    with _connect() as con:
+        points = con.execute(
+            """
+            SELECT event_tag, AVG(raw_x) AS x, AVG(raw_y) AS y
+            FROM map_placements
+            WHERE stage_id = ? AND category = 'arrival' AND in_bounds = 1
+              AND event_tag IS NOT NULL
+            GROUP BY event_tag
+            """,
+            (stage_id,),
+        ).fetchall()
+        dests = con.execute(
+            """
+            SELECT DISTINCT w.event_tag AS event_tag, w.dst_stage_id AS stage_id, s.name AS name
+            FROM map_warps w
+            LEFT JOIN stages s ON s.id = w.dst_stage_id
+            WHERE w.src_stage_id = ? AND w.warp_kind = 'map_event'
+            ORDER BY w.dst_stage_id
+            """,
+            (stage_id,),
+        ).fetchall()
+    by_tag: dict[int, list[dict]] = {}
+    for d in dests:
+        by_tag.setdefault(d["event_tag"], []).append(
+            {"stage_id": d["stage_id"], "name": d["name"] or ""}
+        )
+    return [
+        {"x": round(p["x"]), "y": round(p["y"]), "destinations": by_tag[p["event_tag"]]}
+        for p in points
+        if p["event_tag"] in by_tag
+    ]
+
+
+def minimap_npcs(stage_id: int) -> list[dict]:
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT p.npc_id AS npc_id, p.raw_x AS x, p.raw_y AS y, n.name AS name
+            FROM map_placements p
+            LEFT JOIN npc n ON n.id = p.npc_id
+            WHERE p.stage_id = ? AND p.category = 'npc' AND p.in_bounds = 1
+            ORDER BY p.record_idx
+            """,
+            (stage_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def minimap_spawns(stage_id: int) -> list[dict]:
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT p.npc_id AS npc_id, p.raw_x AS x, p.raw_y AS y,
+                   COALESCE(n.name, m.name) AS name,
+                   COALESCE(n.level, m.level) AS level
+            FROM map_placements p
+            LEFT JOIN npc n ON n.id = p.npc_id
+            LEFT JOIN monsters m ON m.id = p.npc_id
+            WHERE p.stage_id = ? AND p.category = 'spawn' AND p.in_bounds = 1
+            ORDER BY p.record_idx
+            """,
+            (stage_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]

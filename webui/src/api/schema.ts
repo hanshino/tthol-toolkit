@@ -421,6 +421,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maps/{stage_id}/minimap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Minimap */
+        get: operations["minimap_api_maps__stage_id__minimap_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maps/{stage_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Minimap Image */
+        get: operations["minimap_image_api_maps__stage_id__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items": {
         parameters: {
             query?: never;
@@ -430,6 +464,23 @@ export interface paths {
         };
         /** Items By Id */
         get: operations["items_by_id_api_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/items/{item_id}/icon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Item Icon */
+        get: operations["item_icon_api_items__item_id__icon_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1083,6 +1134,68 @@ export interface components {
             /** Dst Tag */
             dst_tag?: number | null;
         };
+        /** Minimap */
+        Minimap: {
+            stage: components["schemas"]["StageInfo"];
+            /** Width Px */
+            width_px: number;
+            /** Height Px */
+            height_px: number;
+            /** Tile Px */
+            tile_px: number;
+            /** Image Url */
+            image_url?: string | null;
+            /** Image Origin */
+            image_origin?: string | null;
+            /**
+             * Warps
+             * @default []
+             */
+            warps: components["schemas"]["MinimapWarp"][];
+            /**
+             * Npcs
+             * @default []
+             */
+            npcs: components["schemas"]["MinimapNpc"][];
+            /**
+             * Spawns
+             * @default []
+             */
+            spawns: components["schemas"]["MinimapSpawn"][];
+        };
+        /** MinimapNpc */
+        MinimapNpc: {
+            /** Npc Id */
+            npc_id: number;
+            /** Name */
+            name?: string | null;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** MinimapSpawn */
+        MinimapSpawn: {
+            /** Npc Id */
+            npc_id: number;
+            /** Name */
+            name?: string | null;
+            /** Level */
+            level?: number | null;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** MinimapWarp */
+        MinimapWarp: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Destinations */
+            destinations: components["schemas"]["StageInfo"][];
+        };
         /** OkResponse */
         OkResponse: {
             /** Ok */
@@ -1094,10 +1207,16 @@ export interface components {
         Position: {
             /** Map Name */
             map_name?: string | null;
+            /** Stage Id */
+            stage_id?: number | null;
             /** X */
             x: number;
             /** Y */
             y: number;
+            /** Px */
+            px?: number | null;
+            /** Py */
+            py?: number | null;
         };
         /** RelocateRequest */
         RelocateRequest: {
@@ -2050,6 +2169,79 @@ export interface operations {
             };
         };
     };
+    minimap_api_maps__stage_id__minimap_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stage_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Minimap"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    minimap_image_api_maps__stage_id__image_get: {
+        parameters: {
+            query?: {
+                /** @description Longest side in px, one of (512, 1024, 2048) */
+                size?: number;
+            };
+            header?: never;
+            path: {
+                stage_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/webp": unknown;
+                };
+            };
+            /** @description No image available */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     items_by_id_api_items_get: {
         parameters: {
             query: {
@@ -2070,6 +2262,45 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ItemMeta"][];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    item_icon_api_items__item_id__icon_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description No icon available */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

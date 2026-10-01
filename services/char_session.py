@@ -26,6 +26,7 @@ from services.worker import ReaderWorker
 _FIELD_MAP: dict[str, str] = {
     "角色名稱": "name",
     "地圖名稱": "map_name",
+    "地圖ID": "stage_id",
     "等級": "level",
     "血量": "hp",
     "最大血量": "hp_max",
@@ -35,6 +36,8 @@ _FIELD_MAP: dict[str, str] = {
     "最大負重": "weight_max",
     "X座標": "x",
     "Y座標": "y",
+    "X像素": "px",
+    "Y像素": "py",
     "外功": "waigong",
     "內力": "neili",
     "根骨": "genggu",
@@ -50,6 +53,20 @@ _FIELD_MAP: dict[str, str] = {
     "閃躲": "shanduo",
     "魅力值": "charm",
 }
+
+
+def _position(s: dict) -> Position:
+    # Right after a map change the tile pair reads -1 until the first step and
+    # the pixel pair is stale, so there is no usable minimap position yet.
+    placed = s.get("x", -1) >= 0 and s.get("y", -1) >= 0
+    return Position(
+        map_name=s.get("map_name"),
+        stage_id=s.get("stage_id"),
+        x=s.get("x", 0),
+        y=s.get("y", 0),
+        px=s.get("px") if placed else None,
+        py=s.get("py") if placed else None,
+    )
 
 
 class CharSession:
@@ -153,7 +170,7 @@ class CharSession:
                     weight=s.get("weight", 0),
                     weight_max=s.get("weight_max", 0),
                 ),
-                position=Position(map_name=s.get("map_name"), x=s.get("x", 0), y=s.get("y", 0)),
+                position=_position(s),
                 autoclick=AutoClickStatus(running=False),
                 buffs=list(self._latest_buffs),
                 last_error=self._last_error,
@@ -191,7 +208,7 @@ class CharSession:
                     weight=s.get("weight", 0),
                     weight_max=s.get("weight_max", 0),
                 ),
-                position=Position(map_name=s.get("map_name"), x=s.get("x", 0), y=s.get("y", 0)),
+                position=_position(s),
                 autoclick=AutoClickStatus(running=False),
                 buffs=list(self._latest_buffs),
                 inventory=self._latest_inv or None,

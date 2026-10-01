@@ -42,7 +42,9 @@
       "92":  { "name": "命中", "type": "int32", "sample_value": 656 },
       "96":  { "name": "閃躲", "type": "int32", "sample_value": 309 },
       "416": { "name": "X座標", "type": "int32", "sample_value": 54 },
-      "420": { "name": "Y座標", "type": "int32", "sample_value": 127 }
+      "420": { "name": "Y座標", "type": "int32", "sample_value": 127, "note": "416/420 = tile x/y, top-left origin; -1 after a map change until the first step" },
+      "636": { "name": "X像素", "type": "int32", "sample_value": 2082, "note": "map pixel x, same space as map_placements.raw_x / map_images" },
+      "640": { "name": "Y像素", "type": "int32", "sample_value": 375, "note": "map pixel y, top-left origin (raw_y space, not tile_y)" }
     }
   },
   "buff_structure": {

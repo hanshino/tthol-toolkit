@@ -196,6 +196,7 @@ class ReaderWorker(threading.Thread):
         failure_count = 0
         struct_fields = self._knowledge["character_structure"]["fields"]
         map_name = ""
+        stage_id = None
         map_tick = 0
 
         while not self._stop_event.is_set():
@@ -250,6 +251,7 @@ class ReaderWorker(threading.Thread):
                         char_name = read_character_name(pm, hp_addr)
                         failure_count = 0
                         map_name = ""
+                        stage_id = None
                         map_tick = 0
                 else:
                     failure_count = 0
@@ -257,9 +259,11 @@ class ReaderWorker(threading.Thread):
                     if stage is not None and (
                         self._stage_names is None or stage[1] in self._stage_names
                     ):
-                        map_name = stage[1]
+                        stage_id, map_name = stage
                     elif map_tick % MAP_RESCAN_EVERY == 0 or not map_name:
-                        # CStage global unreachable (e.g. moved by a client patch)
+                        # CStage global unreachable (e.g. moved by a client patch);
+                        # the scan only yields the name, so the minimap goes dark.
+                        stage_id = None
                         map_name = locate_map_name(pm, valid_names=self._stage_names)
                     map_tick += 1
                     # HP comes straight from the engine charobject pointer chain
@@ -274,7 +278,10 @@ class ReaderWorker(threading.Thread):
                             (n, cur if n == "血量" else mx if n == "最大血量" else v)
                             for n, v in fields
                         ]
-                    self._cb_stats([("角色名稱", char_name), ("地圖名稱", map_name)] + fields)
+                    self._cb_stats(
+                        [("角色名稱", char_name), ("地圖名稱", map_name), ("地圖ID", stage_id)]
+                        + fields
+                    )
                     statuses = read_active_statuses(pm, hp_addr, self._knowledge)
                     self._cb_buffs(
                         [(g, self._status_db.get(g, f"group {g}"), kind) for g, kind in statuses]
@@ -300,6 +307,7 @@ class ReaderWorker(threading.Thread):
                     char_name = read_character_name(pm, hp_addr)
                     failure_count = 0
                     map_name = ""
+                    stage_id = None
                     map_tick = 0
 
             self._wake_event.wait(POLL_INTERVAL)

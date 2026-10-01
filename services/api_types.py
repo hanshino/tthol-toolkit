@@ -27,8 +27,11 @@ class Vitals(_Base):
 
 class Position(_Base):
     map_name: str | None = None
-    x: int
+    stage_id: int | None = None  # stages.id; None when only the scan fallback found the map
+    x: int  # tile x (top-left origin); -1 right after a map change until the first step
     y: int
+    px: int | None = None  # map pixel x, same space as Minimap; None until placed
+    py: int | None = None
 
 
 class AutoClickStatus(_Base):
@@ -380,6 +383,44 @@ class MapInfo(_Base):
     monsters: list[MapMonster] = []
     warps: list[MapWarp] = []
     nearby: list[SpawnPoint] = []
+
+
+# ---- Minimap -------------------------------------------------------------
+# All coordinates are map pixels, top-left origin: the same space as the image
+# (scaled by image_width / width_px) and Position.px / Position.py.
+
+
+class MinimapWarp(_Base):
+    x: int  # centroid of the walk-on zone
+    y: int
+    destinations: list[StageInfo]  # usually one; a scripted zone can send to several
+
+
+class MinimapNpc(_Base):
+    npc_id: int
+    name: str | None = None
+    x: int
+    y: int
+
+
+class MinimapSpawn(_Base):
+    npc_id: int
+    name: str | None = None
+    level: int | None = None
+    x: int
+    y: int
+
+
+class Minimap(_Base):
+    stage: StageInfo
+    width_px: int  # full map size in pixels (tiles x tile_px)
+    height_px: int
+    tile_px: int
+    image_url: str | None = None  # app-relative; None when the DB has no image for the map
+    image_origin: str | None = None  # 'img' (official art) or 'composed' (rebuilt from tiles)
+    warps: list[MinimapWarp] = []
+    npcs: list[MinimapNpc] = []
+    spawns: list[MinimapSpawn] = []
 
 
 # ---- Generic -------------------------------------------------------------
