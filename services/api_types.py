@@ -72,7 +72,31 @@ class Item(_Base):
     item_id: int
     name: str
     quantity: int
-    source: Literal["inventory", "warehouse"]
+    source: Literal["inventory", "pet", "warehouse"]
+
+
+class ItemStat(_Base):
+    label: str
+    value: int
+
+
+class ItemMeta(_Base):
+    """Static item data from tthol.sqlite, fetched by id via GET /api/items."""
+
+    item_id: int
+    name: str
+    type_label: str = ""
+    # Coarse group for the items page; see services.item_catalog.category_for.
+    category: Literal["potion", "gear", "book", "pet", "event", "misc"]
+    level: int = 0
+    description: str = ""
+    icon_url: str | None = None
+    no_trade: bool = False
+    no_store: bool = False
+    no_drop: bool = False
+    # Duration of the item's timed effect, 0 when it has none.
+    effect_seconds: int = 0
+    stats: list[ItemStat] = []
 
 
 # ---- Buffs (active status effects) --------------------------------------
@@ -141,7 +165,9 @@ class CharacterDetail(_Base):
     autoclick: AutoClickStatus
     buffs: list[BuffInfo] = []
     inventory: list[Item] | None = None
+    pet_inventory: list[Item] | None = None
     warehouse: list[Item] | None = None
+    money: int | None = None
     # Epoch seconds of the last successful read; None until the first one.
     inventory_updated_at: float | None = None
     warehouse_updated_at: float | None = None

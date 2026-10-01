@@ -37,6 +37,8 @@ from reader import (
     read_hp_pair_from_chain,
     read_inventory,
     read_item_container,
+    read_money,
+    read_pet_inventory,
     read_warehouse,
     verify_structure,
     verify_structure_shifted,
@@ -96,6 +98,8 @@ class ReaderWorker(threading.Thread):
         on_error: Callable[..., None],
         on_buffs: Callable[[list[tuple[int, str, str]]], None] | None = None,
         on_warehouse_open: Callable[[bool], None] | None = None,
+        on_pet_inventory: Callable[[list[tuple[int, int, str]]], None] | None = None,
+        on_money: Callable[[int], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._pid = pid
@@ -106,6 +110,8 @@ class ReaderWorker(threading.Thread):
         self._cb_error = on_error
         self._cb_buffs = on_buffs or (lambda _b: None)
         self._cb_warehouse_open = on_warehouse_open or (lambda _o: None)
+        self._cb_pet_inventory = on_pet_inventory or (lambda _i: None)
+        self._cb_money = on_money or (lambda _m: None)
         self._hp_value: int | None = None
         self._offset_filters = None
         self._compat_mode = False
@@ -472,7 +478,8 @@ class ReaderWorker(threading.Thread):
             self._cb_warehouse([])
 
     def _auto_read_items(self, pm, hp_addr):
-        """Refresh bag + warehouse on every poll; both are direct reads (~1 ms).
+        """Refresh bag, pet bag, money and warehouse on every poll; all are
+        direct reads (~1 ms).
 
         The warehouse is read whenever its window is open in game, and the last
         read is kept after it closes. Failures here are routine (warehouse
@@ -485,6 +492,15 @@ class ReaderWorker(threading.Thread):
                 self._cb_inventory(self._name_items(items))
         except Exception as exc:
             self._log.debug("auto inventory read failed: %s", exc, extra={"cat": "inventory"})
+        try:
+            items = read_pet_inventory(pm, hp_addr)
+            if items is not None:
+                self._cb_pet_inventory(self._name_items(items))
+            money = read_money(pm, hp_addr)
+            if money is not None:
+                self._cb_money(money)
+        except Exception as exc:
+            self._log.debug("auto pet bag read failed: %s", exc, extra={"cat": "inventory"})
         try:
             data = locate_warehouse(pm)
             self._cb_warehouse_open(data is not None)

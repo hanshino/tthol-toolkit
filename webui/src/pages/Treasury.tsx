@@ -1,7 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
 import { get } from '../api/client';
 import { Panel, StatNum } from '../primitives';
-import type { TreasuryItem, TreasurySummary } from '../api/types';
+import type { ItemMeta, TreasuryItem, TreasurySummary } from '../api/types';
+import { ItemIcon } from '../components/items/ItemCells';
+import { ItemDetail } from '../components/items/ItemDetail';
+import type { Entry } from '../components/items/entries';
+import { useItemMeta } from '../components/items/useItemMeta';
+import '../components/items/items.css';
+
+const ROW_COLUMNS = '40px 1.5fr 80px 60px 60px 60px 1.5fr';
+
+function toEntry(item: TreasuryItem, meta: ItemMeta | undefined): Entry {
+  return {
+    key: String(item.item_id),
+    itemId: item.item_id,
+    name: meta?.name || item.name,
+    qty: item.total_qty,
+    stacks: 1,
+    sources: [],
+    meta,
+    category: meta?.category ?? 'misc',
+  };
+}
 
 export function Treasury() {
   const [summary, setSummary] = useState<TreasurySummary>({
@@ -11,6 +31,8 @@ export function Treasury() {
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<number | null>(null);
+  const meta = useItemMeta(items.map(i => i.item_id));
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +59,7 @@ export function Treasury() {
       i.name.toLowerCase().includes(needle) || i.item_type.toLowerCase().includes(needle),
     );
   }, [items, search]);
+  const current = filtered.find(i => i.item_id === selected) ?? filtered[0];
 
   return (
     <div style={{ padding: 16 }}>
@@ -65,9 +88,19 @@ export function Treasury() {
           <Empty text={search ? '查無符合的道具' : '尚無留影資料 — 請先到角色頁面儲存背包/庫房 snapshot'} />
         )}
         {!error && !loading && filtered.length > 0 && (
-          <div style={{ display: 'grid', gap: 4 }}>
-            <ItemHeader />
-            {filtered.map(it => <ItemRow key={it.item_id} item={it} />)}
+          <div className="tr-split">
+            <div style={{ display: 'grid', minWidth: 0 }}>
+              <ItemHeader />
+              {filtered.map(it => (
+                <ItemRow key={it.item_id} item={it} meta={meta.get(it.item_id)}
+                  selected={it.item_id === current?.item_id} onSelect={() => setSelected(it.item_id)} />
+              ))}
+            </div>
+            {current && (
+              <ItemDetail entry={toEntry(current, meta.get(current.item_id))}>
+                <HolderSection item={current} />
+              </ItemDetail>
+            )}
           </div>
         )}
       </Panel>
@@ -132,11 +165,12 @@ function Stat({ label, value }: { label: string; value: number }) {
 function ItemHeader() {
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: '1.5fr 80px 60px 60px 60px 1.5fr',
+      display: 'grid', gridTemplateColumns: ROW_COLUMNS,
       gap: 12, padding: '4px 8px',
       fontSize: 11, color: 'var(--tt-mute)', letterSpacing: 2,
       borderBottom: '1px solid var(--tt-line-soft)',
     }}>
+      <span />
       <span>名</span>
       <span>類型</span>
       <span style={{ textAlign: 'right' }}>身上</span>
@@ -165,15 +199,17 @@ function groupHolders(holders: TreasuryItem['holders']): HolderGroup[] {
   );
 }
 
-function ItemRow({ item }: { item: TreasuryItem }) {
+function ItemRow({ item, meta, selected, onSelect }: {
+  item: TreasuryItem; meta: ItemMeta | undefined; selected: boolean; onSelect: () => void;
+}) {
   const groups = useMemo(() => groupHolders(item.holders), [item.holders]);
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: '1.5fr 80px 60px 60px 60px 1.5fr',
-      gap: 12, padding: '6px 8px', fontSize: 12,
-      borderBottom: '1px solid var(--tt-line-soft)',
-      alignItems: 'baseline',
-    }}>
+    <button type="button" className="tr-row" aria-pressed={selected} onClick={onSelect}
+      style={{ gridTemplateColumns: ROW_COLUMNS }}>
+      <span className="inv-row-icon">
+        <ItemIcon name={item.name} meta={meta} size={36} />
+        {meta?.no_trade && <span className="inv-bound" />}
+      </span>
       <span style={{ fontFamily: 'var(--tt-font-serif)' }}>{item.name}</span>
       <span style={{ color: 'var(--tt-dim)', fontSize: 11 }}>{item.item_type || '—'}</span>
       <span style={{ textAlign: 'right', fontFamily: 'var(--tt-font-mono)' }}>{item.on_person}</span>
@@ -192,6 +228,24 @@ function ItemRow({ item }: { item: TreasuryItem }) {
           </span>
         ))}
       </span>
+    </button>
+  );
+}
+
+function HolderSection({ item }: { item: TreasuryItem }) {
+  const sorted = [...item.holders].sort((a, b) => b.qty - a.qty);
+  return (
+    <div className="inv-d-sec">
+      <span className="inv-d-label">持有者</span>
+      <div className="tr-holders">
+        {sorted.map(h => (
+          <div key={`${h.character}-${h.source}`} className="tr-holder">
+            <span>{h.character}</span>
+            <span className="tr-holder-src">{h.source === 'warehouse' ? '庫房' : '隨身'}{h.account ? ` · ${h.account}` : ''}</span>
+            <span className="tr-holder-qty">{h.qty.toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
