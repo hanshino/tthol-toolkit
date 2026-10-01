@@ -1,10 +1,13 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { get } from '../../api/client';
 import type { Minimap as MinimapData, MinimapExit, MinimapRegion, Position } from '../../api/types';
 import './minimap.css';
 
 const MAX_HEIGHT = 420; // px default; CSS can lower it via --mm-max-h
 const REGION_MARGIN = 40; // map px kept around the cropped space (one tile)
+
+// A move longer than this (tiles) is a teleport: the dot jumps, no slide.
+const JUMP_TILES = 3;
 
 const inside = (r: MinimapRegion, x: number, y: number) =>
   x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
@@ -66,14 +69,19 @@ export function Minimap({ position, charLevel, data, failed, highlight = null }:
   const py = position.py ?? null;
   const needRegion = stageId !== null && placed
     && (region === null || !inside(region, px!, py!));
+  // Read through a ref: with the position updating every step, depending on
+  // x/y would cancel and restart the request on each step until it lands.
+  const tile = useRef({ x: position.x, y: position.y });
+  tile.current = { x: position.x, y: position.y };
   useEffect(() => {
     if (!needRegion) return;
     let cancelled = false;
-    get<MinimapRegion | null>(`/api/maps/${stageId}/region?x=${position.x}&y=${position.y}`)
+    const { x, y } = tile.current;
+    get<MinimapRegion | null>(`/api/maps/${stageId}/region?x=${x}&y=${y}`)
       .then((r) => { if (!cancelled && r) setRegion(r); })
       .catch(() => { /* no walk mask: stay on the full map */ });
     return () => { cancelled = true; };
-  }, [needRegion, stageId, position.x, position.y]);
+  }, [needRegion, stageId]);
 
   if (stageId === null) return <div className="mm-empty">讀不到地圖編號，無法顯示小地圖</div>;
   if (failed) return <div className="mm-empty">此地圖沒有小地圖資料</div>;
@@ -195,12 +203,35 @@ export function Minimap({ position, charLevel, data, failed, highlight = null }:
           );
         })())}
         {placed && (
-          <span
-            className="mm-pt mm-player" style={at(position.px!, position.py!)}
-            role="img" aria-label="角色位置"
+          <PlayerDot
+            fx={(position.px! - v.x0) / vw} fy={(v.y1 - position.py!) / vh}
+            x={position.x} y={position.y} stageId={stageId} view={`${v.x0},${v.y0},${vw},${vh}`}
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The player marker. It moves a full-size track layer with transform, so the
+ * slide between tile centres stays on the compositor. A teleport, a map change
+ * or a re-cropped view jumps instead of sliding across the map.
+ */
+function PlayerDot({ fx, fy, x, y, stageId, view }: {
+  fx: number; fy: number; x: number; y: number; stageId: number | null; view: string;
+}) {
+  const prev = useRef<{ x: number; y: number; stageId: number | null; view: string } | null>(null);
+  const p = prev.current;
+  const jump = p === null || p.stageId !== stageId || p.view !== view
+    || Math.max(Math.abs(x - p.x), Math.abs(y - p.y)) > JUMP_TILES;
+  useEffect(() => { prev.current = { x, y, stageId, view }; });
+  return (
+    <div
+      className="mm-track" data-jump={jump || undefined}
+      style={{ transform: `translate(${fx * 100}%, ${fy * 100}%)` }}
+    >
+      <span className="mm-pt mm-player" role="img" aria-label="角色位置" />
     </div>
   );
 }

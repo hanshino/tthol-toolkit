@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { get } from '../../api/client';
+import { useLivePosition } from '../../api/positionStore';
 import { Panel, StatNum } from '../../primitives';
 import type { CharacterRow, MapInfo } from '../../api/types';
 import { exitNames, levelTone, Minimap, useMinimapData, type MinimapHighlight } from './Minimap';
@@ -13,8 +14,11 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<ListTab>('warps');
   const [hl, setHl] = useState<MinimapHighlight>(null);
+  // The fast stream moves the map and the dot; the lists below follow the
+  // 3 s row, so a step does not refetch them.
+  const pos = useLivePosition(char.pid) ?? char.position;
   const mapName = char.position.map_name;
-  const minimap = useMinimapData(char.position.stage_id ?? null);
+  const minimap = useMinimapData(pos.stage_id ?? null);
   // Walk-on exits from the map's own scripts (genbu getPortalExits); MapInfo's
   // warp list also carries the legacy byte-scan guesses and NPC dialogue warps.
   const exits = minimap.data?.exits ?? [];
@@ -63,9 +67,9 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
   return (
     <div className="ma">
       <div className="ma-map">
-        <Panel title={`輿圖 · ${info.stage.name}　#${info.stage.stage_id}`}>
+        <Panel title={`輿圖 · ${pos.map_name ?? info.stage.name}　#${pos.stage_id ?? info.stage.stage_id}`}>
           <Minimap
-            position={char.position} charLevel={charLevel} highlight={hl}
+            position={pos} charLevel={charLevel} highlight={hl}
             data={minimap.data} failed={minimap.failed}
           />
         </Panel>

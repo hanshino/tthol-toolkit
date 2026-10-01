@@ -67,9 +67,13 @@ export async function upload<T>(path: string, file: File): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-export function openWorldSocket(onFrame: (snap: unknown) => void): WebSocket {
+export function openSocket(path: string, onFrame: (frame: unknown) => void): WebSocket {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${proto}//${location.host}/ws/world`);
+  const ws = new WebSocket(`${proto}//${location.host}${path}`);
   ws.onmessage = (e) => onFrame(JSON.parse(e.data));
   return ws;
+}
+
+export function openWorldSocket(onFrame: (snap: unknown) => void): WebSocket {
+  return openSocket('/ws/world', onFrame);
 }
