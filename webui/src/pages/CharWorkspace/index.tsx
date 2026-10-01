@@ -21,8 +21,8 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
   onTab: (t: CharTab) => void; onNav: (k: GlobalView) => void;
 }) {
   const gone = goneSince !== null;
-  const stale = gone || isStopped(char);
   const unlocated = isUnlocated(char);
+  const stale = gone || isStopped(char) || unlocated;
   // A gone pid has no session; polling it would only fail every 3 s.
   const { detail, error } = useCharacterDetail(char.pid, !unlocated && !gone);
   // Tabs mount on first visit and then stay mounted (hidden), so search text,
@@ -48,7 +48,10 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
         </nav>
       </div>
       <div className="ws-body" data-stale={stale || undefined}>
-        {unlocated
+        {/* 重偵/relocate briefly turns a located character back into a
+            placeholder row; keep its tabs (and their search/filters) mounted
+            on the last detail instead of wiping them. */}
+        {unlocated && detail === null
           ? <div className="ws-empty">角色定位後，這裡會自動讀取行囊、屬性與地圖</div>
           : TABS.filter(t => visited.current.has(t.k)).map(t => (
             <div key={t.k} role="tabpanel" hidden={tab !== t.k}>

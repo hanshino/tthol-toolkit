@@ -71,7 +71,7 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
       <div className="ws-id">
         <Seal size={34}>{unlocated ? '?' : char.name[0]}</Seal>
         <div className="ws-id-text">
-          <div className="ws-name"><LinkDot status={char.link} /><span>{char.name}</span></div>
+          <div className="ws-name"><LinkDot status={gone ? 'lost' : char.link} /><span>{char.name}</span></div>
           <div className="ws-sub">
             {unlocated
               ? `pid ${char.pid} · 尚未定位`
