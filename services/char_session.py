@@ -20,6 +20,7 @@ from services.api_types import (
     Position,
     Vitals,
 )
+from services.map_db import TILE_PX
 from services.worker import ReaderWorker
 
 # Worker emits stats with raw Chinese labels from knowledge.json + the two
@@ -38,8 +39,6 @@ _FIELD_MAP: dict[str, str] = {
     "最大負重": "weight_max",
     "X座標": "x",
     "Y座標": "y",
-    "X像素": "px",
-    "Y像素": "py",
     "外功": "waigong",
     "內力": "neili",
     "根骨": "genggu",
@@ -58,16 +57,22 @@ _FIELD_MAP: dict[str, str] = {
 
 
 def _position(s: dict) -> Position:
-    # Right after a map change the tile pair reads -1 until the first step and
-    # the pixel pair is stale, so there is no usable minimap position yet.
-    placed = s.get("x", -1) >= 0 and s.get("y", -1) >= 0
+    # Right after a map change the tile pair reads -1 until the first step, so
+    # there is no usable minimap position yet.
+    x, y = s.get("x", -1), s.get("y", -1)
+    placed = x >= 0 and y >= 0
+    # The dot sits on the tile centre. The struct's pixel pair (HP+636/+640)
+    # is the move target, not the live position: while walking it already
+    # holds the click destination, so drawing it put the dot ahead of the
+    # character.
+    half = TILE_PX // 2
     return Position(
         map_name=s.get("map_name"),
         stage_id=s.get("stage_id"),
         x=s.get("x", 0),
         y=s.get("y", 0),
-        px=s.get("px") if placed else None,
-        py=s.get("py") if placed else None,
+        px=x * TILE_PX + half if placed else None,
+        py=y * TILE_PX + half if placed else None,
     )
 
 

@@ -13,6 +13,8 @@ from services._paths import bundled
 
 DB_PATH = bundled("tthol.sqlite")
 
+TILE_PX = 40  # every map in the DB uses 40 px tiles
+
 
 def _connect() -> sqlite3.Connection:
     con = sqlite3.connect(str(DB_PATH))

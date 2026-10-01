@@ -54,16 +54,13 @@ async def map_by_name(name: str, x: int | None = None, y: int | None = None) -> 
     )
 
 
-DEFAULT_TILE_PX = 40  # every map in the DB uses 40 px tiles
-
-
 # Sync on purpose: several sqlite queries, so FastAPI runs it in the threadpool.
 @router.get("/{stage_id}/minimap", response_model=Minimap)
 def minimap(stage_id: int) -> Minimap:
     base = map_db.minimap_base(stage_id)
     if base is None:
         raise HTTPException(status_code=404, detail=f"No stage {stage_id}")
-    tile_px = base["tile_px"] or DEFAULT_TILE_PX
+    tile_px = base["tile_px"] or map_db.TILE_PX
     height_px = (base["h_tiles"] or 0) * tile_px
     # map_placements raw_y is an image row (top-down); flip into game coordinates.
     return Minimap(
@@ -97,7 +94,7 @@ def minimap_region(stage_id: int, x: int, y: int) -> MinimapRegion | None:
     base = map_db.minimap_base(stage_id)
     if base is None:
         raise HTTPException(status_code=404, detail=f"No stage {stage_id}")
-    box = map_regions.region_box(stage_id, x, y, base["tile_px"] or DEFAULT_TILE_PX)
+    box = map_regions.region_box(stage_id, x, y, base["tile_px"] or map_db.TILE_PX)
     return MinimapRegion(x0=box[0], y0=box[1], x1=box[2], y1=box[3]) if box else None
 
 
