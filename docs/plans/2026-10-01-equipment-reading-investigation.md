@@ -58,7 +58,23 @@ Cheat Engine（CE MCP bridge）在 `0x4190a4` 下只記錄的硬體中斷點。�
 ## 待解問題
 
 1. **外裝欄（EXTRA_CAP / EXTRA_BODY / EXTRA_HORSE …，bit 0x100000 以上）不在這段欄位裡。** `0x485e7b` 把這些位元分到 `0x4861c2` 等別的分支，還沒追。
-2. **vtable 位址會隨客戶端改版變動。** 不能寫死 `0x5F5DC4`，要改成用特徵碼從 `tthola.dat` 找出來，例如角色建構函式裡寫 vtable 的那條指令。
+2. **vtable 位址會隨客戶端改版變動。** 決定先寫死在 `equipment_scan.py` 的 `CHAR_OBJ_VTABLE`，改版時再更新。客戶端保留了 MSVC RTTI，類別名稱是 `CCharObject`，更新時從名稱反查即可（實測 7ms 反查回 `0x5F5DC4`）：
+   1. 在 `tthola.dat` 的程式映像裡找字串 `.?AVCCharObject@@`（null 結尾），位址減 8 = TypeDescriptor。
+   2. 找 4-byte 對齊、`+0`=0（signature）、`+4`=0（offset）、`+12`=TypeDescriptor 的 Complete Object Locator。
+   3. 找存著 COL 位址的那一格，下一格（+4）就是 vtable。
+   備案：用 HP 結構 −228 的自己名稱在記憶體搜尋，名稱位址 −`0x1E4` 的第一個 dword 就是 vtable。
 3. **`+0x374` 是不是 HEAD**：要找一個有裝頭部道具的角色確認。
 4. **掃描速度**：預估一秒內，未實測。
 5. 名稱以外的字串（`+0x1F1`、`+0x221`）是什麼欄位，未確認。
+
+## PoC 實測（`equipment_scan.py`）
+
+2026-10-01，`uv run equipment_scan.py --self`，遊戲在線、角色站在城鎮：
+
+- **掃描速度 0.32 秒**（全部可讀區段找 vtable），跟 HP 掃描同一個量級。待解問題 4 解決。
+- 找到 9 個 vtable 命中：4 個有名稱，5 個名稱是空的（action 都是 `Wait`）。有名稱的 3 個是 NPC（小七、魅力王、易容師）、1 個是自己。**vtable `0x5F5DC4` 也涵蓋 NPC**，過濾時名稱不可空，要分出玩家和 NPC 還要另外找欄位。
+- 名稱跟 HP 結構 −228 比對可以認出自己（赫斯提雅），不用另外的指標鏈。
+- 自己的 10 個裝備欄讀出來的道具，`items.equip_slot` 全部跟欄位對得上；`+0x39C` 放的是 `HANDS`（手套），所以這欄涵蓋 `HAND_R` / `HANDS`。
+- `+0x1F1` 讀到「不定時赫星星」，NPC 跟自己的 `+0x221` 都是空字串（自己目前可能沒家族），兩欄仍未確認。
+- **`+0x374` HEAD**：`items` 的 HEAD 類只有 22 筆，全是「基本頭N-男/女」(`flag_equip` bit `0x1`)，看起來是基本頭型，不是玩家能穿的道具。所有角色這欄都是 0，所以「+0x374 = HEAD，平常是空的」可能性很高，仍未實測到有值的情況。
+- 寵物裝備（`PET_*`、`ORNAMENT_PET`，bit `0x1000`–`0x8000`）跟外裝（`EXTRA_*`）都不在這 11 欄。
