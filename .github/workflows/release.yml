@@ -56,6 +56,20 @@ jobs:
         shell: bash
         run: uv sync --frozen --group dev --python 3.11.9
 
+      # ── Game DB (release asset pinned by db.lock.json) ─────────
+      # tthol.sqlite is not in git; scripts/db_release.py downloads the version
+      # this commit pins and checks its sha256. The cache key follows the lock,
+      # so the ~70 MB file is only downloaded when the pin changes.
+      - name: Cache game DB
+        uses: actions/cache@v4
+        with:
+          path: tthol.sqlite
+          key: tthol-sqlite-${{ hashFiles('db.lock.json') }}
+
+      - name: Fetch game DB
+        shell: bash
+        run: uv run scripts/db_release.py pull
+
       - name: PyInstaller build
         shell: powershell
         run: |
