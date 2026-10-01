@@ -176,7 +176,7 @@ export function Minimap({ position, charLevel, highlight = null }: {
             <span
               key={`w${i}`} className="mm-pt mm-warp" style={at(w.x, w.y)}
               data-lit={hlWarp(w) || undefined}
-              role="img" aria-label={`出口：${names}`}
+              tabIndex={0} role="img" aria-label={`出口：${names}`}
             >
               <b className="mm-label" data-side={side(w.x)} data-up={up(w.y)}>{names}</b>
             </span>

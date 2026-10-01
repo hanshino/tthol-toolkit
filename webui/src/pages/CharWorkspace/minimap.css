@@ -58,7 +58,8 @@ button.mm-scope[aria-pressed="true"] { color: var(--tt-gold); border-color: var(
 }
 @keyframes mm-ping { from { transform: scale(0.6); opacity: 0.9; } to { transform: scale(1.6); opacity: 0; } }
 
-/* Warp labels are always shown (exits are few); point labels only on hover/focus. */
+/* Labels show only on hover/focus or when a list row lights the point: always-on
+   exit labels collided on maps whose exits sit close together. */
 .mm-label, .mm-tip {
   position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%);
   white-space: nowrap; font-weight: normal; font-size: 11px; letter-spacing: 1px; line-height: 1.4;
@@ -68,7 +69,12 @@ button.mm-scope[aria-pressed="true"] { color: var(--tt-gold); border-color: var(
 .mm-label[data-side="start"], .mm-tip[data-side="start"] { left: -2px; transform: none; }
 .mm-label[data-side="end"], .mm-tip[data-side="end"] { left: auto; right: -2px; transform: none; }
 .mm-label[data-up], .mm-tip[data-up] { top: auto; bottom: calc(100% + 4px); }
-.mm-tip { display: none; }
+.mm-tip, .mm-label { display: none; }
+/* The exit diamond is small; widen its hover target without moving it. */
+.mm-warp::after { content: ""; position: absolute; inset: -6px; }
+.mm-warp:hover, .mm-warp:focus-visible { z-index: 50; outline: none; }
+.mm-warp:hover::before, .mm-warp:focus-visible::before { border-color: var(--tt-gold); }
+.mm-warp:hover > .mm-label, .mm-warp:focus-visible > .mm-label, .mm-warp[data-lit] > .mm-label { display: block; }
 .mm-spawn:hover, .mm-spawn:focus-visible, .mm-npc:hover, .mm-npc:focus-visible { z-index: 50; outline: none; box-shadow: 0 0 0 2px var(--tt-text); }
 .mm-pt:hover > .mm-tip, .mm-pt:focus-visible > .mm-tip { display: block; }
 
