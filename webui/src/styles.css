@@ -108,3 +108,7 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus {
   border-color: var(--tt-gold);
 }
+
+/* ---- App shell ---------------------------------------------------- */
+.app-shell { display: flex; height: 100vh; background: var(--tt-bg); color: var(--tt-text); }
+.app-main { flex: 1; min-width: 0; overflow-y: auto; }

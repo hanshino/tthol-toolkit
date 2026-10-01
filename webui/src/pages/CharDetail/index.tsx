@@ -16,12 +16,12 @@ const TABS = [
 
 type TabKey = typeof TABS[number]['k'];
 
-export function CharDetail({ char, onBack }: { char: CharacterRow; onBack: () => void }) {
+export function CharDetail({ char, onBack }: { char: CharacterRow; onBack?: () => void }) {
   const [tab, setTab] = useState<TabKey>('body');
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-        <button className="is-ghost" onClick={onBack}>← 返回</button>
+        {onBack && <button className="is-ghost" onClick={onBack}>← 返回</button>}
         <Seal>{char.name[0]}</Seal>
         <div>
           <div style={{ fontFamily: 'var(--tt-font-serif)', fontSize: 18 }}>{char.name}</div>
