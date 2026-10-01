@@ -1,0 +1,66 @@
+import { useRef } from 'react';
+import type { CharacterRow } from '../../api/types';
+import { isStopped, isUnlocated, type CharTab, type GlobalView } from '../../nav';
+import { AutoClickTab } from './AutoClickTab';
+import { BodyTab } from './BodyTab';
+import { CharHeader } from './CharHeader';
+import { ItemsTab } from './ItemsTab';
+import { MapAnalysis } from './MapAnalysis';
+import { useCharacterDetail } from './useCharacterDetail';
+import './workspace.css';
+
+const TABS: { k: CharTab; n: string; s: string }[] = [
+  { k: 'items', n: '行囊', s: '道具' },
+  { k: 'body', n: '根脈', s: '屬性' },
+  { k: 'maps', n: '行止', s: '地圖' },
+  { k: 'assist', n: '輔助', s: '召喚商人' },
+];
+
+export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
+  char: CharacterRow; goneSince: number | null; tab: CharTab;
+  onTab: (t: CharTab) => void; onNav: (k: GlobalView) => void;
+}) {
+  const gone = goneSince !== null;
+  const stale = gone || isStopped(char);
+  const unlocated = isUnlocated(char);
+  // A gone pid has no session; polling it would only fail every 3 s.
+  const { detail, error } = useCharacterDetail(char.pid, !unlocated && !gone);
+  // Tabs mount on first visit and then stay mounted (hidden), so search text,
+  // filters and selection survive a tab switch. Keyed by pid in App, so a
+  // different character starts fresh.
+  const visited = useRef(new Set<CharTab>());
+  visited.current.add(tab);
+
+  return (
+    <div className="ws">
+      <div className="ws-sticky">
+        <CharHeader char={char} goneSince={goneSince} onBackToOverview={() => onNav('overview')} />
+        <nav className="ws-tabs" role="tablist" aria-label="角色分頁">
+          {TABS.map(t => (
+            <button
+              key={t.k} type="button" role="tab" className="ws-tab"
+              aria-selected={tab === t.k} onClick={() => onTab(t.k)}
+            >
+              <span className="ws-tab-n">{t.n}</span>
+              <span className="ws-tab-s">{t.s}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+      <div className="ws-body" data-stale={stale || undefined}>
+        {unlocated
+          ? <div className="ws-empty">角色定位後，這裡會自動讀取行囊、屬性與地圖</div>
+          : TABS.filter(t => visited.current.has(t.k)).map(t => (
+            <div key={t.k} role="tabpanel" hidden={tab !== t.k}>
+              {t.k === 'items' && (
+                <ItemsTab pid={char.pid} detail={detail} error={error} onOpenSnapshots={() => onNav('snapshots')} />
+              )}
+              {t.k === 'body' && <BodyTab detail={detail} error={error} />}
+              {t.k === 'maps' && <MapAnalysis char={char} />}
+              {t.k === 'assist' && <AutoClickTab pid={char.pid} />}
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
