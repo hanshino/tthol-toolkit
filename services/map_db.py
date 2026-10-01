@@ -34,6 +34,14 @@ def all_stage_names() -> set[str]:
         return {r["name"] for r in rows if r["name"]}
 
 
+def stage_names_by_id() -> dict[int, str]:
+    """stages.id -> name. Names repeat across ids, so a (id, name) pair read from
+    memory is checked against this rather than against the name alone."""
+    with _connect() as con:
+        rows = con.execute("SELECT id, name FROM stages").fetchall()
+        return {r["id"]: r["name"] for r in rows if r["name"]}
+
+
 def stage_by_name(name: str) -> dict | None:
     if not name:
         return None

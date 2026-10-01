@@ -92,6 +92,7 @@ class CharSession:
         self._equipment: list[EquipSlot] | None = None
         self._latest_buffs: list[BuffInfo] = []
         self._inv_seq: int = 0
+        self._pos_seq: int = 0
         self._wh_seq: int = 0
         self._inv_ts: float | None = None
         self._wh_ts: float | None = None
@@ -116,6 +117,7 @@ class CharSession:
             on_money=self._on_money,
             on_appearance=self._on_appearance,
             on_equipment=self._on_equipment,
+            on_position=self._on_position,
         )
 
     @property
@@ -277,6 +279,22 @@ class CharSession:
                 if name != self.name:
                     self._log = diagnostics.bind(self.pid, name)
                 self.name = name
+
+    def _on_position(self, stage_id: int | None, map_name: str, x: int, y: int) -> None:
+        # Written into the same stats the 3 s row reads, so the row is never
+        # older than the fast position stream.
+        with self._lock:
+            s = self._latest_stats
+            s["stage_id"] = stage_id
+            s["map_name"] = map_name
+            s["x"] = x
+            s["y"] = y
+            self._pos_seq += 1
+
+    def position(self) -> tuple[int, Position]:
+        """(seq, position); seq advances on every fast position update."""
+        with self._lock:
+            return self._pos_seq, _position(self._latest_stats)
 
     def _on_buffs(self, items: list[tuple[int, str, str]]) -> None:
         with self._lock:

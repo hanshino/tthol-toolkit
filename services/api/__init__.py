@@ -18,9 +18,10 @@ from services.api import keep_active as keep_active_module
 from services.api import maps as maps_module
 from services.api import snapshots as snapshots_module
 from services.api import treasury as treasury_module
+from services.api import position_ws as position_ws_module
 from services.api import world_ws as world_ws_module
 from services.diag_events import ErrorCode
-from services.events import WorldStream
+from services.events import PositionStream, WorldStream
 
 log = logging.getLogger("tthol.api")
 _PID_IN_PATH = re.compile(r"/(\d+)(?:/|$)")
@@ -31,6 +32,7 @@ def build_app(services: dict[str, Any] | None = None) -> FastAPI:
     app = FastAPI(title="tthol-memory", version="1.0.0")
     services = dict(services or {})
     services.setdefault("world_stream", WorldStream())
+    services.setdefault("position_stream", PositionStream())
     app.state.services = services
 
     def _pid_from(path: str) -> int | None:
@@ -124,4 +126,5 @@ def build_app(services: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(backup_module.router)
     app.include_router(diagnostics_module.router)
     app.include_router(world_ws_module.router)
+    app.include_router(position_ws_module.router)
     return app

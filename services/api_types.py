@@ -38,6 +38,12 @@ class Position(_Base):
     py: int | None = None
 
 
+class PositionFrame(_Base):
+    """One /ws/pos frame: positions that changed since the last frame, by pid."""
+
+    pos: dict[int, Position]
+
+
 class AutoClickStatus(_Base):
     running: bool
     started_at: float | None = None
