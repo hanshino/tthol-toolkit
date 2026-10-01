@@ -31,7 +31,7 @@ _EVENT_CODES = frozenset({29, 39})  # BONUS boxes, EVENT_ITEM
 
 # (column, label). hp / mp are only shown as flat bonuses (flag 1): the other
 # flags are restore or max-percent effects that the description already spells out.
-_STAT_COLUMNS: tuple[tuple[str, str], ...] = (
+STAT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("str", "外功"),
     ("pow", "內力"),
     ("vit", "根骨"),
@@ -86,7 +86,7 @@ def _stats(row: sqlite3.Row) -> list[ItemStat]:
     for col, label in (("hp", "體力"), ("mp", "真氣")):
         if row[col] and row[f"{col}_flag"] == _FLAT_FLAG:
             out.append(ItemStat(label=label, value=row[col]))
-    out.extend(ItemStat(label=label, value=row[col]) for col, label in _STAT_COLUMNS if row[col])
+    out.extend(ItemStat(label=label, value=row[col]) for col, label in STAT_COLUMNS if row[col])
     return out
 
 

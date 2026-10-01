@@ -509,6 +509,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/doll/{gender}/{slot}/{sequence}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Doll Frame */
+        get: operations["doll_frame_api_doll__gender___slot___sequence__png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/treasury/summary": {
         parameters: {
             query?: never;
@@ -737,6 +754,19 @@ export interface components {
             /** Merchant Idx */
             merchant_idx: number;
         };
+        /**
+         * Avatar
+         * @description Head portrait: layers bottom to top, all sharing one anchor point.
+         *
+         *     `mirror` means the art is the opposite direction's frame: flip each layer
+         *     left-right about its anchor (drawn left = origin - (width - anchor_x)).
+         */
+        Avatar: {
+            /** Mirror */
+            mirror: boolean;
+            /** Layers */
+            layers: components["schemas"]["DollLayer"][];
+        };
         /** BackupImportResult */
         BackupImportResult: {
             /** Snapshots Added */
@@ -823,6 +853,8 @@ export interface components {
             warehouse?: components["schemas"]["Item"][] | null;
             /** Money */
             money?: number | null;
+            /** Equipment */
+            equipment?: components["schemas"]["EquipSlot"][] | null;
             /** Inventory Updated At */
             inventory_updated_at?: number | null;
             /** Warehouse Updated At */
@@ -860,6 +892,7 @@ export interface components {
              * @default []
              */
             buffs: components["schemas"]["BuffInfo"][];
+            avatar?: components["schemas"]["Avatar"] | null;
             last_error?: components["schemas"]["ErrorInfo"] | null;
         };
         /** CharacterStats */
@@ -993,6 +1026,62 @@ export interface components {
             verbose: boolean;
         };
         /**
+         * DollLayer
+         * @description One sprite layer; (anchor_x, anchor_y) is the attach point in the image.
+         */
+        DollLayer: {
+            /** Src */
+            src: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Anchor X */
+            anchor_x: number;
+            /** Anchor Y */
+            anchor_y: number;
+        };
+        /**
+         * EquipSlot
+         * @description One worn-gear slot; item_id is None when the slot is empty.
+         */
+        EquipSlot: {
+            /**
+             * Slot
+             * @enum {string}
+             */
+            slot: "CAP" | "BODY" | "FOOT" | "WING" | "HORSE" | "ORNAMENT_1" | "ORNAMENT_2" | "ORNAMENT_3" | "HAND_L" | "HAND_R";
+            /** Item Id */
+            item_id?: number | null;
+            /** Name */
+            name?: string | null;
+            /**
+             * Plus
+             * @default 0
+             */
+            plus: number;
+            /**
+             * Stats
+             * @default []
+             */
+            stats: components["schemas"]["ItemStat"][];
+            /**
+             * Enhance
+             * @default []
+             */
+            enhance: components["schemas"]["ItemStat"][];
+            /**
+             * Enhance Extra
+             * @default []
+             */
+            enhance_extra: components["schemas"]["ItemStat"][];
+            /**
+             * Inlays
+             * @default []
+             */
+            inlays: components["schemas"]["Inlay"][];
+        };
+        /**
          * ErrorInfo
          * @description Last error reported by a session's worker, surfaced on the character row.
          *
@@ -1013,6 +1102,20 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * Inlay
+         * @description 真元 / 魂石 set into a piece of gear, grouped by kind.
+         */
+        Inlay: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Count */
+            count: number;
+            /** Effect */
+            effect: string;
         };
         /** Item */
         Item: {
@@ -2390,6 +2493,49 @@ export interface operations {
                 };
             };
             /** @description No icon available */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    doll_frame_api_doll__gender___slot___sequence__png_get: {
+        parameters: {
+            query?: {
+                color?: number;
+            };
+            header?: never;
+            path: {
+                gender: "m" | "f";
+                slot: "head" | "cap";
+                sequence: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description No frame available */
             404: {
                 headers: {
                     [name: string]: unknown;

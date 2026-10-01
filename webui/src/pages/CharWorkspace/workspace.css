@@ -64,3 +64,23 @@ button.ws-back:focus-visible, button.ws-rescue-go:focus-visible { outline: 1px s
 @media (prefers-reduced-motion: reduce) {
   .ws-switch, .ws-switch > span { transition: none; }
 }
+
+/* ---- 根脈: worn gear ---- */
+.body-gear { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); column-gap: 16px; }
+.body-gear-row {
+  display: grid; grid-template-columns: 36px 40px minmax(0, 1fr); gap: 10px; align-items: center;
+  width: 100%; min-height: 54px; padding: 6px 8px; text-align: left; letter-spacing: 0;
+  background: transparent; border: 0; border-bottom: 1px solid var(--tt-line-soft);
+}
+button.body-gear-row:hover:not(:disabled) { background: var(--tt-raised); border-color: var(--tt-line-soft); }
+button.body-gear-row[aria-pressed="true"] { background: var(--tt-raised); box-shadow: inset 2px 0 0 var(--tt-gold); }
+.body-gear-row.is-empty .inv-row-icon { opacity: 0.5; }
+.body-gear-slot { font-family: var(--tt-font-serif); font-size: 13px; letter-spacing: 2px; color: var(--tt-dim); }
+.body-note { font-family: var(--tt-font); font-size: 11px; letter-spacing: 0; font-weight: 400; color: var(--tt-mute); margin-left: 6px; }
+.body-signed { color: var(--tt-ok); font-family: var(--tt-font-mono); }
+.body-signed > span { color: inherit !important; }
+.body-plus { margin-left: 6px; font-family: var(--tt-font-mono); font-size: 12px; color: var(--tt-gold); }
+.body-inlays { display: grid; gap: 6px; }
+.body-inlay { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; }
+.body-inlay .inv-row-icon { width: 36px; height: 36px; }
+.body-count { margin-left: 6px; font-family: var(--tt-font-mono); font-size: 12px; color: var(--tt-dim); }

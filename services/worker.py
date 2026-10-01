@@ -37,6 +37,8 @@ from reader import (
     read_hp_pair_from_chain,
     read_inventory,
     read_item_container,
+    read_appearance,
+    read_equipment,
     read_money,
     read_pet_inventory,
     read_stage,
@@ -45,6 +47,8 @@ from reader import (
     verify_structure_shifted,
 )
 from services import diagnostics
+from services.api_types import EquipSlot
+from services.equip_stats import enhance_bonus, enhance_extra, inlays, to_stats
 from services.diag_events import ErrorCode
 from services.map_db import all_stage_names
 
@@ -101,6 +105,8 @@ class ReaderWorker(threading.Thread):
         on_warehouse_open: Callable[[bool], None] | None = None,
         on_pet_inventory: Callable[[list[tuple[int, int, str]]], None] | None = None,
         on_money: Callable[[int], None] | None = None,
+        on_appearance: Callable[[dict], None] | None = None,
+        on_equipment: Callable[[list[EquipSlot]], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._pid = pid
@@ -113,6 +119,8 @@ class ReaderWorker(threading.Thread):
         self._cb_warehouse_open = on_warehouse_open or (lambda _o: None)
         self._cb_pet_inventory = on_pet_inventory or (lambda _i: None)
         self._cb_money = on_money or (lambda _m: None)
+        self._cb_appearance = on_appearance or (lambda _a: None)
+        self._cb_equipment = on_equipment or (lambda _e: None)
         self._hp_value: int | None = None
         self._offset_filters = None
         self._compat_mode = False
@@ -493,7 +501,7 @@ class ReaderWorker(threading.Thread):
             self._cb_warehouse([])
 
     def _auto_read_items(self, pm, hp_addr):
-        """Refresh bag, pet bag, money and warehouse on every poll; all are
+        """Refresh bag, pet bag, money, appearance, equipment and warehouse on every poll; all are
         direct reads (~1 ms).
 
         The warehouse is read whenever its window is open in game, and the last
@@ -516,6 +524,32 @@ class ReaderWorker(threading.Thread):
                 self._cb_money(money)
         except Exception as exc:
             self._log.debug("auto pet bag read failed: %s", exc, extra={"cat": "inventory"})
+        try:
+            appearance = read_appearance(pm, hp_addr)
+            if appearance is not None:
+                self._cb_appearance(appearance)
+        except Exception as exc:
+            self._log.debug("appearance read failed: %s", exc, extra={"cat": "inventory"})
+        try:
+            gear = read_equipment(pm, hp_addr)
+            if gear is not None:
+                self._cb_equipment(
+                    [
+                        EquipSlot(
+                            slot=slot,
+                            item_id=iid,
+                            name=self._item_db.get(iid) if iid else None,
+                            plus=plus,
+                            stats=to_stats(stats),
+                            enhance=enhance_bonus(iid, plus) if iid else [],
+                            enhance_extra=enhance_extra(iid, plus) if iid else [],
+                            inlays=inlays(sockets),
+                        )
+                        for slot, iid, plus, stats, sockets in gear
+                    ]
+                )
+        except Exception as exc:
+            self._log.debug("equipment read failed: %s", exc, extra={"cat": "inventory"})
         try:
             data = locate_warehouse(pm)
             self._cb_warehouse_open(data is not None)

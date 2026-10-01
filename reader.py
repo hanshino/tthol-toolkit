@@ -929,6 +929,172 @@ def read_money(pm, hp_addr):
     return pm.read_int(hp_addr + MONEY_OFFSET)
 
 
+# Appearance (paper doll). Offsets are relative to hp_addr, i.e. CCharObject
+# +0x298 / +0x29C / +0x4EC / +0x4F0. The engine keeps the sprite sequence it
+# actually draws per layer (outfit EXTRA_* slots already applied over the
+# equipped item), so the head / cap sequences are read straight from there.
+# Verified live 2026-10-01 across ~15 players; see
+# docs/plans/2026-10-01-equipment-reading-investigation.md.
+HAIR_ITEM_OFFSET = -0x30  # int32 base-head item id (29001.. male, 29051.. female)
+HAIR_COLOR_OFFSET = -0x2C  # int32 hair dye 0..10 (doll_frame_images.color)
+DOLL_HEAD_SEQ_OFFSET = 0x224  # int32 doll_frame_images.sequence of the head layer
+DOLL_CAP_SEQ_OFFSET = 0x228  # int32 sequence of the cap layer; DOLL_EMPTY_SEQ when bare
+DOLL_EMPTY_SEQ = 96
+MAX_HAIR_COLOR = 10
+# Sequence = gender base + slot index * 1000 + part number.
+_DOLL_GENDER_BASE = {100000: "m", 300000: "f"}
+_DOLL_HEAD_SLOT = 0
+_DOLL_CAP_SLOT = 1
+
+
+def _doll_part(seq, slot):
+    """(gender, seq) when seq is a sequence of the given doll slot, else None."""
+    base = seq - seq % 100000
+    gender = _DOLL_GENDER_BASE.get(base)
+    if gender is None or (seq - base) // 1000 != slot or seq % 1000 == 0:
+        return None
+    return gender, seq
+
+
+def read_appearance(pm, hp_addr):
+    """Head / cap layers the client draws for this character.
+
+    Returns {gender, hair_item, hair_color, head, cap}, where head / cap are
+    doll sequences and cap is None when no hat is drawn. Returns None when
+    hp_addr is not in a CCharObject or the head sequence looks wrong (object
+    being rebuilt mid-read).
+    """
+    if not is_char_object(pm, hp_addr):
+        return None
+    head = _doll_part(pm.read_int(hp_addr + DOLL_HEAD_SEQ_OFFSET), _DOLL_HEAD_SLOT)
+    if head is None:
+        return None
+    gender, head_seq = head
+    cap = _doll_part(pm.read_int(hp_addr + DOLL_CAP_SEQ_OFFSET), _DOLL_CAP_SLOT)
+    color = pm.read_int(hp_addr + HAIR_COLOR_OFFSET)
+    return {
+        "gender": gender,
+        "hair_item": pm.read_int(hp_addr + HAIR_ITEM_OFFSET),
+        "hair_color": color if 0 <= color <= MAX_HAIR_COLOR else 0,
+        "head": head_seq,
+        # A cap of the other gender cannot be drawn on this head.
+        "cap": cap[1] if cap is not None and cap[0] == gender else None,
+    }
+
+
+# Equipment: one item-instance pointer per slot in the CCharObject (0 = empty),
+# item id at ITEM_ID_OFFSET of the instance. Offsets are relative to the
+# CCharObject. +0x374 (HEAD) holds the base hairstyle and is always empty, so it
+# is skipped. Outfit (EXTRA_*) slots are stored elsewhere, not yet located. See
+# docs/plans/2026-10-01-equipment-reading-investigation.md.
+EQUIP_SLOTS = (
+    (0x378, "CAP"),
+    (0x37C, "BODY"),
+    (0x380, "FOOT"),
+    (0x384, "WING"),
+    (0x388, "HORSE"),
+    (0x38C, "ORNAMENT_1"),
+    (0x390, "ORNAMENT_2"),
+    (0x394, "ORNAMENT_3"),
+    (0x398, "HAND_L"),
+    (0x39C, "HAND_R"),  # also two-handed (HANDS) weapons
+)
+# Enhancement level: u8 in the item instance, stored as N + 10 (raw <= 10 means
+# not enhanced). From the tooltip code at tthola.dat 0x47E720, which prints
+# "name(+N)" with N = raw - 10. strong_equipment tops out at +20.
+ENHANCE_OFFSET = 0x221
+ENHANCE_BIAS = 10
+MAX_ENHANCE = 20
+# The instance holds the item's stats in items-table column order, int16 each,
+# hp / mp followed by their flag. Values are the item's own stats with 真元
+# inlays applied (enhancement bonuses are not included). Verified against the
+# DB on 33 bag items and against the in-game tooltip.
+ITEM_STATS_OFFSET = 0x1B0
+ITEM_STAT_FIELDS = (
+    # (column, offset from ITEM_STATS_OFFSET)
+    ("hp", 0x00),
+    ("hp_flag", 0x02),
+    ("mp", 0x04),
+    ("mp_flag", 0x06),
+    ("str", 0x08),
+    ("pow", 0x0C),
+    ("vit", 0x10),
+    ("dex", 0x14),
+    ("agi", 0x18),
+    ("wis", 0x1C),
+    ("atk", 0x20),
+    ("matk", 0x22),
+    ("extra_def", 0x24),
+    ("magic_def", 0x26),
+    ("hit", 0x28),
+    ("dodge", 0x2A),
+    ("critical_hit", 0x30),
+    ("run_speed", 0x44),
+)
+ITEM_STATS_SIZE = 0x46
+# On gear, hp / mp flags are only ever 0 or 1 and both mean a flat bonus
+# (天御蒼龍甲's 體力 2375 has flag 0 and shows in the tooltip); 2 / 3 are the
+# potion restore / percent modes.
+FLAT_STAT_FLAGS = (0, 1)
+
+
+# 真元 / 魂石 inlays: u16 compounds.id per socket, 0 = empty. Sockets fill
+# from the last one backwards (one inlay sits at +0x232, three fill
+# +0x22A..+0x232). Verified 2026-10-01 against the in-game tooltip: two
+# 巨斧手小真元 (防禦+27) on a cap with base 防禦 35 read back as 89.
+INLAY_OFFSETS = (0x226, 0x22A, 0x22E, 0x232)
+
+
+def read_item_inlays(pm, ptr):
+    """compounds.id of each filled socket, in socket order."""
+    raw = pm.read_bytes(ptr + INLAY_OFFSETS[0], INLAY_OFFSETS[-1] - INLAY_OFFSETS[0] + 2)
+    ids = [struct.unpack_from("<H", raw, off - INLAY_OFFSETS[0])[0] for off in INLAY_OFFSETS]
+    return [i for i in ids if i]
+
+
+def read_item_stats(pm, ptr):
+    """Non-zero stats of an item instance as {items column: value}."""
+    raw = pm.read_bytes(ptr + ITEM_STATS_OFFSET, ITEM_STATS_SIZE)
+    vals = {col: struct.unpack_from("<h", raw, off)[0] for col, off in ITEM_STAT_FIELDS}
+    for col in ("hp", "mp"):
+        if vals.pop(f"{col}_flag") not in FLAT_STAT_FLAGS:
+            vals[col] = 0
+    return {col: v for col, v in vals.items() if v}
+
+
+def read_equipment(pm, hp_addr):
+    """Equipped items as [(slot, item_id or None, plus, stats, inlays)] in
+    EQUIP_SLOTS order, or None if hp_addr is not in a CCharObject. plus is the
+    enhancement level (0 when none); stats / inlays are read_item_stats() /
+    read_item_inlays() of the instance. A slot whose pointer or id looks wrong
+    (being swapped mid-read) reads as empty."""
+    if not is_char_object(pm, hp_addr):
+        return None
+    obj = hp_addr - CHAR_OBJ_HP_OFFSET
+    ptrs = struct.unpack(
+        f"<{len(EQUIP_SLOTS)}I", pm.read_bytes(obj + EQUIP_SLOTS[0][0], 4 * len(EQUIP_SLOTS))
+    )
+    slots = []
+    for (_off, slot), ptr in zip(EQUIP_SLOTS, ptrs):
+        item_id, plus, stats, inlays = None, 0, {}, []
+        if HEAP_MIN_PTR <= ptr <= 0x7FFFFFFF:
+            try:
+                value = pm.read_int(ptr + ITEM_ID_OFFSET)
+                raw = pm.read_bytes(ptr + ENHANCE_OFFSET, 1)[0]
+                stats = read_item_stats(pm, ptr)
+                inlays = read_item_inlays(pm, ptr)
+            except Exception:
+                value, raw, stats, inlays = 0, 0, {}, []
+            if 0 < value <= MAX_ITEM_ID:
+                item_id = value
+                if ENHANCE_BIAS < raw <= ENHANCE_BIAS + MAX_ENHANCE:
+                    plus = raw - ENHANCE_BIAS
+            else:
+                stats, inlays = {}, []
+        slots.append((slot, item_id, plus, stats, inlays))
+    return slots
+
+
 def _window_list(pm):
     """Child-window pointers of the window manager; empty when unreachable (not logged in)."""
     try:

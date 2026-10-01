@@ -1,7 +1,25 @@
-import type { CharacterDetail } from '../../api/types';
+import { useState } from 'react';
+import type { CharacterDetail, EquipSlot, ItemMeta, ItemStat } from '../../api/types';
+import { ItemIcon } from '../../components/items/ItemCells';
+import { ItemDetail } from '../../components/items/ItemDetail';
+import type { Entry } from '../../components/items/entries';
+import { useItemMeta } from '../../components/items/useItemMeta';
 import { Panel, StatNum } from '../../primitives';
+import '../../components/items/items.css';
+
+const SLOT_LABEL: Record<EquipSlot['slot'], string> = {
+  CAP: '帽', BODY: '衣', FOOT: '鞋', WING: '背飾', HORSE: '座騎',
+  ORNAMENT_1: '左飾', ORNAMENT_2: '中飾', ORNAMENT_3: '右飾', HAND_L: '左手', HAND_R: '右手',
+};
 
 export function BodyTab({ detail, error }: { detail: CharacterDetail | null; error: string | null }) {
+  const gear = detail?.equipment ?? [];
+  // Gear plus the 真元 / 魂石 set into it (for their icons).
+  const meta = useItemMeta(gear.flatMap(g => [
+    ...(g.item_id ? [g.item_id] : []), ...(g.inlays ?? []).map(i => i.item_id),
+  ]));
+  const [selected, setSelected] = useState<EquipSlot['slot'] | null>(null);
+
   if (!detail) {
     return error
       ? <div role="status" style={{ color: 'var(--tt-bad)', fontSize: 13 }}>讀取失敗：{error}</div>
@@ -16,22 +34,173 @@ export function BodyTab({ detail, error }: { detail: CharacterDetail | null; err
     ['物攻', s.wugong], ['基礎', s.wugong_base], ['內勁', s.neijing],
     ['防禦', s.fangyu], ['護勁', s.huji], ['命中', s.mingzhong], ['閃躲', s.shanduo],
   ] as const;
-  // Buffs live in the workspace header now, so this tab shows stats only.
+
+  const worn = gear.filter(g => g.item_id);
+  const current = worn.find(g => g.slot === selected) ?? worn[0];
+  const bonus = sumStats(worn.flatMap(g => [...g.stats, ...g.enhance, ...(g.enhance_extra ?? [])]));
+
+  // Buffs live in the workspace header, so this tab shows stats and worn gear.
   return (
-    <div style={{ display: 'grid', gap: 16, gridTemplateColumns: '1fr 1fr' }}>
-      <Panel title="六屬"><Grid pairs={six} /></Panel>
-      <Panel title="七戰"><Grid pairs={seven} /></Panel>
+    <div className="inv-main">
+      <div style={{ display: 'grid', gap: 16, minWidth: 0 }}>
+        <Panel title="披掛">
+          {detail.equipment == null
+            ? <div className="inv-empty">等待角色定位後自動讀取</div>
+            : (
+              <div className="body-gear">
+                {gear.map(g => (
+                  <GearRow
+                    key={g.slot} slot={g} meta={g.item_id ? meta.get(g.item_id) : undefined}
+                    selected={current?.slot === g.slot} onSelect={() => setSelected(g.slot)}
+                  />
+                ))}
+              </div>
+            )}
+        </Panel>
+        <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+          <Panel title="六屬"><Grid pairs={six} /></Panel>
+          <Panel title="七戰"><Grid pairs={seven} /></Panel>
+          {bonus.length > 0 && (
+            <Panel title={<>裝備加成 <span className="body-note">含真元、強化</span></>}>
+              <Grid pairs={bonus} signed />
+            </Panel>
+          )}
+        </div>
+      </div>
+      <ItemDetail entry={current ? toEntry(current, meta.get(current.item_id!)) : undefined}>
+        {current && <GearStats slot={current} />}
+        {current && <GearInlays slot={current} meta={meta} />}
+      </ItemDetail>
     </div>
   );
 }
 
-function Grid({ pairs }: { pairs: readonly (readonly [string, number])[] }) {
+function GearRow({ slot, meta, selected, onSelect }: {
+  slot: EquipSlot; meta: ItemMeta | undefined; selected: boolean; onSelect: () => void;
+}) {
+  const label = SLOT_LABEL[slot.slot];
+  if (!slot.item_id) {
+    return (
+      <div className="body-gear-row is-empty">
+        <span className="body-gear-slot">{label}</span>
+        <span className="inv-row-icon" aria-hidden="true" />
+        <span className="inv-row-sub">未裝備</span>
+      </div>
+    );
+  }
+  const name = meta?.name || slot.name || `#${slot.item_id}`;
+  const plus = slot.plus > 0 ? `+${slot.plus}` : '';
+  const sockets = (slot.inlays ?? []).reduce((n, i) => n + i.count, 0);
+  const sub = [
+    meta?.type_label, meta?.level ? `Lv.${meta.level}` : '', sockets ? `鑲嵌 ${sockets}` : '',
+  ].filter(Boolean).join(' · ');
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+    <button
+      type="button" className="body-gear-row" aria-pressed={selected} onClick={onSelect}
+      aria-label={`${label}：${name}${plus}`}
+    >
+      <span className="body-gear-slot">{label}</span>
+      <span className="inv-row-icon"><ItemIcon name={name} meta={meta} size={36} /></span>
+      <span className="inv-row-name">
+        <span>{name}{plus && <span className="body-plus">{plus}</span>}</span>
+        {sub && <span className="inv-row-sub">{sub}</span>}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Stats as the game tooltip shows them: own value (with 真元), then "+x" from
+ * the enhancement level and "(+x)" from unlocked enhancement milestones.
+ */
+function GearStats({ slot }: { slot: EquipSlot }) {
+  const enh = new Map(slot.enhance.map(s => [s.label, s.value]));
+  const extra = new Map((slot.enhance_extra ?? []).map(s => [s.label, s.value]));
+  const labels = [...new Set([
+    ...slot.stats.map(s => s.label), ...enh.keys(), ...extra.keys(),
+  ])];
+  const own = new Map(slot.stats.map(s => [s.label, s.value]));
+  if (labels.length === 0) return null;
+  const enhanced = enh.size > 0 || extra.size > 0;
+  return (
+    <div className="inv-d-sec">
+      <span className="inv-d-label">
+        屬性{enhanced && <span className="body-note">金色為 +{slot.plus} 強化加成</span>}
+      </span>
+      <dl className="inv-stats">
+        {labels.map(label => {
+          const v = own.get(label) ?? 0;
+          const p = enh.get(label) ?? 0;
+          const x = extra.get(label) ?? 0;
+          return (
+            <div key={label} style={{ display: 'contents' }}>
+              <dt>{label}</dt>
+              <dd>
+                {v !== 0 && (v > 0 ? `+${v}` : v)}
+                {p !== 0 && <span className="body-plus">+{p}</span>}
+                {x !== 0 && <span className="body-plus">(+{x})</span>}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </div>
+  );
+}
+
+/** 真元 / 魂石 set into the item, one row per kind. */
+function GearInlays({ slot, meta }: { slot: EquipSlot; meta: Map<number, ItemMeta> }) {
+  const inlays = slot.inlays ?? [];
+  if (inlays.length === 0) return null;
+  return (
+    <div className="inv-d-sec">
+      <span className="inv-d-label">鑲嵌</span>
+      <div className="body-inlays">
+        {inlays.map(i => (
+          <div key={i.item_id} className="body-inlay">
+            <span className="inv-row-icon"><ItemIcon name={i.name} meta={meta.get(i.item_id)} size={28} /></span>
+            <span className="inv-row-name">
+              <span>{i.name}{i.count > 1 && <span className="body-count">×{i.count}</span>}</span>
+              <span className="inv-row-sub">{i.effect}{i.count > 1 ? ' / 顆' : ''}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function toEntry(slot: EquipSlot, meta: ItemMeta | undefined): Entry {
+  return {
+    key: slot.slot,
+    itemId: slot.item_id!,
+    // The tooltip shows "name(+N)"; keep the same shape in the detail header.
+    name: `${meta?.name || slot.name || `#${slot.item_id}`}${slot.plus > 0 ? ` +${slot.plus}` : ''}`,
+    qty: 1,
+    stacks: 1,
+    sources: [],
+    // The DB stats are the bare item; GearStats shows the live ones instead.
+    meta: meta && { ...meta, stats: [] },
+    category: meta?.category ?? 'gear',
+  };
+}
+
+/** Stats summed over the worn gear, in first-seen label order. */
+function sumStats(stats: ItemStat[]): [string, number][] {
+  const total = new Map<string, number>();
+  for (const st of stats) total.set(st.label, (total.get(st.label) ?? 0) + st.value);
+  return [...total].filter(([, v]) => v !== 0);
+}
+
+function Grid({ pairs, signed }: { pairs: readonly (readonly [string, number])[]; signed?: boolean }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
       {pairs.map(([k, v]) => (
-        <div key={k} style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, whiteSpace: 'nowrap' }}>
           <span style={{ color: 'var(--tt-dim)', letterSpacing: 2 }}>{k}</span>
-          <StatNum value={v} />
+          {signed && v > 0
+            ? <span className="body-signed">+<StatNum value={v} /></span>
+            : <StatNum value={v} />}
         </div>
       ))}
     </div>

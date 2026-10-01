@@ -119,6 +119,73 @@ class BuffInfo(_Base):
     kind: Literal["buff", "debuff"] = "buff"
 
 
+# ---- Equipment -------------------------------------------------------------
+
+
+class Inlay(_Base):
+    """真元 / 魂石 set into a piece of gear, grouped by kind."""
+
+    item_id: int  # the 真元 / 魂石 item (for its icon and name)
+    name: str
+    count: int
+    effect: str  # compounds.help first line, e.g. 防禦+27 or 閃躲+25~70
+
+
+EquipSlotKey = Literal[
+    "CAP",
+    "BODY",
+    "FOOT",
+    "WING",
+    "HORSE",
+    "ORNAMENT_1",
+    "ORNAMENT_2",
+    "ORNAMENT_3",
+    "HAND_L",
+    "HAND_R",
+]
+
+
+class EquipSlot(_Base):
+    """One worn-gear slot; item_id is None when the slot is empty."""
+
+    slot: EquipSlotKey
+    item_id: int | None = None
+    name: str | None = None
+    plus: int = 0  # enhancement level (+N); 0 when not enhanced
+    # The item's own stats with 真元 inlays applied, read from the instance.
+    stats: list[ItemStat] = []
+    # Bonus of the current enhancement level (strong_formula), on top of `stats`.
+    enhance: list[ItemStat] = []
+    # Milestone bonuses unlocked at or below the current level (the tooltip's
+    # "(+x)"), on top of `stats` and `enhance`.
+    enhance_extra: list[ItemStat] = []
+    inlays: list[Inlay] = []
+
+
+# ---- Avatar (paper-doll head) --------------------------------------------
+
+
+class DollLayer(_Base):
+    """One sprite layer; (anchor_x, anchor_y) is the attach point in the image."""
+
+    src: str  # GET /api/doll/... frame image
+    width: int
+    height: int
+    anchor_x: int
+    anchor_y: int
+
+
+class Avatar(_Base):
+    """Head portrait: layers bottom to top, all sharing one anchor point.
+
+    `mirror` means the art is the opposite direction's frame: flip each layer
+    left-right about its anchor (drawn left = origin - (width - anchor_x)).
+    """
+
+    mirror: bool
+    layers: list[DollLayer]
+
+
 # ---- Character views -----------------------------------------------------
 
 
@@ -157,6 +224,7 @@ class CharacterRow(_Base):
     position: Position
     autoclick: AutoClickStatus
     buffs: list[BuffInfo] = []
+    avatar: Avatar | None = None  # None until read, or when the DB has no art for it
     last_error: ErrorInfo | None = None
 
 
@@ -174,6 +242,8 @@ class CharacterDetail(_Base):
     pet_inventory: list[Item] | None = None
     warehouse: list[Item] | None = None
     money: int | None = None
+    # Worn gear in reader.EQUIP_SLOTS order; None until first read.
+    equipment: list[EquipSlot] | None = None
     # Epoch seconds of the last successful read; None until the first one.
     inventory_updated_at: float | None = None
     warehouse_updated_at: float | None = None
