@@ -125,17 +125,30 @@ def test_avatar_none_without_head_art_or_doll_tables(tmp_path):
 
 
 def test_reads_equipment_slots_and_skips_bad_pointers():
-    from reader import EQUIP_SLOTS, ITEM_ID_OFFSET, read_equipment
+    from reader import ENHANCE_OFFSET, EQUIP_SLOTS, ITEM_ID_OFFSET, read_equipment
 
     pm = FakePm()
     _char(pm)
     cap_off, body_off = EQUIP_SLOTS[0][0], EQUIP_SLOTS[1][0]
     pm.u32(OBJ + cap_off, 0x28629F40)
     pm.write(0x28629F40 + ITEM_ID_OFFSET, struct.pack("<i", 50401))
+    pm.write(0x28629F40 + ENHANCE_OFFSET, bytes([15]))  # stored as N + 10
     pm.u32(OBJ + body_off, 0x00000044)  # not a heap pointer
     got = read_equipment(pm, HP)
-    assert got[0] == ("CAP", 50401)
-    assert got[1] == ("BODY", None)
-    assert [slot for slot, _ in got] == [slot for _, slot in EQUIP_SLOTS]
-    assert all(iid is None for _, iid in got[2:])
+    assert got[0] == ("CAP", 50401, 5)
+    assert got[1] == ("BODY", None, 0)
+    assert [slot for slot, _, _ in got] == [slot for _, slot in EQUIP_SLOTS]
+    assert all(iid is None for _, iid, _ in got[2:])
     assert read_equipment(FakePm(), HP) is None
+
+
+def test_enhancement_raw_values_outside_n_plus_10_read_as_zero():
+    from reader import ENHANCE_OFFSET, EQUIP_SLOTS, ITEM_ID_OFFSET, read_equipment
+
+    for raw, want in ((0, 0), (10, 0), (11, 1), (30, 20), (31, 0), (0xFF, 0)):
+        pm = FakePm()
+        _char(pm)
+        pm.u32(OBJ + EQUIP_SLOTS[0][0], 0x28629F40)
+        pm.write(0x28629F40 + ITEM_ID_OFFSET, struct.pack("<i", 50401))
+        pm.write(0x28629F40 + ENHANCE_OFFSET, bytes([raw]))
+        assert read_equipment(pm, HP)[0][2] == want, raw

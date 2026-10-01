@@ -79,3 +79,4 @@ button.body-gear-row[aria-pressed="true"] { background: var(--tt-raised); box-sh
 .body-note { font-family: var(--tt-font); font-size: 11px; letter-spacing: 0; font-weight: 400; color: var(--tt-mute); margin-left: 6px; }
 .body-signed { color: var(--tt-ok); font-family: var(--tt-font-mono); }
 .body-signed > span { color: inherit !important; }
+.body-plus { margin-left: 6px; font-family: var(--tt-font-mono); font-size: 12px; color: var(--tt-gold); }

@@ -999,12 +999,19 @@ EQUIP_SLOTS = (
     (0x398, "HAND_L"),
     (0x39C, "HAND_R"),  # also two-handed (HANDS) weapons
 )
+# Enhancement level: u8 in the item instance, stored as N + 10 (raw <= 10 means
+# not enhanced). From the tooltip code at tthola.dat 0x47E720, which prints
+# "name(+N)" with N = raw - 10. strong_equipment tops out at +20.
+ENHANCE_OFFSET = 0x221
+ENHANCE_BIAS = 10
+MAX_ENHANCE = 20
 
 
 def read_equipment(pm, hp_addr):
-    """Equipped items as [(slot, item_id or None)] in EQUIP_SLOTS order, or None
-    if hp_addr is not in a CCharObject. A slot whose pointer or id looks wrong
-    (being swapped mid-read) reads as empty."""
+    """Equipped items as [(slot, item_id or None, plus)] in EQUIP_SLOTS order, or
+    None if hp_addr is not in a CCharObject. plus is the enhancement level (0 when
+    none). A slot whose pointer or id looks wrong (being swapped mid-read) reads
+    as empty."""
     if not is_char_object(pm, hp_addr):
         return None
     obj = hp_addr - CHAR_OBJ_HP_OFFSET
@@ -1013,15 +1020,18 @@ def read_equipment(pm, hp_addr):
     )
     slots = []
     for (_off, slot), ptr in zip(EQUIP_SLOTS, ptrs):
-        item_id = None
+        item_id, plus = None, 0
         if HEAP_MIN_PTR <= ptr <= 0x7FFFFFFF:
             try:
                 value = pm.read_int(ptr + ITEM_ID_OFFSET)
+                raw = pm.read_bytes(ptr + ENHANCE_OFFSET, 1)[0]
             except Exception:
-                value = 0
+                value, raw = 0, 0
             if 0 < value <= MAX_ITEM_ID:
                 item_id = value
-        slots.append((slot, item_id))
+                if ENHANCE_BIAS < raw <= ENHANCE_BIAS + MAX_ENHANCE:
+                    plus = raw - ENHANCE_BIAS
+        slots.append((slot, item_id, plus))
     return slots
 
 

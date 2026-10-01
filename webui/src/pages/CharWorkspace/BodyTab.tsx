@@ -83,16 +83,17 @@ function GearRow({ slot, meta, selected, onSelect }: {
     );
   }
   const name = meta?.name || slot.name || `#${slot.item_id}`;
+  const plus = slot.plus > 0 ? `+${slot.plus}` : '';
   const sub = [meta?.type_label, meta?.level ? `Lv.${meta.level}` : ''].filter(Boolean).join(' · ');
   return (
     <button
       type="button" className="body-gear-row" aria-pressed={selected} onClick={onSelect}
-      aria-label={`${label}：${name}`}
+      aria-label={`${label}：${name}${plus}`}
     >
       <span className="body-gear-slot">{label}</span>
       <span className="inv-row-icon"><ItemIcon name={name} meta={meta} size={36} /></span>
       <span className="inv-row-name">
-        <span>{name}</span>
+        <span>{name}{plus && <span className="body-plus">{plus}</span>}</span>
         {sub && <span className="inv-row-sub">{sub}</span>}
       </span>
     </button>
@@ -103,7 +104,8 @@ function toEntry(slot: EquipSlot, meta: ItemMeta | undefined): Entry {
   return {
     key: slot.slot,
     itemId: slot.item_id!,
-    name: meta?.name || slot.name || `#${slot.item_id}`,
+    // The tooltip shows "name(+N)"; keep the same shape in the detail header.
+    name: `${meta?.name || slot.name || `#${slot.item_id}`}${slot.plus > 0 ? ` +${slot.plus}` : ''}`,
     qty: 1,
     stacks: 1,
     sources: [],

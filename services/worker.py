@@ -104,7 +104,7 @@ class ReaderWorker(threading.Thread):
         on_pet_inventory: Callable[[list[tuple[int, int, str]]], None] | None = None,
         on_money: Callable[[int], None] | None = None,
         on_appearance: Callable[[dict], None] | None = None,
-        on_equipment: Callable[[list[tuple[str, int | None, str | None]]], None] | None = None,
+        on_equipment: Callable[[list[tuple[str, int | None, str | None, int]]], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._pid = pid
@@ -532,7 +532,10 @@ class ReaderWorker(threading.Thread):
             gear = read_equipment(pm, hp_addr)
             if gear is not None:
                 self._cb_equipment(
-                    [(slot, iid, self._item_db.get(iid) if iid else None) for slot, iid in gear]
+                    [
+                        (slot, iid, self._item_db.get(iid) if iid else None, plus)
+                        for slot, iid, plus in gear
+                    ]
                 )
         except Exception as exc:
             self._log.debug("equipment read failed: %s", exc, extra={"cat": "inventory"})

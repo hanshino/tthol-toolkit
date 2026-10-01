@@ -98,3 +98,10 @@ Cheat Engine（CE MCP bridge）在 `0x4190a4` 下只記錄的硬體中斷點。�
 ## 已接進程式
 
 `reader.read_equipment`（10 欄，略過一直是空的 `+0x374` HEAD）每輪跟背包一起讀，經 `CharacterDetail.equipment` 送到「根脈」分頁的「披掛」區。外裝欄仍未定位，所以披掛只顯示本體裝備；頭像則用實際繪製的 sequence，會顯示外裝。
+
+## 強化等級：已解
+
+- 裝備 instance（欄位指標所指，0x250 bytes，結尾是 debug heap 的 `0xFDFDFDFD`）的 `+0x221` u8 = **N + 10**；`≤ 10` 代表沒強化。依據是 tooltip 程式 `0x47E720..0x47E7BE`（tthol-data 反組譯）：`mov bl,[inst+0x221]`，大於 10 就 `sprintf("%s%s(+%d)", color, name, bl-10)`。實測 9 件全 +5 都讀到 15。
+- 直接搜「5」找不到，因為存的是 15。
+- instance 其餘欄位是道具定義的複本（`+0x05` id、`+0x1B0..+0x1E0` 屬性、`+0x244` strong_equipment），但屬性值是實際值：帽防禦 35→89、鞋閃躲 15→79、戒指重擊 3→36，而且這些差值**對不上** strong_formula 的 +5 累計加成，所以不是強化（可能是隨機屬性／鑲嵌，未確認）。`+0x00` byte 剛好在這些「數值跟 DB 不同」的道具上是 1。`+0x09`、`+0x208` 未知。
+- 「裝備加成」面板仍只加總 DB 基礎值，標「不含強化」。

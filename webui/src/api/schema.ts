@@ -1055,6 +1055,11 @@ export interface components {
             item_id?: number | null;
             /** Name */
             name?: string | null;
+            /**
+             * Plus
+             * @default 0
+             */
+            plus: number;
         };
         /**
          * ErrorInfo

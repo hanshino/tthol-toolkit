@@ -142,6 +142,7 @@ class EquipSlot(_Base):
     slot: EquipSlotKey
     item_id: int | None = None
     name: str | None = None
+    plus: int = 0  # enhancement level (+N); 0 when not enhanced
 
 
 # ---- Avatar (paper-doll head) --------------------------------------------
