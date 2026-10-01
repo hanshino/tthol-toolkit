@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { get, post } from '../../api/client';
+import { useState } from 'react';
+import { post } from '../../api/client';
 import { describeError, reportClientError } from '../../diag/report';
 import type { CharacterDetail, SaveSnapshotResult } from '../../api/types';
 import { LinkDot, type LinkStatus } from '../../primitives';
@@ -43,8 +43,9 @@ function SummaryCell({ label, status, value, unit, sub, gold }: {
   );
 }
 
-export function ItemsTab({ pid }: { pid: number }) {
-  const [detail, setDetail] = useState<CharacterDetail | null>(null);
+export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
+  pid: number; detail: CharacterDetail | null; error: string | null; onOpenSnapshots: () => void;
+}) {
   const [tab, setTab] = useState<Tab>('inventory');
   const [category, setCategory] = useState<Category | 'all'>('all');
   const [query, setQuery] = useState('');
@@ -52,22 +53,6 @@ export function ItemsTab({ pid }: { pid: number }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState<SnapshotSource | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchOnce = () => {
-      get<CharacterDetail>(`/api/characters/${pid}`)
-        .then(d => { if (!cancelled) setDetail(d); })
-        .catch(e => {
-          if (cancelled) return;
-          setToast(`讀取失敗：${describeError(e)}`);
-          reportClientError(e, { component: 'ItemsTab' });
-        });
-    };
-    fetchOnce();
-    const id = setInterval(fetchOnce, 3000); // containers are re-read by the worker every poll
-    return () => { cancelled = true; clearInterval(id); };
-  }, [pid]);
 
   const updatePrefs = (next: Partial<typeof prefs>) => {
     const merged = { ...prefs, ...next };
@@ -209,7 +194,9 @@ export function ItemsTab({ pid }: { pid: number }) {
             </div>
           )}
 
-          {toast && <div className="inv-toast">{toast}</div>}
+          {(toast ?? (error ? `讀取失敗：${error}` : null)) && (
+            <div className="inv-toast">{toast ?? `讀取失敗：${error}`}</div>
+          )}
 
           <div className="inv-body">
             {shown.length === 0
@@ -236,6 +223,9 @@ export function ItemsTab({ pid }: { pid: number }) {
               <button type="button" className="is-ghost" onClick={() => saveSnapshot('warehouse')}
                 disabled={warehouse.length === 0 || saving !== null} title="將目前庫房內容存入留影">
                 {saving === 'warehouse' ? '保存中…' : '↧ 留影庫'}
+              </button>
+              <button type="button" className="is-ghost" onClick={onOpenSnapshots} title="到留影頁查看已保存的快照">
+                看留影 →
               </button>
             </span>
           </div>

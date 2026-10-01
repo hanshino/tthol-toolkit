@@ -1,12 +1,14 @@
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { get, upload } from '../api/client';
 import { describeError, reportClientError } from '../diag/report';
-import type { BackupImportResult, SnapshotRow } from '../api/types';
+import type { BackupImportResult, CharacterRow, SnapshotRow } from '../api/types';
+import { pidForName, type OpenChar } from '../nav';
+import '../components/items/items.css';
 import { Panel } from '../primitives';
 
 type Status = { kind: 'ok' | 'err'; text: string } | null;
 
-export function Snapshots() {
+export function Snapshots({ chars, onOpenChar }: { chars: CharacterRow[]; onOpenChar: OpenChar }) {
   const [rows, setRows] = useState<SnapshotRow[]>([]);
   const [selected, setSelected] = useState<SnapshotRow | null>(null);
   const [busy, setBusy] = useState(false);
@@ -101,6 +103,13 @@ export function Snapshots() {
               <div style={{ marginBottom: 12 }}>
                 <strong style={{ fontFamily: 'var(--tt-font-serif)' }}>{selected.character_name}</strong>
                 <span style={{ color: 'var(--tt-mute)', marginLeft: 8 }}>{selected.saved_at}</span>
+                {(() => {
+                  const pid = pidForName(chars, selected.character_name);
+                  return pid !== null && (
+                    <button type="button" className="tr-holder-link" style={{ marginLeft: 12, fontSize: 12 }}
+                      onClick={() => onOpenChar(pid, 'items')}>開啟角色 →</button>
+                  );
+                })()}
               </div>
               <div style={{ color: 'var(--tt-mute)', fontSize: 12 }}>
                 {selected.item_count} 件道具（道具明細 v1.1 接入；diff 已延後）

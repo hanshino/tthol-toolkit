@@ -1,0 +1,66 @@
+/* Character workspace. Button rules are written as `button.x` (and selected
+   tabs restate their underline on hover) so they outrank the global button
+   styles in styles.css. */
+/* The body, not .app-main, is the scroll container: header and tabs stay put
+   without position: sticky, so sticky children of a tab (the 行囊 item detail)
+   resolve against the body and are never painted under the header. */
+.ws { display: flex; flex-direction: column; height: 100%; }
+.ws-sticky { flex: none; background: var(--tt-bg); }
+
+.ws-head { padding: 12px 18px; background: var(--tt-panel); border-bottom: 1px solid var(--tt-line); display: grid; gap: 10px; }
+.ws-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ws-id-text { display: grid; gap: 2px; min-width: 0; }
+.ws-name { display: flex; align-items: center; gap: 8px; font-family: var(--tt-font-serif); font-size: 18px; letter-spacing: 3px; min-width: 0; }
+.ws-name > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-sub { font-size: 12px; color: var(--tt-dim); }
+.ws-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex: none; }
+
+button.ws-btn, button.ws-toggle { font-size: 12px; letter-spacing: 1px; padding: 6px 12px; min-height: 32px; background: var(--tt-bg); color: var(--tt-dim); }
+button.ws-btn[data-attn] { color: var(--tt-gold); }
+button.ws-toggle { display: flex; align-items: center; gap: 8px; }
+button.ws-toggle[aria-pressed="true"] { color: var(--tt-ok); border-color: var(--tt-ok); }
+.ws-switch { width: 26px; height: 14px; border-radius: 7px; background: var(--tt-line-soft); display: flex; align-items: center; padding: 2px; box-sizing: border-box; transition: background 120ms ease; }
+.ws-switch > span { width: 10px; height: 10px; border-radius: 50%; background: var(--tt-text); transition: transform 120ms ease; }
+button.ws-toggle[aria-pressed="true"] .ws-switch { background: #3f6a5e; }
+button.ws-toggle[aria-pressed="true"] .ws-switch > span { transform: translateX(12px); }
+
+.ws-vitals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: end; }
+.ws-vital { display: grid; gap: 4px; min-width: 0; }
+.ws-vrow { display: flex; justify-content: space-between; gap: 8px; }
+.ws-vlabel { color: var(--tt-dim); letter-spacing: 2px; font-size: 11px; }
+.ws-vnum { font-family: var(--tt-font-mono); color: var(--tt-dim); font-size: 11px; }
+.ws-vnum[data-warn] { color: var(--tt-bad); }
+.ws-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-buffs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ws-auto { margin-left: auto; font-size: 11px; color: var(--tt-ok); letter-spacing: 1px; }
+.ws-head[data-stale] .ws-dim-when-lost, .ws-body[data-stale] { opacity: 0.55; }
+button.ws-back { font-size: 12px; padding: 4px 10px; justify-self: start; }
+
+.ws-banner { padding: 8px 12px; font-size: 12px; line-height: 1.5; border: 1px solid var(--tt-line); display: grid; gap: 8px; }
+.ws-banner.is-bad { border-color: var(--tt-bad); }
+.ws-banner.is-warn { border-color: var(--tt-warn); }
+.ws-badge { font-family: var(--tt-font-serif); margin-right: 6px; }
+.ws-banner.is-bad .ws-badge { color: var(--tt-bad); }
+.ws-banner.is-warn .ws-badge { color: var(--tt-warn); }
+.ws-rescue { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ws-rescue input { width: 110px; padding: 5px 8px; font-size: 12px; }
+button.ws-rescue-go { font-size: 12px; padding: 5px 12px; color: var(--tt-gold); }
+.ws-rescue-hint { color: var(--tt-dim); font-size: 11px; }
+
+.ws-tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--tt-line); background: var(--tt-bg); }
+button.ws-tab { display: flex; align-items: baseline; gap: 6px; padding: 10px 16px; margin-bottom: -1px; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--tt-dim); letter-spacing: 0; }
+button.ws-tab:hover:not(:disabled) { background: transparent; color: var(--tt-text); border-color: transparent; }
+button.ws-tab[aria-selected="true"],
+button.ws-tab[aria-selected="true"]:hover:not(:disabled) { color: var(--tt-gold); border-bottom-color: var(--tt-gold); }
+.ws-tab-n { font-family: var(--tt-font-serif); font-size: 14px; letter-spacing: 3px; }
+.ws-tab-s { font-size: 10.5px; color: var(--tt-dim); }
+
+.ws-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; }
+.ws-empty { padding: 40px; text-align: center; color: var(--tt-dim); font-size: 13px; border: 1px dashed var(--tt-line); }
+
+/* Keyboard focus (ui-ux-pro-max focus-states) and reduced motion. */
+button.ws-btn:focus-visible, button.ws-toggle:focus-visible, button.ws-tab:focus-visible,
+button.ws-back:focus-visible, button.ws-rescue-go:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
+@media (prefers-reduced-motion: reduce) {
+  .ws-switch, .ws-switch > span { transition: none; }
+}

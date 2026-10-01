@@ -1,0 +1,44 @@
+/* Sidebar: global nav + character list. Button rules are written as
+   `button.x` so they outrank the global button styles in styles.css. */
+.sb {
+  width: 200px; flex: none; display: flex; flex-direction: column; min-height: 0;
+  background: var(--tt-panel); border-right: 1px solid var(--tt-line);
+}
+.sb-brand { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--tt-line-soft); }
+.sb-title { font-family: var(--tt-font-serif); font-size: 15px; font-weight: 600; letter-spacing: 4px; }
+.sb-tag { font-size: 10px; color: var(--tt-dim); letter-spacing: 1px; }
+.sb-nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; }
+
+button.sb-item, button.sb-char {
+  display: flex; width: 100%; text-align: left; letter-spacing: 0;
+  background: transparent; border: 1px solid transparent; color: var(--tt-text);
+}
+button.sb-item { align-items: baseline; gap: 8px; min-height: 36px; padding: 8px 10px; }
+button.sb-char { align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; }
+button.sb-item:hover:not(:disabled), button.sb-char:hover:not(:disabled) {
+  background: var(--tt-raised); border-color: var(--tt-line-soft);
+}
+button.sb-item[aria-current="page"], button.sb-char[aria-current="page"] {
+  background: var(--tt-raised); border-color: var(--tt-line);
+}
+button.sb-item[aria-current="page"] .sb-item-n,
+button.sb-char[aria-current="page"] .sb-char-name { color: var(--tt-gold); }
+button.sb-item:focus-visible, button.sb-char:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
+button.sb-char[data-stale] { opacity: 0.6; }
+
+.sb-item-n { font-family: var(--tt-font-serif); font-size: 14px; letter-spacing: 3px; }
+.sb-item-s { font-size: 10.5px; color: var(--tt-dim); }
+.sb-sec {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 10px 16px 6px; border-top: 1px solid var(--tt-line-soft);
+  font-size: 11px; color: var(--tt-dim); letter-spacing: 2px;
+}
+.sb-mono { font-family: var(--tt-font-mono); letter-spacing: 0; }
+.sb-chars { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 0 8px 8px; }
+.sb-empty { padding: 12px 8px; font-size: 11px; color: var(--tt-dim); line-height: 1.6; }
+.sb-char-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sb-char-name { font-family: var(--tt-font-serif); font-size: 13px; letter-spacing: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-char-meta { font-size: 10.5px; color: var(--tt-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px; border-top: 1px solid var(--tt-line-soft); }
+button.sb-item.sb-diag { width: auto; min-height: 32px; align-items: center; }
+.sb-ver { font-size: 10px; color: var(--tt-dim); }

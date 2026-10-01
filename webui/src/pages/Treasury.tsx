@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { get } from '../api/client';
 import { Panel, StatNum } from '../primitives';
-import type { ItemMeta, TreasuryItem, TreasurySummary } from '../api/types';
+import type { CharacterRow, ItemMeta, TreasuryItem, TreasurySummary } from '../api/types';
+import { pidForName, type OpenChar } from '../nav';
 import { ItemIcon } from '../components/items/ItemCells';
 import { ItemDetail } from '../components/items/ItemDetail';
 import type { Entry } from '../components/items/entries';
@@ -23,7 +24,7 @@ function toEntry(item: TreasuryItem, meta: ItemMeta | undefined): Entry {
   };
 }
 
-export function Treasury() {
+export function Treasury({ chars, onOpenChar }: { chars: CharacterRow[]; onOpenChar: OpenChar }) {
   const [summary, setSummary] = useState<TreasurySummary>({
     total_kinds: 0, total_qty: 0, on_person: 0, in_warehouse: 0,
   });
@@ -98,7 +99,7 @@ export function Treasury() {
             </div>
             {current && (
               <ItemDetail entry={toEntry(current, meta.get(current.item_id))}>
-                <HolderSection item={current} />
+                <HolderSection item={current} chars={chars} onOpenChar={onOpenChar} />
               </ItemDetail>
             )}
           </div>
@@ -232,19 +233,26 @@ function ItemRow({ item, meta, selected, onSelect }: {
   );
 }
 
-function HolderSection({ item }: { item: TreasuryItem }) {
+function HolderSection({ item, chars, onOpenChar }: {
+  item: TreasuryItem; chars: CharacterRow[]; onOpenChar: OpenChar;
+}) {
   const sorted = [...item.holders].sort((a, b) => b.qty - a.qty);
   return (
     <div className="inv-d-sec">
       <span className="inv-d-label">持有者</span>
       <div className="tr-holders">
-        {sorted.map(h => (
-          <div key={`${h.character}-${h.source}`} className="tr-holder">
-            <span>{h.character}</span>
-            <span className="tr-holder-src">{h.source === 'warehouse' ? '庫房' : '隨身'}{h.account ? ` · ${h.account}` : ''}</span>
-            <span className="tr-holder-qty">{h.qty.toLocaleString()}</span>
-          </div>
-        ))}
+        {sorted.map(h => {
+          const pid = pidForName(chars, h.character);
+          return (
+            <div key={`${h.character}-${h.source}`} className="tr-holder">
+              {pid !== null
+                ? <button type="button" className="tr-holder-link" onClick={() => onOpenChar(pid, 'items')} title="開啟這個角色的行囊">{h.character}</button>
+                : <span>{h.character}</span>}
+              <span className="tr-holder-src">{h.source === 'warehouse' ? '庫房' : '隨身'}{h.account ? ` · ${h.account}` : ''}</span>
+              <span className="tr-holder-qty">{h.qty.toLocaleString()}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
