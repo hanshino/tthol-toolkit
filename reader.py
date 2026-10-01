@@ -478,6 +478,51 @@ def verify_structure_shifted(pm, struct_base, fields):
 # ============================================================
 # 顯示角色狀態
 # ============================================================
+# The current stage is a CStage reached from a fixed global; it holds the stage
+# id and name inline and is reused across map changes (only its fields change).
+# The 0x28 int before the name that locate_map_name keys on is the tile size
+# (map px / tile count == 40), not a per-map value. Fixed for a given tthola.dat
+# build, like the vtables below; 0x00808C30 holds the same pointer.
+STAGE_PTR = 0x00804B64
+STAGE_VTABLE = 0x005FD238  # CStage
+STAGE_ID_OFFSET = 0x2AE8  # int32, == stages.id
+STAGE_NAME_OFFSET = 0x2B04  # char[32] Big5, == stages.name
+STAGE_NAME_MAX_BYTES = 32
+
+
+def read_stage(pm):
+    """(stage_id, map_name) from the CStage global, or None when it is unreachable."""
+    try:
+        stage = struct.unpack("<I", pm.read_bytes(STAGE_PTR, 4))[0]
+        if not HEAP_MIN_PTR <= stage <= 0x7FFFFFFF:
+            return None
+        if struct.unpack("<I", pm.read_bytes(stage, 4))[0] != STAGE_VTABLE:
+            return None
+        stage_id = pm.read_int(stage + STAGE_ID_OFFSET)
+        raw = pm.read_bytes(stage + STAGE_NAME_OFFSET, STAGE_NAME_MAX_BYTES)
+    except Exception:
+        return None
+    end = raw.find(b"\x00")
+    if end < 1:
+        return None
+    try:
+        name = raw[:end].decode("big5")
+    except Exception:
+        return None
+    return stage_id, name
+
+
+def read_map_name(pm, valid_names: set[str] | None = None):
+    """Current map name: direct CStage read, falling back to the heap scan.
+
+    The fallback covers a client patch that moves STAGE_PTR / STAGE_VTABLE.
+    """
+    stage = read_stage(pm)
+    if stage is not None and (valid_names is None or stage[1] in valid_names):
+        return stage[1]
+    return locate_map_name(pm, valid_names)
+
+
 def locate_map_name(pm, valid_names: set[str] | None = None):
     """Scan heap for the current map name string.
 
@@ -1005,7 +1050,7 @@ def main():
 
     # Read character status
     char_name = read_character_name(pm, hp_addr)
-    map_name = locate_map_name(pm)
+    map_name = read_map_name(pm)
     fields_data = read_all_fields(pm, hp_addr, display_fields)
     print(format_status(fields_data, char_name, map_name))
 
@@ -1032,7 +1077,7 @@ def main():
         try:
             while True:
                 fields_data = read_all_fields(pm, hp_addr, display_fields)
-                map_name = locate_map_name(pm)
+                map_name = read_map_name(pm)
                 status = format_status(fields_data, char_name, map_name)
                 line_count = status.count("\n") + 1
                 sys.stdout.write(f"\r\033[{line_count}A{status}\n")

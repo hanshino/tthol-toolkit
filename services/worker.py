@@ -39,6 +39,7 @@ from reader import (
     read_item_container,
     read_money,
     read_pet_inventory,
+    read_stage,
     read_warehouse,
     verify_structure,
     verify_structure_shifted,
@@ -51,7 +52,7 @@ POLL_INTERVAL = 3.0
 FAILURE_THRESHOLD = 3
 LOCATE_RETRY_INTERVAL = 3.0
 LOCATE_MAX_RETRIES = 10
-MAP_RESCAN_EVERY = 5  # locate_map_name walks the heap; cache between polls
+MAP_RESCAN_EVERY = 5  # fallback locate_map_name walks the heap; cache between polls
 
 
 class RelocateWindow:
@@ -252,7 +253,13 @@ class ReaderWorker(threading.Thread):
                         map_tick = 0
                 else:
                     failure_count = 0
-                    if map_tick % MAP_RESCAN_EVERY == 0 or not map_name:
+                    stage = read_stage(pm)
+                    if stage is not None and (
+                        self._stage_names is None or stage[1] in self._stage_names
+                    ):
+                        map_name = stage[1]
+                    elif map_tick % MAP_RESCAN_EVERY == 0 or not map_name:
+                        # CStage global unreachable (e.g. moved by a client patch)
                         map_name = locate_map_name(pm, valid_names=self._stage_names)
                     map_tick += 1
                     # HP comes straight from the engine charobject pointer chain
