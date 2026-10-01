@@ -6,9 +6,10 @@ import threading
 import time
 from typing import Literal
 
-from services import diagnostics
+from services import diagnostics, doll_catalog
 from services.api_types import (
     AutoClickStatus,
+    Avatar,
     BuffInfo,
     CharacterDetail,
     CharacterRow,
@@ -80,6 +81,8 @@ class CharSession:
         self._latest_pet: list[Item] = []
         self._latest_wh: list[Item] = []
         self._money: int | None = None
+        self._appearance: dict | None = None
+        self._avatar: Avatar | None = None
         self._latest_buffs: list[BuffInfo] = []
         self._inv_seq: int = 0
         self._wh_seq: int = 0
@@ -104,6 +107,7 @@ class CharSession:
             on_warehouse_open=self._on_wh_open,
             on_pet_inventory=self._on_pet,
             on_money=self._on_money,
+            on_appearance=self._on_appearance,
         )
 
     @property
@@ -173,6 +177,7 @@ class CharSession:
                 position=_position(s),
                 autoclick=AutoClickStatus(running=False),
                 buffs=list(self._latest_buffs),
+                avatar=self._avatar,
                 last_error=self._last_error,
             )
 
@@ -287,6 +292,15 @@ class CharSession:
     def _on_money(self, money: int) -> None:
         with self._lock:
             self._money = money
+
+    def _on_appearance(self, appearance: dict) -> None:
+        # Read every poll but rarely changes; only rebuild the layers on change.
+        if appearance == self._appearance:
+            return
+        avatar = doll_catalog.avatar(appearance)
+        with self._lock:
+            self._appearance = appearance
+            self._avatar = avatar
 
     def _on_wh(self, items: list[tuple[int, int, str]]) -> None:
         with self._lock:

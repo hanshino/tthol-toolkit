@@ -4,7 +4,7 @@ import { describeError, reportClientError } from '../../diag/report';
 import type { CharacterRow, ConnectResult, OkResponse } from '../../api/types';
 import { friendlyError } from '../../components/friendlyError';
 import { isStopped, isUnlocated } from '../../nav';
-import { Bar, BuffChips, LinkDot, Seal } from '../../primitives';
+import { Bar, BuffChips, DollAvatar, LinkDot, Seal } from '../../primitives';
 import { useKeepActive } from './useKeepActive';
 
 const LOW_HP = 0.3;
@@ -69,7 +69,12 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
   return (
     <section className="ws-head" aria-label="角色狀態" data-stale={stale || undefined}>
       <div className="ws-id">
-        <Seal size={34}>{unlocated ? '?' : char.name[0]}</Seal>
+        {!unlocated && char.avatar
+          ? (
+            <DollAvatar avatar={char.avatar} size={34} label={`${char.name} 頭像`}
+              fallback={<Seal size={34}>{char.name[0]}</Seal>} />
+          )
+          : <Seal size={34}>{unlocated ? '?' : char.name[0]}</Seal>}
         <div className="ws-id-text">
           <div className="ws-name"><LinkDot status={gone ? 'lost' : char.link} /><span>{char.name}</span></div>
           <div className="ws-sub">

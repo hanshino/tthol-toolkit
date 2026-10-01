@@ -37,6 +37,7 @@ from reader import (
     read_hp_pair_from_chain,
     read_inventory,
     read_item_container,
+    read_appearance,
     read_money,
     read_pet_inventory,
     read_stage,
@@ -101,6 +102,7 @@ class ReaderWorker(threading.Thread):
         on_warehouse_open: Callable[[bool], None] | None = None,
         on_pet_inventory: Callable[[list[tuple[int, int, str]]], None] | None = None,
         on_money: Callable[[int], None] | None = None,
+        on_appearance: Callable[[dict], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._pid = pid
@@ -113,6 +115,7 @@ class ReaderWorker(threading.Thread):
         self._cb_warehouse_open = on_warehouse_open or (lambda _o: None)
         self._cb_pet_inventory = on_pet_inventory or (lambda _i: None)
         self._cb_money = on_money or (lambda _m: None)
+        self._cb_appearance = on_appearance or (lambda _a: None)
         self._hp_value: int | None = None
         self._offset_filters = None
         self._compat_mode = False
@@ -493,7 +496,7 @@ class ReaderWorker(threading.Thread):
             self._cb_warehouse([])
 
     def _auto_read_items(self, pm, hp_addr):
-        """Refresh bag, pet bag, money and warehouse on every poll; all are
+        """Refresh bag, pet bag, money, appearance and warehouse on every poll; all are
         direct reads (~1 ms).
 
         The warehouse is read whenever its window is open in game, and the last
@@ -516,6 +519,12 @@ class ReaderWorker(threading.Thread):
                 self._cb_money(money)
         except Exception as exc:
             self._log.debug("auto pet bag read failed: %s", exc, extra={"cat": "inventory"})
+        try:
+            appearance = read_appearance(pm, hp_addr)
+            if appearance is not None:
+                self._cb_appearance(appearance)
+        except Exception as exc:
+            self._log.debug("appearance read failed: %s", exc, extra={"cat": "inventory"})
         try:
             data = locate_warehouse(pm)
             self._cb_warehouse_open(data is not None)

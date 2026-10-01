@@ -112,3 +112,12 @@ input:focus, select:focus, textarea:focus {
 /* ---- App shell ---------------------------------------------------- */
 .app-shell { display: flex; height: 100vh; background: var(--tt-bg); color: var(--tt-text); }
 .app-main { flex: 1; min-width: 0; overflow-y: auto; }
+
+/* ---- Doll avatar (paper-doll head portrait) ----------------------- */
+.doll-avatar {
+  position: relative; display: inline-block; flex: none; overflow: hidden;
+  background: var(--tt-raised); border: 1px solid var(--tt-seal);
+}
+.doll-avatar-stage { position: absolute; left: 50%; top: 50%; }
+.doll-avatar-stage[data-pixelated] img { image-rendering: pixelated; }
+.doll-avatar-stage img { position: absolute; max-width: none; user-select: none; }

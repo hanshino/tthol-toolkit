@@ -119,6 +119,30 @@ class BuffInfo(_Base):
     kind: Literal["buff", "debuff"] = "buff"
 
 
+# ---- Avatar (paper-doll head) --------------------------------------------
+
+
+class DollLayer(_Base):
+    """One sprite layer; (anchor_x, anchor_y) is the attach point in the image."""
+
+    src: str  # GET /api/doll/... frame image
+    width: int
+    height: int
+    anchor_x: int
+    anchor_y: int
+
+
+class Avatar(_Base):
+    """Head portrait: layers bottom to top, all sharing one anchor point.
+
+    `mirror` means the art is the opposite direction's frame: flip each layer
+    left-right about its anchor (drawn left = origin - (width - anchor_x)).
+    """
+
+    mirror: bool
+    layers: list[DollLayer]
+
+
 # ---- Character views -----------------------------------------------------
 
 
@@ -157,6 +181,7 @@ class CharacterRow(_Base):
     position: Position
     autoclick: AutoClickStatus
     buffs: list[BuffInfo] = []
+    avatar: Avatar | None = None  # None until read, or when the DB has no art for it
     last_error: ErrorInfo | None = None
 
 

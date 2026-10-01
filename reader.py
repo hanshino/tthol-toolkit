@@ -929,6 +929,59 @@ def read_money(pm, hp_addr):
     return pm.read_int(hp_addr + MONEY_OFFSET)
 
 
+# Appearance (paper doll). Offsets are relative to hp_addr, i.e. CCharObject
+# +0x298 / +0x29C / +0x4EC / +0x4F0. The engine keeps the sprite sequence it
+# actually draws per layer (outfit EXTRA_* slots already applied over the
+# equipped item), so the head / cap sequences are read straight from there.
+# Verified live 2026-10-01 across ~15 players; see
+# docs/plans/2026-10-01-equipment-reading-investigation.md.
+HAIR_ITEM_OFFSET = -0x30  # int32 base-head item id (29001.. male, 29051.. female)
+HAIR_COLOR_OFFSET = -0x2C  # int32 hair dye 0..10 (doll_frame_images.color)
+DOLL_HEAD_SEQ_OFFSET = 0x224  # int32 doll_frame_images.sequence of the head layer
+DOLL_CAP_SEQ_OFFSET = 0x228  # int32 sequence of the cap layer; DOLL_EMPTY_SEQ when bare
+DOLL_EMPTY_SEQ = 96
+MAX_HAIR_COLOR = 10
+# Sequence = gender base + slot index * 1000 + part number.
+_DOLL_GENDER_BASE = {100000: "m", 300000: "f"}
+_DOLL_HEAD_SLOT = 0
+_DOLL_CAP_SLOT = 1
+
+
+def _doll_part(seq, slot):
+    """(gender, seq) when seq is a sequence of the given doll slot, else None."""
+    base = seq - seq % 100000
+    gender = _DOLL_GENDER_BASE.get(base)
+    if gender is None or (seq - base) // 1000 != slot or seq % 1000 == 0:
+        return None
+    return gender, seq
+
+
+def read_appearance(pm, hp_addr):
+    """Head / cap layers the client draws for this character.
+
+    Returns {gender, hair_item, hair_color, head, cap}, where head / cap are
+    doll sequences and cap is None when no hat is drawn. Returns None when
+    hp_addr is not in a CCharObject or the head sequence looks wrong (object
+    being rebuilt mid-read).
+    """
+    if not is_char_object(pm, hp_addr):
+        return None
+    head = _doll_part(pm.read_int(hp_addr + DOLL_HEAD_SEQ_OFFSET), _DOLL_HEAD_SLOT)
+    if head is None:
+        return None
+    gender, head_seq = head
+    cap = _doll_part(pm.read_int(hp_addr + DOLL_CAP_SEQ_OFFSET), _DOLL_CAP_SLOT)
+    color = pm.read_int(hp_addr + HAIR_COLOR_OFFSET)
+    return {
+        "gender": gender,
+        "hair_item": pm.read_int(hp_addr + HAIR_ITEM_OFFSET),
+        "hair_color": color if 0 <= color <= MAX_HAIR_COLOR else 0,
+        "head": head_seq,
+        # A cap of the other gender cannot be drawn on this head.
+        "cap": cap[1] if cap is not None and cap[0] == gender else None,
+    }
+
+
 def _window_list(pm):
     """Child-window pointers of the window manager; empty when unreachable (not logged in)."""
     try:

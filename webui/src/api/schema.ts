@@ -509,6 +509,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/doll/{gender}/{slot}/{sequence}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Doll Frame */
+        get: operations["doll_frame_api_doll__gender___slot___sequence__png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/treasury/summary": {
         parameters: {
             query?: never;
@@ -737,6 +754,19 @@ export interface components {
             /** Merchant Idx */
             merchant_idx: number;
         };
+        /**
+         * Avatar
+         * @description Head portrait: layers bottom to top, all sharing one anchor point.
+         *
+         *     `mirror` means the art is the opposite direction's frame: flip each layer
+         *     left-right about its anchor (drawn left = origin - (width - anchor_x)).
+         */
+        Avatar: {
+            /** Mirror */
+            mirror: boolean;
+            /** Layers */
+            layers: components["schemas"]["DollLayer"][];
+        };
         /** BackupImportResult */
         BackupImportResult: {
             /** Snapshots Added */
@@ -860,6 +890,7 @@ export interface components {
              * @default []
              */
             buffs: components["schemas"]["BuffInfo"][];
+            avatar?: components["schemas"]["Avatar"] | null;
             last_error?: components["schemas"]["ErrorInfo"] | null;
         };
         /** CharacterStats */
@@ -991,6 +1022,22 @@ export interface components {
             events_path?: string | null;
             /** Verbose */
             verbose: boolean;
+        };
+        /**
+         * DollLayer
+         * @description One sprite layer; (anchor_x, anchor_y) is the attach point in the image.
+         */
+        DollLayer: {
+            /** Src */
+            src: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Anchor X */
+            anchor_x: number;
+            /** Anchor Y */
+            anchor_y: number;
         };
         /**
          * ErrorInfo
@@ -2390,6 +2437,49 @@ export interface operations {
                 };
             };
             /** @description No icon available */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    doll_frame_api_doll__gender___slot___sequence__png_get: {
+        parameters: {
+            query?: {
+                color?: number;
+            };
+            header?: never;
+            path: {
+                gender: "m" | "f";
+                slot: "head" | "cap";
+                sequence: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description No frame available */
             404: {
                 headers: {
                     [name: string]: unknown;
