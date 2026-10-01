@@ -31,7 +31,7 @@ Found by reading the current webui (`App.tsx`, `TopNav.tsx`, `Dashboard.tsx`, `p
 - Switching to any character takes one click from anywhere and remembers that character's last tab.
 - Every character's link state, Lv and location is visible at all times.
 - The selected character's vitals, buffs, errors and recovery actions are always on screen while you work in its tabs.
-- No blank screens: a character that goes lost or disappears shows an explicit state.
+- No blank screens: a character whose worker stopped, or whose game closed, shows an explicit state.
 - Scales to 7+ characters. The sidebar scrolls and fits about 10–12 rows at 800px tall.
 - Larger default window that never exceeds the screen and is remembered between runs.
 
@@ -93,7 +93,7 @@ Each row is a `<button>` at least 44px tall. Per the user's choice it holds only
 |---|---|---|
 | normal | `Lv {level} · {map_name}` | — |
 | `last_error.code === 'E_LOCATE_EXHAUSTED'` / not yet located | `pid {pid} · 定位失敗` | dot `weak` |
-| `link === 'lost'` | `Lv {level} · 已斷線` | row at 0.6 opacity |
+| `link === 'lost'` (worker stopped, game still running) | `Lv {level} · 偵測已停止` | row at 0.6 opacity |
 
 The order is the order of `snap.chars`, which is what the dashboard uses today.
 
@@ -116,10 +116,12 @@ const [tabByPid, setTabByPid] = useState<Record<number, CharTab>>({});   // defa
 
 ### 5.1 Selected character disappears
 
-`App` keeps a `lastSeen: Map<pid, CharacterRow>` ref, updated on every snapshot.
+Two different conditions, confirmed against `services/worker_manager.py` / `char_session.py`:
 
-- **Selected pid present with `link === 'lost'`**: render normally, with the lost banner (§6.2) and tab content at 0.55 opacity.
-- **Selected pid missing from `snap.chars`**: render the workspace from `lastSeen` with the same lost banner and a 「回總覽」 button. Never render nothing.
+- **Stopped**: the selected row is present with `link === 'lost'`. The worker gave up (locate retries exhausted, connect or read failure) but the game process still runs; 重偵 restarts it. Render normally, with the row's `last_error` banner, or a 「停」 banner when there is no error (§6.2). Tab content at 0.55 opacity.
+- **Gone**: the selected pid is missing from `snap.chars`. `world_snapshot` drops rows whose process exited. Render from `lastSeen` with the 「斷」 banner and a 「回總覽」 button, and stop polling detail. Never render nothing.
+
+`App` keeps a `lastSeen: Map<pid, { row, at }>` ref, updated on every snapshot.
 - **Missing from both** (should not happen): fall back to 總覽.
 
 ## 6. Character workspace
@@ -140,7 +142,7 @@ CharWorkspace/
 
 - **Row 1**: seal (first glyph, `?` when unlocated), link dot + name, then `sect · Lv · pid`. Right-aligned:
   - **保持渲染 toggle**: a switch-style `<button aria-pressed>`. Moved here from the 輔助 tab. It owns the existing `/keep-active/{status,start,stop}` calls and 2s status poll, taken over from `KeepActiveTab`, which is deleted.
-  - **↻ 重偵**: same `/rescan` call and error handling as the dashboard today. Gold when the character is lost or unlocated.
+  - **↻ 重偵**: same `/rescan` call and error handling as the dashboard today. Gold when the worker is stopped or the character is unlocated; disabled when gone.
 - **Row 2**: a 4-column grid with 氣血 / 內力 / 負重 (label, `v / max`, bar) and 方位 (`map · x,y`). HP below 30% turns the HP text `--tt-bad` and appends 偏低, so the warning does not rely on colour alone.
 - **Row 3**: `BuffChips`. When `autoclick.running`, a right-aligned `● 召喚商人執行中 · {runtime}s` in `--tt-ok`.
 - When the character is unlocated, rows 2–3 are hidden.
@@ -148,7 +150,8 @@ CharWorkspace/
 ### 6.2 Banners (inside the header, below row 3)
 
 - **`last_error` present**: the same `friendlyError()` text as today, moved out of `Dashboard.tsx`. For `E_LOCATE_EXHAUSTED` it includes the `HpRescue` input and 「用血量定位」 button (`/relocate`), also moved from `Dashboard.tsx`.
-- **Lost / missing**: 「斷」 badge with 「無法連上遊戲程式，遊戲可能已關閉 — 以下是 {time} 的最後資料」, where time is when `lastSeen` was last updated.
+- **Gone**: 「斷」 badge with 「遊戲程式已關閉 — 以下是 {time} 的最後資料」 (time = last snapshot that contained the pid), plus a 「回總覽」 button.
+- **Stopped, no `last_error`**: 「停」 badge with 「角色偵測已停止 — 按「↻ 重偵」重新偵測」.
 - **Rescan or relocate failure**: shown inline in the banner area, replacing the dashboard-level `rescanError`.
 
 ### 6.3 Tabs
@@ -169,7 +172,7 @@ This halves the requests and removes the 讀取中… flash on tab switches. Pol
 ## 7. Global pages
 
 - **總覽** (`Dashboard.tsx`): the 320px right column is removed.
-  - **Alert strip at the top**: one `<button>` chip per condition (HP below 30%, `last_error`, lost), each calling `openChar`. A right-aligned 「● 輔助執行中：names」.
+  - **Alert strip at the top**: one `<button>` chip per character, first match wins: `last_error` (定位失敗/出錯), then stopped (偵測已停止), then HP below 30%, each calling `openChar`. A right-aligned 「● 輔助執行中：names」.
   - **Character table**: full width. Rows call `openChar`. The name column becomes `minmax(0, 1.4fr)`, and the bar columns become flexible `minmax(0, 1fr)` instead of fixed 88px. An error row shows the friendly text plus 「點進去處理」.
   - 重偵 / HpRescue are no longer on this page; they live in the header (§6.2), so each action exists in one place.
 - **帳房 / 留影**: content unchanged. A holder or snapshot `character` name becomes a link (`openChar(pid, 'items')`) **only when exactly one currently listed character has that name**; otherwise it stays plain text. The APIs carry names, not pids.
@@ -183,7 +186,7 @@ This halves the requests and removes the 讀取中… flash on tab switches. Pol
 - `min_size = (min(1024, w), min(700, h))`, using the clamped size, so the minimum can never exceed a small screen.
 - **Storage**: `%APPDATA%\御心鑒\window.json`, `{"width", "height", "x", "y"}`, the same base directory as `snapshot_db.py` / `icon_cache.py`. Read with `encoding='utf-8'`. A missing or corrupt file means defaults; it never raises.
 - **Saving**: on `window.events.closing`, read `window.width/height/x/y` and write the file; failures are logged and ignored. The pywebview 5.x docs (context7) confirm `create_window(width, height, x, y, min_size)`, `screen.width/height` and `window.width` are logical px. `window.x/y` and `events.closing` are assumed and get confirmed against the installed version before coding.
-- Maximized state is not persisted.
+- Maximized state is not persisted. Closing while maximized or minimized keeps the previously saved normal rect, tracked via the `maximized`/`restored` events. The `closing` handler runs synchronously on the WinForms UI thread, and `get_size`/`get_position` read the form directly (pywebview 6.2.1), so reading geometry there cannot deadlock.
 
 ## 9. Files touched
 
@@ -212,7 +215,7 @@ This halves the requests and removes the 讀取中… flash on tab switches. Pol
 - **Manual run** (`uv run app.py --dev`) with two or more clients, checking:
   - one-click switching keeps each character's tab
   - 行囊 search survives a tab switch
-  - a closed game client shows the lost banner, not a blank page
+  - a closed game client shows the 斷 banner, not a blank page; an exhausted locate shows the error + HP rescue, not 斷
   - `E_LOCATE_EXHAUSTED` relocation works from the header
   - 保持渲染 toggles from the header
   - the window reopens at its last size

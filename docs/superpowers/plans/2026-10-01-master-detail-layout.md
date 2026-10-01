@@ -31,9 +31,11 @@ Window geometry is a pure Python function (`services/window_prefs.py`) that `app
 
 1. **Window minimized at close.** Windows reports x/y ≈ -32000; saving that would put the window off-screen next launch. Expect: geometry is not saved. Pinned by `test_remember_skips_minimized_window` (Task 1).
 2. **Saved monitor no longer attached** (laptop undocked). Expect: default size, OS-placed. Pinned by `test_saved_rect_off_every_screen_uses_default` (Task 1).
-3. **Game client closed while its workspace is open.** Expect a 「斷」 banner over greyed last data, never a blank main area. Manual check in Task 7 (no frontend test runner).
+3. **Game client closed while its workspace is open.** The backend drops the pid from the snapshot; it is not `link: 'lost'`. Expect a 「斷」 banner with 「回總覽」 over greyed last-seen data, never a blank main area, and no detail polling for the dead pid. Manual check in Task 7 (no frontend test runner).
 4. **Two accounts with the same character name in 帳房/留影.** Expect the name stays plain text, with no link to the wrong pid. Manual check in Task 7. The logic sits in `pidForName` (Task 2) so it is a single, readable function.
 5. **Switching characters while a detail fetch is in flight.** Expect the old pid's response never to show in the new workspace. Guaranteed structurally: `CharWorkspace` is keyed by pid and the hook ignores late responses (`alive` flag, Task 4). Manual check in Task 7.
+6. **Locate retries exhausted while the game is still running.** That is `link: 'lost'` + `E_LOCATE_EXHAUSTED`. Expect the error banner with HP rescue and 重偵, never 「遊戲已關閉」. 保持渲染 stays usable. Manual check in Task 7.
+7. **Window closed while maximized.** Expect the previous normal rect to be kept, so the next launch is not a screen-sized, non-maximized window. Pinned by `test_remember_skips_maximized_window` (Task 1).
 
 ---
 
@@ -72,7 +74,7 @@ Window geometry is a pure Python function (`services/window_prefs.py`) that `app
   - `load_saved(path: Path) -> dict[str, int] | None`
   - `save(path: Path, width: int, height: int, x: int, y: int) -> None`
   - `compute_geometry(saved: dict | None, screens: Iterable[ScreenLike]) -> Geometry`
-  - `remember(path: Path, window) -> None`
+  - `remember(path: Path, window, maximized: bool = False) -> None`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -175,6 +177,13 @@ def test_remember_saves_window_geometry(tmp_path):
 def test_remember_skips_minimized_window(tmp_path):
     p = tmp_path / "window.json"
     wp.remember(p, SimpleNamespace(width=160, height=28, x=-32000, y=-32000))
+    assert not p.exists()
+
+
+def test_remember_skips_maximized_window(tmp_path):
+    # Saving the maximized rect would reopen a non-maximized, screen-sized window.
+    p = tmp_path / "window.json"
+    wp.remember(p, SimpleNamespace(width=1920, height=1040, x=-8, y=-8), maximized=True)
     assert not p.exists()
 
 
@@ -304,8 +313,13 @@ def compute_geometry(saved: dict[str, int] | None, screens: Iterable[ScreenLike]
     return Geometry(w, h, None, None, min_size)
 
 
-def remember(path: Path, window) -> None:
-    """Persist the window's current geometry; called from the closing event."""
+def remember(path: Path, window, maximized: bool = False) -> None:
+    """Persist the window's current geometry; called from the closing event.
+
+    A maximized or minimized window keeps the previously saved normal rect.
+    """
+    if maximized:
+        return
     try:
         width, height, x, y = window.width, window.height, window.x, window.y
     except Exception as e:  # the window may already be torn down
@@ -319,7 +333,7 @@ def remember(path: Path, window) -> None:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_window_prefs.py -v`
-Expected: all 16 PASS.
+Expected: all 17 PASS.
 
 - [ ] **Step 5: Wire into `app.py`**
 
@@ -344,7 +358,15 @@ Replace the single line `webview.create_window("御心鑒", target_url, width=10
         "御心鑒", target_url,
         width=geo.width, height=geo.height, x=geo.x, y=geo.y, min_size=geo.min_size,
     )
-    window.events.closing += lambda: window_prefs.remember(prefs_path, window)
+    # `closing` runs synchronously on the WinForms UI thread and get_size /
+    # get_position read the form directly (checked in pywebview 6.2.1), so
+    # reading geometry here cannot deadlock.
+    win_state = {"maximized": False}
+    window.events.maximized += lambda: win_state.update(maximized=True)
+    window.events.restored += lambda: win_state.update(maximized=False)
+    window.events.closing += lambda: window_prefs.remember(
+        prefs_path, window, maximized=win_state["maximized"]
+    )
 ```
 
 - [ ] **Step 6: Run the full Python suite**
@@ -375,6 +397,7 @@ git commit -m "feat(app): open at 1280x800 clamped to the screen and remember wi
   - `type View = { kind: GlobalView } | { kind: 'char'; pid: number }`
   - `type OpenChar = (pid: number, tab?: CharTab) => void`
   - `isUnlocated(c: CharacterRow): boolean`
+  - `isStopped(c: CharacterRow): boolean` (link 'lost' = worker stopped, game still running)
   - `pidForName(chars: CharacterRow[], name: string): number | null`
 - Produces (`friendlyError.ts`): `friendlyError(e: ErrorInfo): string`
 
@@ -394,6 +417,16 @@ export type OpenChar = (pid: number, tab?: CharTab) => void;
  */
 export function isUnlocated(c: CharacterRow): boolean {
   return c.level === 0 && c.vitals.hp_max === 0;
+}
+
+/**
+ * link 'lost' means the worker stopped (locate retries exhausted, connect or
+ * read failure) while the game process is still running; 重偵 restarts it.
+ * A closed game is NOT 'lost': WorkerManager.world_snapshot drops its row, so
+ * "gone" is detected by the pid vanishing from the snapshot (see App.tsx).
+ */
+export function isStopped(c: CharacterRow): boolean {
+  return c.link === 'lost';
 }
 
 /**
@@ -499,7 +532,7 @@ button.sb-item[aria-current="page"], button.sb-char[aria-current="page"] {
 button.sb-item[aria-current="page"] .sb-item-n,
 button.sb-char[aria-current="page"] .sb-char-name { color: var(--tt-gold); }
 button.sb-item:focus-visible, button.sb-char:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
-button.sb-char[data-lost] { opacity: 0.6; }
+button.sb-char[data-stale] { opacity: 0.6; }
 
 .sb-item-n { font-family: var(--tt-font-serif); font-size: 14px; letter-spacing: 3px; }
 .sb-item-s { font-size: 10.5px; color: var(--tt-dim); }
@@ -525,7 +558,7 @@ button.sb-item.sb-diag { width: auto; min-height: 32px; align-items: center; }
 import { useEffect, useState } from 'react';
 import { get } from '../api/client';
 import type { CharacterRow, DiagSummary } from '../api/types';
-import { isUnlocated, type GlobalView, type View } from '../nav';
+import { isStopped, isUnlocated, type GlobalView, type View } from '../nav';
 import { LinkDot, Seal } from '../primitives';
 import './sidebar.css';
 
@@ -539,7 +572,7 @@ function charMeta(c: CharacterRow): string {
   if (isUnlocated(c)) {
     return c.last_error?.code === 'E_LOCATE_EXHAUSTED' ? `pid ${c.pid} · 定位失敗` : `pid ${c.pid} · 連線中`;
   }
-  if (c.link === 'lost') return `Lv ${c.level} · 已斷線`;
+  if (isStopped(c)) return `Lv ${c.level} · 偵測已停止`;
   return `Lv ${c.level} · ${c.position.map_name ?? '—'}`;
 }
 
@@ -589,7 +622,7 @@ export function Sidebar({
             type="button"
             className="sb-char"
             aria-current={view.kind === 'char' && view.pid === c.pid ? 'page' : undefined}
-            data-lost={c.link === 'lost' || undefined}
+            data-stale={isStopped(c) || undefined}
             title={`${c.name} · pid ${c.pid}`}
             onClick={() => onOpenChar(c.pid)}
           >
@@ -711,7 +744,8 @@ git commit -m "feat(webui): replace top nav with a persistent sidebar of global 
 **Interfaces:**
 - Consumes: `CharTab`, `GlobalView`, `isUnlocated` (Task 2); `friendlyError` (Task 2); App's `tabByPid` and `openChar` (Task 3).
 - Produces:
-  - `CharWorkspace({ char, lostSince, tab, onTab, onNav }: { char: CharacterRow; lostSince: number | null; tab: CharTab; onTab: (t: CharTab) => void; onNav: (k: GlobalView) => void })`
+  - `CharWorkspace({ char, goneSince, tab, onTab, onNav }: { char: CharacterRow; goneSince: number | null; tab: CharTab; onTab: (t: CharTab) => void; onNav: (k: GlobalView) => void })`. `goneSince` is non-null only when the pid has vanished from the snapshot (game closed).
+  - `CharHeader({ char, goneSince, onBackToOverview })`
   - `useCharacterDetail(pid: number, enabled: boolean): { detail: CharacterDetail | null; error: string | null }`
   - `useKeepActive(pid: number, enabled: boolean): { running: boolean; busy: boolean; toggle: () => void }`
   - `ItemsTab({ pid, detail, error, onOpenSnapshots })`
@@ -840,7 +874,8 @@ button.ws-toggle[aria-pressed="true"] .ws-switch > span { transform: translateX(
 .ws-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-buffs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ws-auto { margin-left: auto; font-size: 11px; color: var(--tt-ok); letter-spacing: 1px; }
-.ws-head[data-lost] .ws-dim-when-lost, .ws-body[data-lost] { opacity: 0.55; }
+.ws-head[data-stale] .ws-dim-when-lost, .ws-body[data-stale] { opacity: 0.55; }
+button.ws-back { font-size: 12px; padding: 4px 10px; justify-self: start; }
 
 .ws-banner { padding: 8px 12px; font-size: 12px; line-height: 1.5; border: 1px solid var(--tt-line); display: grid; gap: 8px; }
 .ws-banner.is-bad { border-color: var(--tt-bad); }
@@ -873,7 +908,7 @@ import { post } from '../../api/client';
 import { describeError, reportClientError } from '../../diag/report';
 import type { CharacterRow, ConnectResult, OkResponse } from '../../api/types';
 import { friendlyError } from '../../components/friendlyError';
-import { isUnlocated } from '../../nav';
+import { isStopped, isUnlocated } from '../../nav';
 import { Bar, BuffChips, LinkDot, Seal } from '../../primitives';
 import { useKeepActive } from './useKeepActive';
 
@@ -883,10 +918,16 @@ function clock(ms: number) {
   return new Date(ms).toLocaleTimeString('zh-TW', { hour12: false });
 }
 
-export function CharHeader({ char, lostSince }: { char: CharacterRow; lostSince: number | null }) {
-  const lost = char.link === 'lost';
+export function CharHeader({ char, goneSince, onBackToOverview }: {
+  char: CharacterRow; goneSince: number | null; onBackToOverview: () => void;
+}) {
+  // gone: the game process exited (pid left the snapshot), data is the last seen.
+  // stopped: the worker gave up but the game still runs; 重偵 restarts it.
+  const gone = goneSince !== null;
+  const stopped = !gone && isStopped(char);
+  const stale = gone || stopped;
   const unlocated = isUnlocated(char);
-  const keep = useKeepActive(char.pid, !lost);
+  const keep = useKeepActive(char.pid, !gone);
   const [busy, setBusy] = useState<'rescan' | 'relocate' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [hpDraft, setHpDraft] = useState('');
@@ -927,13 +968,11 @@ export function CharHeader({ char, lostSince }: { char: CharacterRow; lostSince:
 
   const { hp, hp_max, mp, mp_max, weight, weight_max } = char.vitals;
   const low = hp_max > 0 && hp / hp_max < LOW_HP;
-  const err = char.last_error;
-  // The lost banner already says the process is gone; don't say it twice.
-  const showError = err && !(lost && err.code === 'E_PROC_GONE');
+  const err = gone ? null : char.last_error;
   const runtime = char.autoclick.runtime_seconds;
 
   return (
-    <section className="ws-head" aria-label="角色狀態" data-lost={lost || undefined}>
+    <section className="ws-head" aria-label="角色狀態" data-stale={stale || undefined}>
       <div className="ws-id">
         <Seal size={34}>{unlocated ? '?' : char.name[0]}</Seal>
         <div className="ws-id-text">
@@ -947,16 +986,16 @@ export function CharHeader({ char, lostSince }: { char: CharacterRow; lostSince:
         <div className="ws-actions">
           <button
             type="button" className="ws-toggle" aria-pressed={keep.running}
-            disabled={keep.busy || lost} onClick={keep.toggle}
+            disabled={keep.busy || gone} onClick={keep.toggle}
             title="切到別的視窗時，讓遊戲畫面持續更新"
           >
             <span className="ws-switch" aria-hidden="true"><span /></span>
             保持渲染
           </button>
           <button
-            type="button" className="ws-btn" data-attn={lost || unlocated || undefined}
-            disabled={busy !== null} onClick={rescan}
-            title={lost ? '重新驅動角色偵測' : '強制重新定位（資料不對時用）'}
+            type="button" className="ws-btn" data-attn={stopped || unlocated || undefined}
+            disabled={busy !== null || gone} onClick={rescan}
+            title={stopped ? '重新驅動角色偵測' : '強制重新定位（資料不對時用）'}
           >
             {busy === 'rescan' ? '偵測中…' : '↻ 重偵'}
           </button>
@@ -985,17 +1024,23 @@ export function CharHeader({ char, lostSince }: { char: CharacterRow; lostSince:
         </>
       )}
 
-      {lost && (
+      {goneSince !== null && (
         <div className="ws-banner is-warn" role="status">
           <div>
             <span className="ws-badge">斷</span>
-            無法連上遊戲程式，遊戲可能已關閉
-            {lostSince ? ` — 以下是 ${clock(lostSince)} 的最後資料` : ''}
+            遊戲程式已關閉 — 以下是 {clock(goneSince)} 的最後資料
           </div>
+          <button type="button" className="ws-back" onClick={onBackToOverview}>回總覽</button>
         </div>
       )}
 
-      {showError && err && (
+      {stopped && !err && (
+        <div className="ws-banner is-warn" role="status">
+          <div><span className="ws-badge">停</span>角色偵測已停止 — 按「↻ 重偵」重新偵測</div>
+        </div>
+      )}
+
+      {err && (
         <div className="ws-banner is-bad" role="alert">
           <div><span className="ws-badge">錯</span>{friendlyError(err)}</div>
           {err.code === 'E_LOCATE_EXHAUSTED' && (
@@ -1125,7 +1170,7 @@ Edits, in order:
 ```tsx
 import { useRef } from 'react';
 import type { CharacterRow } from '../../api/types';
-import { isUnlocated, type CharTab, type GlobalView } from '../../nav';
+import { isStopped, isUnlocated, type CharTab, type GlobalView } from '../../nav';
 import { AutoClickTab } from './AutoClickTab';
 import { BodyTab } from './BodyTab';
 import { CharHeader } from './CharHeader';
@@ -1141,13 +1186,15 @@ const TABS: { k: CharTab; n: string; s: string }[] = [
   { k: 'assist', n: '輔助', s: '召喚商人' },
 ];
 
-export function CharWorkspace({ char, lostSince, tab, onTab, onNav }: {
-  char: CharacterRow; lostSince: number | null; tab: CharTab;
+export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
+  char: CharacterRow; goneSince: number | null; tab: CharTab;
   onTab: (t: CharTab) => void; onNav: (k: GlobalView) => void;
 }) {
-  const lost = char.link === 'lost';
+  const gone = goneSince !== null;
+  const stale = gone || isStopped(char);
   const unlocated = isUnlocated(char);
-  const { detail, error } = useCharacterDetail(char.pid, !unlocated);
+  // A gone pid has no session; polling it would only fail every 3 s.
+  const { detail, error } = useCharacterDetail(char.pid, !unlocated && !gone);
   // Tabs mount on first visit and then stay mounted (hidden), so search text,
   // filters and selection survive a tab switch. Keyed by pid in App, so a
   // different character starts fresh.
@@ -1157,7 +1204,7 @@ export function CharWorkspace({ char, lostSince, tab, onTab, onNav }: {
   return (
     <div className="ws">
       <div className="ws-sticky">
-        <CharHeader char={char} lostSince={lostSince} />
+        <CharHeader char={char} goneSince={goneSince} onBackToOverview={() => onNav('overview')} />
         <nav className="ws-tabs" role="tablist" aria-label="角色分頁">
           {TABS.map(t => (
             <button
@@ -1170,7 +1217,7 @@ export function CharWorkspace({ char, lostSince, tab, onTab, onNav }: {
           ))}
         </nav>
       </div>
-      <div className="ws-body" data-lost={lost || undefined}>
+      <div className="ws-body" data-stale={stale || undefined}>
         {unlocated
           ? <div className="ws-empty">角色定位後，這裡會自動讀取行囊、屬性與地圖</div>
           : TABS.filter(t => visited.current.has(t.k)).map(t => (
@@ -1201,27 +1248,17 @@ Edits:
 3. Change `const [, setTabByPid]` (from Task 3) back to `const [tabByPid, setTabByPid]`.
 4. Replace the `const selected = ...` line with:
    ```tsx
-     // Last row seen per pid, and when it was last live. A character whose game
-     // closed (link 'lost') or whose row vanished still renders from this, with
-     // a lost banner, instead of a blank main area.
+     // Last row seen per pid and when. A closed game drops its row from the
+     // snapshot (WorkerManager.world_snapshot), so a selected pid that vanishes
+     // renders from here with a 斷 banner instead of a blank main area.
      const lastSeen = useRef(new Map<number, { row: CharacterRow; at: number }>());
-     for (const c of snap.chars) {
-       if (c.link !== 'lost' || !lastSeen.current.has(c.pid)) {
-         lastSeen.current.set(c.pid, { row: c, at: Date.now() });
-       }
-     }
-     let workspace: { row: CharacterRow; lostSince: number | null } | null = null;
+     for (const c of snap.chars) lastSeen.current.set(c.pid, { row: c, at: Date.now() });
+     let workspace: { row: CharacterRow; goneSince: number | null } | null = null;
      if (view.kind === 'char') {
        const live = snap.chars.find(c => c.pid === view.pid);
        const seen = lastSeen.current.get(view.pid);
-       if (live && live.link !== 'lost') {
-         workspace = { row: live, lostSince: null };
-       } else if (seen) {
-         workspace = {
-           row: { ...seen.row, link: 'lost', last_error: live?.last_error ?? seen.row.last_error },
-           lostSince: seen.at,
-         };
-       }
+       if (live) workspace = { row: live, goneSince: null };
+       else if (seen) workspace = { row: seen.row, goneSince: seen.at };
      }
    ```
 5. Replace the char branch `{view.kind === 'char' && (selected ? <CharDetail char={selected} /> : <Dashboard ... />)}` with:
@@ -1231,7 +1268,7 @@ Edits:
                  <CharWorkspace
                    key={view.pid}
                    char={workspace.row}
-                   lostSince={workspace.lostSince}
+                   goneSince={workspace.goneSince}
                    tab={tabByPid[view.pid] ?? 'items'}
                    onTab={t => setTabByPid(m => ({ ...m, [view.pid]: t }))}
                    onNav={nav}
@@ -1276,7 +1313,7 @@ git commit -m "feat(webui): character workspace with live header, kept-alive tab
 ```tsx
 import type { CharacterRow } from '../api/types';
 import { friendlyError } from '../components/friendlyError';
-import { isUnlocated, type OpenChar } from '../nav';
+import { isStopped, isUnlocated, type OpenChar } from '../nav';
 import { Bar, BuffChips, LinkDot, Panel, StatNum } from '../primitives';
 
 // Name and bar columns flex so names stop truncating; recovery actions
@@ -1293,10 +1330,12 @@ function label(c: CharacterRow): string {
 function alertsFor(chars: CharacterRow[]): Alert[] {
   const out: Alert[] = [];
   for (const c of chars) {
-    if (c.link === 'lost') out.push({ pid: c.pid, text: `${label(c)} 已斷線`, tone: 'warn' });
-    else if (c.last_error) {
+    // The error says what to do, so it wins over the generic "stopped".
+    if (c.last_error) {
       const what = c.last_error.code === 'E_LOCATE_EXHAUSTED' ? '定位失敗' : '出錯';
       out.push({ pid: c.pid, text: `${label(c)} ${what}`, tone: 'bad' });
+    } else if (isStopped(c)) {
+      out.push({ pid: c.pid, text: `${label(c)} 偵測已停止`, tone: 'warn' });
     } else if (c.vitals.hp_max > 0 && c.vitals.hp / c.vitals.hp_max < LOW_HP) {
       out.push({ pid: c.pid, text: `${c.name} 氣血偏低`, tone: 'bad' });
     }
@@ -1352,7 +1391,7 @@ function Row({ c, onOpen }: { c: CharacterRow; onOpen: () => void }) {
         display: 'flex', flexDirection: 'column', gap: 8, padding: 12, width: '100%',
         background: 'var(--tt-raised)', border: '1px solid var(--tt-line-soft)',
         color: 'var(--tt-text)', textAlign: 'left', letterSpacing: 0,
-        opacity: c.link === 'lost' ? 0.65 : 1,
+        opacity: isStopped(c) ? 0.65 : 1,
       }}
     >
       <span style={{ display: 'grid', gridTemplateColumns: COLS, gap: 10, alignItems: 'center', width: '100%' }}>
@@ -1548,7 +1587,8 @@ Run `uv run app.py --dev` with **two or more** game clients, then work through t
 5. Sidebar: one click switches characters. Each character reopens on its last tab; the default is 行囊.
 6. 行囊: type a search, switch to 根脈 and back, and the search is still there.
 7. Header: HP/MP/weight/position/buffs update live. 保持渲染 toggles. ↻ 重偵 works.
-8. Close one game client while viewing it: 「斷」 banner, greyed data, sidebar row dimmed and 已斷線. Never a blank main area.
+8. Close one game client while viewing it: its sidebar row disappears, and the workspace shows the 「斷」 banner with the last-seen time and 「回總覽」 over greyed data. Never a blank main area. 脈案 gets no stream of detail-fetch errors for that pid.
+8b. Stay on the login screen until locate exhausts (~33 s): the sidebar shows `pid … · 定位失敗` and the header shows the error + HP rescue (not 斷). A previously located character that stops shows `Lv … · 偵測已停止` and a 「停」 banner when it has no error.
 9. A not-yet-located client shows `pid … · 定位失敗`/`連線中` in the sidebar. Once `E_LOCATE_EXHAUSTED` fires, entering HP in the header banner relocates it.
 10. 帳房: select an item, click a holder name, and land on that character's 行囊. With two same-name characters online, that name is plain text.
 11. 留影: select a row, then 「開啟角色 →」 appears only for a live, unambiguous name.
