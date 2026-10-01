@@ -225,8 +225,10 @@ def _auto_worker(errors, got):
         on_warehouse=lambda i: got.setdefault("wh", []).append(i),
         on_error=lambda m, **kw: errors.append(m),
         on_warehouse_open=lambda o: got.setdefault("open", []).append(o),
+        on_pet_inventory=lambda i: got.setdefault("pet", []).append(i),
+        on_money=lambda m: got.setdefault("money", []).append(m),
     )
-    w._item_db = {24034: "中行血藥", 26966: "八星覺醒符"}
+    w._item_db = {24034: "中行血藥", 26966: "八星覺醒符", 28154: "賞善輕功丹"}
     return w
 
 
@@ -242,6 +244,8 @@ def test_auto_read_pushes_bag_and_open_warehouse():
     errors, got = [], {}
     _auto_worker(errors, got)._auto_read_items(pm, HP)
     assert got["inv"][0][0] == (24034, 200, "中行血藥")
+    assert got["pet"] == [[(28154, 40, "賞善輕功丹")]]
+    assert got["money"] == [277956]
     assert got["open"] == [True]
     assert got["wh"] == [[(26966, 6, "八星覺醒符")]]
     assert errors == []
@@ -255,6 +259,8 @@ def test_auto_read_closed_warehouse_keeps_quiet():
     errors, got = [], {}
     _auto_worker(errors, got)._auto_read_items(pm, HP)
     assert "inv" not in got
+    assert "pet" not in got
+    assert "money" not in got
     assert "wh" not in got
     assert got["open"] == [False]
     assert errors == []

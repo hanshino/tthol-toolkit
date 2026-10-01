@@ -421,6 +421,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Items By Id */
+        get: operations["items_by_id_api_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/treasury/summary": {
         parameters: {
             query?: never;
@@ -729,8 +746,12 @@ export interface components {
             buffs: components["schemas"]["BuffInfo"][];
             /** Inventory */
             inventory?: components["schemas"]["Item"][] | null;
+            /** Pet Inventory */
+            pet_inventory?: components["schemas"]["Item"][] | null;
             /** Warehouse */
             warehouse?: components["schemas"]["Item"][] | null;
+            /** Money */
+            money?: number | null;
             /** Inventory Updated At */
             inventory_updated_at?: number | null;
             /** Warehouse Updated At */
@@ -934,7 +955,71 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "inventory" | "warehouse";
+            source: "inventory" | "pet" | "warehouse";
+        };
+        /**
+         * ItemMeta
+         * @description Static item data from tthol.sqlite, fetched by id via GET /api/items.
+         */
+        ItemMeta: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /**
+             * Type Label
+             * @default
+             */
+            type_label: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "potion" | "gear" | "book" | "pet" | "event" | "misc";
+            /**
+             * Level
+             * @default 0
+             */
+            level: number;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Icon Url */
+            icon_url?: string | null;
+            /**
+             * No Trade
+             * @default false
+             */
+            no_trade: boolean;
+            /**
+             * No Store
+             * @default false
+             */
+            no_store: boolean;
+            /**
+             * No Drop
+             * @default false
+             */
+            no_drop: boolean;
+            /**
+             * Effect Seconds
+             * @default 0
+             */
+            effect_seconds: number;
+            /**
+             * Stats
+             * @default []
+             */
+            stats: components["schemas"]["ItemStat"][];
+        };
+        /** ItemStat */
+        ItemStat: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: number;
         };
         /** KeepActiveStatus */
         KeepActiveStatus: {
@@ -1952,6 +2037,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MapInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    items_by_id_api_items_get: {
+        parameters: {
+            query: {
+                /** @description Comma-separated item ids */
+                ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemMeta"][];
                 };
             };
             /** @description Validation Error */

@@ -2,7 +2,7 @@
 
 2026-10-01。原本的背包定位（`reader.locate_inventory`）是全記憶體比對 0x8E0 槽的樣式，要好幾秒，**這版客戶端已經找不到了**（回傳 `None`）。追裝備時發現角色物件裡直接存著背包陣列的指標，不用掃描。遊戲執行中實測過，背包清單和銀兩都跟遊戲畫面一致。
 
-已實作：`reader.read_inventory` / `read_pet_inventory` / `read_money` / `locate_warehouse` / `read_warehouse`，worker 與 `warehouse_scan.py` 都改用這些函式，舊的 0x8E0 槽掃描已移除。
+已實作：`reader.read_inventory` / `read_pet_inventory` / `read_money` / `locate_warehouse` / `read_warehouse`，worker 與 `warehouse_scan.py` 都改用這些函式，舊的 0x8E0 槽掃描已移除。銀兩和寵物背包也跟背包一起每次輪詢讀取，顯示在行囊頁（`CharacterDetail.money` / `pet_inventory`）。
 
 ## 結論
 
@@ -73,4 +73,3 @@ count = [data + 0x1A4]、arr = [data + 0x1A8]
 2. `+0x8C` 是什麼（兩個角色分別是 2000、1800，負重上限？）。
 3. 實例 `+0x00` / `+0x01` 的意義。
 4. compat 佈局的角色（HP/MP current↔max 對調）`hp_addr` 是 struct_base，位移是否一樣，要找一個 compat 角色確認。`read_inventory` 會先驗證 `hp_addr - 0x2C8` 是 `CCharObject`，對不上就回報 `E_INV_NOT_FOUND`，不會讀到錯的指標。
-5. 銀兩（`read_money`）還沒接到 worker / API / UI。

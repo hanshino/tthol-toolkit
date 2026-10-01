@@ -60,7 +60,9 @@ class CharSession:
         self._state: str = "DISCONNECTED"
         self._latest_stats: dict[str, int] = {}
         self._latest_inv: list[Item] = []
+        self._latest_pet: list[Item] = []
         self._latest_wh: list[Item] = []
+        self._money: int | None = None
         self._latest_buffs: list[BuffInfo] = []
         self._inv_seq: int = 0
         self._wh_seq: int = 0
@@ -83,6 +85,8 @@ class CharSession:
             on_error=self._on_error,
             on_buffs=self._on_buffs,
             on_warehouse_open=self._on_wh_open,
+            on_pet_inventory=self._on_pet,
+            on_money=self._on_money,
         )
 
     @property
@@ -191,7 +195,9 @@ class CharSession:
                 autoclick=AutoClickStatus(running=False),
                 buffs=list(self._latest_buffs),
                 inventory=self._latest_inv or None,
+                pet_inventory=self._latest_pet or None,
                 warehouse=self._latest_wh or None,
+                money=self._money,
                 inventory_updated_at=self._inv_ts,
                 warehouse_updated_at=self._wh_ts,
                 warehouse_open=self._wh_open,
@@ -253,6 +259,17 @@ class CharSession:
             ]
             self._inv_seq += 1
             self._inv_ts = time.time()
+
+    def _on_pet(self, items: list[tuple[int, int, str]]) -> None:
+        # Read in the same poll as the bag, so inventory_updated_at covers it.
+        with self._lock:
+            self._latest_pet = [
+                Item(item_id=iid, name=name, quantity=qty, source="pet") for iid, qty, name in items
+            ]
+
+    def _on_money(self, money: int) -> None:
+        with self._lock:
+            self._money = money
 
     def _on_wh(self, items: list[tuple[int, int, str]]) -> None:
         with self._lock:
