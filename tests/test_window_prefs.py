@@ -111,3 +111,19 @@ def test_remember_never_raises(tmp_path):
             raise RuntimeError("window gone")
 
     wp.remember(tmp_path / "window.json", Broken())  # must not raise
+
+
+def test_saved_rect_larger_than_its_screen_is_fitted():
+    # Docked at 1600x1000, then undocked onto a 1366x768 panel at the same origin:
+    # the rect overlaps, but must not open with its bottom/right off-screen.
+    saved = {"width": 1600, "height": 1000, "x": 100, "y": 50}
+    g = wp.compute_geometry(saved, [scr(0, 0, 1366, 768)])
+    assert (g.width, g.height) == (1366, 768)
+    assert (g.x, g.y) == (0, 0)
+
+
+def test_saved_rect_hanging_off_the_edge_is_shifted_inside():
+    saved = {"width": 1280, "height": 800, "x": 1000, "y": 500}
+    g = wp.compute_geometry(saved, [FHD])
+    assert (g.width, g.height) == (1280, 800)
+    assert (g.x, g.y) == (640, 280)

@@ -96,15 +96,27 @@ def compute_geometry(saved: dict[str, int] | None, screens: Iterable[ScreenLike]
         w = min(w, int(primary.width * SCREEN_FRACTION))
         h = min(h, int(primary.height * SCREEN_FRACTION))
     min_size = (min(MIN_SIZE[0], w), min(MIN_SIZE[1], h))
-    if saved and any(_visible_on(saved, s) for s in screens):
-        return Geometry(
-            max(saved["width"], min_size[0]),
-            max(saved["height"], min_size[1]),
-            saved["x"],
-            saved["y"],
-            min_size,
-        )
+    home = _best_screen(saved, screens) if saved else None
+    if home is not None:
+        # Fit the saved rect inside the screen it mostly sits on: a rect saved on a
+        # larger monitor would otherwise open with its edges off this one.
+        sw = min(max(saved["width"], min_size[0]), home.width)
+        sh = min(max(saved["height"], min_size[1]), home.height)
+        sx = min(max(saved["x"], home.x), home.x + home.width - sw)
+        sy = min(max(saved["y"], home.y), home.y + home.height - sh)
+        return Geometry(sw, sh, sx, sy, min_size)
     return Geometry(w, h, None, None, min_size)
+
+
+def _overlap(saved: dict[str, int], s: ScreenLike) -> int:
+    w = min(saved["x"] + saved["width"], s.x + s.width) - max(saved["x"], s.x)
+    h = min(saved["y"] + saved["height"], s.y + s.height) - max(saved["y"], s.y)
+    return max(w, 0) * max(h, 0)
+
+
+def _best_screen(saved: dict[str, int], screens: list[ScreenLike]) -> ScreenLike | None:
+    visible = [s for s in screens if _visible_on(saved, s)]
+    return max(visible, key=lambda s: _overlap(saved, s)) if visible else None
 
 
 def remember(path: Path, window, maximized: bool = False) -> None:
