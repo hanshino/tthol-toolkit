@@ -394,10 +394,25 @@ class MapInfo(_Base):
 # point sits at image row (height_px - y).
 
 
-class MinimapWarp(_Base):
-    x: int  # centroid of the walk-on zone
+class MinimapExitOption(_Base):
+    label: str | None = None  # dialogue-menu text; None for a direct warp
+    stage_id: int
+    name: str
+    instance: bool  # enters a dungeon instance (A64)
+    landed: bool  # the destination's landing point is known
+
+
+class MinimapExit(_Base):
+    """A walk-on exit (genbu getPortalExits): one cluster of a map_event tag's cells."""
+
+    key: str  # "<event_tag>-<part>"
+    event_tag: int
+    part: int  # which zone of the tag (1-based); a tag can cover separate zones
+    parts: int
+    x: int  # centroid of the zone's walk-on cells
     y: int
-    destinations: list[StageInfo]  # usually one; a scripted zone can send to several
+    prompt: str | None = None  # dialogue-menu question, when the exit opens one
+    options: list[MinimapExitOption]  # one for a direct warp, several for a menu
 
 
 class MinimapNpc(_Base):
@@ -431,7 +446,7 @@ class Minimap(_Base):
     tile_px: int
     image_url: str | None = None  # app-relative; None when the DB has no image for the map
     image_origin: str | None = None  # 'img' (official art) or 'composed' (rebuilt from tiles)
-    warps: list[MinimapWarp] = []
+    exits: list[MinimapExit] = []
     npcs: list[MinimapNpc] = []
     spawns: list[MinimapSpawn] = []
 

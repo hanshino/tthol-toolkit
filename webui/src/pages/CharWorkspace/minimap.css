@@ -118,6 +118,8 @@ button.ma-tab:focus-visible { outline: 1px solid var(--tt-gold); outline-offset:
 .ma-head { font-size: 11px; color: var(--tt-mute); letter-spacing: 2px; }
 .ma-name { font-family: var(--tt-font-serif); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ma-mono { font-family: var(--tt-font-mono); }
+.ma-tags { display: flex; align-items: center; gap: 6px; flex: none; }
+.ma-tag { font-size: 11px; letter-spacing: 1px; padding: 0 6px; color: var(--tt-accent); border: 1px solid var(--tt-accent-dim); }
 .ma-dim { color: var(--tt-dim); }
 .ma-gold { color: var(--tt-gold); }
 .ma-mono[data-tone="ok"] { color: var(--tt-ok); }

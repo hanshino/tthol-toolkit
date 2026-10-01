@@ -1168,10 +1168,10 @@ export interface components {
             /** Image Origin */
             image_origin?: string | null;
             /**
-             * Warps
+             * Exits
              * @default []
              */
-            warps: components["schemas"]["MinimapWarp"][];
+            exits: components["schemas"]["MinimapExit"][];
             /**
              * Npcs
              * @default []
@@ -1182,6 +1182,41 @@ export interface components {
              * @default []
              */
             spawns: components["schemas"]["MinimapSpawn"][];
+        };
+        /**
+         * MinimapExit
+         * @description A walk-on exit (genbu getPortalExits): one cluster of a map_event tag's cells.
+         */
+        MinimapExit: {
+            /** Key */
+            key: string;
+            /** Event Tag */
+            event_tag: number;
+            /** Part */
+            part: number;
+            /** Parts */
+            parts: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Prompt */
+            prompt?: string | null;
+            /** Options */
+            options: components["schemas"]["MinimapExitOption"][];
+        };
+        /** MinimapExitOption */
+        MinimapExitOption: {
+            /** Label */
+            label?: string | null;
+            /** Stage Id */
+            stage_id: number;
+            /** Name */
+            name: string;
+            /** Instance */
+            instance: boolean;
+            /** Landed */
+            landed: boolean;
         };
         /** MinimapNpc */
         MinimapNpc: {
@@ -1220,15 +1255,6 @@ export interface components {
             x: number;
             /** Y */
             y: number;
-        };
-        /** MinimapWarp */
-        MinimapWarp: {
-            /** X */
-            x: number;
-            /** Y */
-            y: number;
-            /** Destinations */
-            destinations: components["schemas"]["StageInfo"][];
         };
         /** OkResponse */
         OkResponse: {

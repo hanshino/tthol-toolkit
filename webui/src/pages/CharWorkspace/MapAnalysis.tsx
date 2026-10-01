@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { get } from '../../api/client';
 import { Panel, StatNum } from '../../primitives';
 import type { CharacterRow, MapInfo } from '../../api/types';
-import { levelTone, Minimap, type MinimapHighlight } from './Minimap';
+import { exitNames, levelTone, Minimap, useMinimapData, type MinimapHighlight } from './Minimap';
 
 type ListTab = 'warps' | 'monsters' | 'nearby';
 
@@ -14,6 +14,10 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
   const [tab, setTab] = useState<ListTab>('warps');
   const [hl, setHl] = useState<MinimapHighlight>(null);
   const mapName = char.position.map_name;
+  const minimap = useMinimapData(char.position.stage_id ?? null);
+  // Walk-on exits from the map's own scripts (genbu getPortalExits); MapInfo's
+  // warp list also carries the legacy byte-scan guesses and NPC dialogue warps.
+  const exits = minimap.data?.exits ?? [];
   const px = char.position.x;
   const py = char.position.y;
 
@@ -45,7 +49,7 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
 
   const charLevel = char.level ?? 0;
   const tabs: { k: ListTab; n: string; count: number }[] = [
-    { k: 'warps', n: '出口', count: info.warps.length },
+    { k: 'warps', n: '出口', count: exits.length },
     { k: 'monsters', n: '怪物', count: info.monsters.length },
     { k: 'nearby', n: '刷新點', count: info.nearby.length },
   ];
@@ -60,7 +64,10 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
     <div className="ma">
       <div className="ma-map">
         <Panel title={`輿圖 · ${info.stage.name}　#${info.stage.stage_id}`}>
-          <Minimap position={char.position} charLevel={charLevel} highlight={hl} />
+          <Minimap
+            position={char.position} charLevel={charLevel} highlight={hl}
+            data={minimap.data} failed={minimap.failed}
+          />
         </Panel>
       </div>
 
@@ -77,16 +84,27 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
         </div>
 
         <div role="tabpanel" className="ma-list">
-          {tab === 'warps' && (info.warps.length === 0 ? <Empty text="此地無對外出口" /> : (
-            info.warps.map((w) => (
-              <div
-                key={`${w.dst_stage_id}-${w.dst_tag ?? 0}`} className="ma-row"
-                {...lights({ warpTo: w.dst_stage_id })}
-              >
-                <span className="ma-name">{w.dst_name ?? `#${w.dst_stage_id}`}</span>
-                <span className="ma-mono ma-dim">#{w.dst_stage_id}</span>
-              </div>
-            ))
+          {tab === 'warps' && (exits.length === 0 ? <Empty text="此地無踩點出口" /> : (
+            exits.map((e) => {
+              const menu = e.options.length > 1 || e.prompt !== null;
+              const single = e.options.length === 1 ? e.options[0] : null;
+              return (
+                <div
+                  key={e.key} className="ma-row" {...lights({ exitKey: e.key })}
+                  title={e.prompt ?? undefined}
+                >
+                  <span className="ma-name">
+                    {exitNames(e)}
+                    {e.parts > 1 && <span className="ma-dim">（{e.part}／{e.parts}）</span>}
+                  </span>
+                  <span className="ma-tags">
+                    {menu && <span className="ma-tag">對話選單</span>}
+                    {e.options.some((o) => o.instance) && <span className="ma-tag">副本</span>}
+                    {single && <span className="ma-mono ma-dim">#{single.stage_id}</span>}
+                  </span>
+                </div>
+              );
+            })
           ))}
 
           {tab === 'monsters' && (info.monsters.length === 0 ? <Empty text="此地無怪物棲息" /> : (

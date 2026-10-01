@@ -6,6 +6,7 @@ the worker thread / async handlers can use it without sharing a cursor.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 
 from services._paths import bundled
@@ -143,45 +144,138 @@ def minimap_base(stage_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def minimap_warps(stage_id: int) -> list[dict]:
-    """One entry per walk-on warp zone: its centroid and every destination.
+# Game dialogue text: <FONT COLOR=..> markup (sometimes missing its '>'), and
+# line breaks written as a literal "\n", a real newline or a run of full-width
+# spaces. Same rules as genbu's gameTextPlain (src/lib/format/game-text.ts).
+_GAME_TEXT_TOKEN = re.compile(
+    r"<FONT\s+COLOR\s*=\s*#?[0-9a-f]{1,8}\s*>?|</FONT\s*>|\\n|\r?\n|　{2,}|[ \t]{4,}",
+    re.IGNORECASE,
+)
 
-    A zone is the set of `arrival` points sharing an event tag; map_warps
-    `map_event` rows say where that tag's script sends the player. Zones whose
-    script does something else (traps, dialogue) have no warp row and are left
-    out. Auto (`mpc_sec3`) warps carry no point and cannot be placed.
+
+def game_text_plain(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    out = _GAME_TEXT_TOKEN.sub(lambda m: "" if m.group(0)[0] == "<" else "\n", raw)
+    text = re.sub(r"\n+", "\n", out).strip()
+    return text or None
+
+
+PORTAL_CLUSTER_PX = 120  # walk-on cells within 3 tiles (Chebyshev) form one exit
+
+
+def _portal_clusters(cells: list[tuple[int, int]]) -> list[list[tuple[int, int]]]:
+    left = list(cells)
+    out: list[list[tuple[int, int]]] = []
+    while left:
+        group = [left.pop()]
+        i = 0
+        while i < len(group):
+            gx, gy = group[i]
+            for j in range(len(left) - 1, -1, -1):
+                x, y = left[j]
+                if max(abs(x - gx), abs(y - gy)) <= PORTAL_CLUSTER_PX:
+                    group.append(left.pop(j))
+            i += 1
+        out.append(group)
+    return sorted(out, key=lambda g: (g[0][1], g[0][0]))
+
+
+def portal_exits(stage_id: int) -> list[dict]:
+    """Walk-on exits of a stage, ported from genbu's getPortalExits.
+
+    Only `map_event` warps count: they are the exact A3 / A64 actions the map's
+    own sec3 script fires. The legacy `mpc_sec3` byte scan and NPC dialogue
+    warps are left out — the scan invents pairs (成都少城 -> 莫愁谷入口) and a
+    dialogue warp has no spot on the map. An exit is a cluster of `arrival`
+    cells sharing the event tag (a tag can cover several separate zones); a tag
+    with no cells (e.g. a script-only warp) is not an exit. A tag whose script
+    opens a dialogue menu yields several options, each with its menu text.
     """
     with _connect() as con:
-        points = con.execute(
+        kind_row = con.execute("SELECT kind FROM stages WHERE id = ?", (stage_id,)).fetchone()
+        if kind_row is None:
+            return []
+        kind = kind_row["kind"]
+        warps = con.execute(
             """
-            SELECT event_tag, AVG(raw_x) AS x, AVG(raw_y) AS y
-            FROM map_placements
-            WHERE stage_id = ? AND category = 'arrival' AND in_bounds = 1
-              AND event_tag IS NOT NULL
-            GROUP BY event_tag
+            SELECT w.id, w.event_tag, w.dst_stage_id, s.kind AS dst_kind, s.name AS dst_name,
+                   w.dst_tag, w.msg_file_no, w.msg_id, w.entry_msg_id, w.warp_op
+            FROM map_warps w LEFT JOIN stages s ON s.id = w.dst_stage_id
+            WHERE w.warp_kind = 'map_event' AND w.src_kind = ? AND w.src_stage_id = ?
+            ORDER BY w.event_tag, w.id
             """,
-            (stage_id,),
+            (kind, stage_id),
         ).fetchall()
-        dests = con.execute(
-            """
-            SELECT DISTINCT w.event_tag AS event_tag, w.dst_stage_id AS stage_id, s.name AS name
-            FROM map_warps w
-            LEFT JOIN stages s ON s.id = w.dst_stage_id
-            WHERE w.src_stage_id = ? AND w.warp_kind = 'map_event'
-            ORDER BY w.dst_stage_id
-            """,
-            (stage_id,),
-        ).fetchall()
-    by_tag: dict[int, list[dict]] = {}
-    for d in dests:
-        by_tag.setdefault(d["event_tag"], []).append(
-            {"stage_id": d["stage_id"], "name": d["name"] or ""}
-        )
-    return [
-        {"x": round(p["x"]), "y": round(p["y"]), "destinations": by_tag[p["event_tag"]]}
-        for p in points
-        if p["event_tag"] in by_tag
-    ]
+
+        def text(file_no, msg_id):
+            if file_no is None or msg_id is None:
+                return None
+            row = con.execute(
+                "SELECT msg FROM messages WHERE file_no = ? AND msg_id = ?", (file_no, msg_id)
+            ).fetchone()
+            return game_text_plain(row["msg"]) if row else None
+
+        by_tag: dict[int, list] = {}
+        for w in warps:
+            by_tag.setdefault(w["event_tag"], []).append(w)
+
+        exits: list[dict] = []
+        for tag, rows in by_tag.items():
+            cells = [
+                (r["raw_x"], r["raw_y"])
+                for r in con.execute(
+                    """
+                    SELECT raw_x, raw_y FROM map_placements
+                    WHERE stage_kind = ? AND stage_id = ? AND category = 'arrival'
+                      AND event_tag = ?
+                    ORDER BY raw_y, raw_x, id
+                    """,
+                    (kind, stage_id, tag),
+                )
+            ]
+            groups = _portal_clusters(cells)
+            if not groups:
+                continue
+            options = []
+            for w in rows:
+                landed = False
+                if w["dst_kind"] is not None and w["dst_tag"] is not None:
+                    landed = (
+                        con.execute(
+                            """
+                            SELECT 1 FROM map_placements
+                            WHERE stage_kind = ? AND stage_id = ? AND category = 'trigger'
+                              AND tag_id = ? LIMIT 1
+                            """,
+                            (w["dst_kind"], w["dst_stage_id"], w["dst_tag"]),
+                        ).fetchone()
+                        is not None
+                    )
+                options.append(
+                    {
+                        "label": text(w["msg_file_no"], w["msg_id"]),
+                        "stage_id": w["dst_stage_id"],
+                        "name": w["dst_name"] or f"#{w['dst_stage_id']}",
+                        "instance": w["warp_op"] == 64,
+                        "landed": landed,
+                    }
+                )
+            prompt = text(rows[0]["msg_file_no"], rows[0]["entry_msg_id"])
+            for i, g in enumerate(groups):
+                exits.append(
+                    {
+                        "key": f"{tag}-{i + 1}",
+                        "event_tag": tag,
+                        "part": i + 1,
+                        "parts": len(groups),
+                        "x": round(sum(p[0] for p in g) / len(g)),
+                        "y": round(sum(p[1] for p in g) / len(g)),
+                        "prompt": prompt,
+                        "options": options,
+                    }
+                )
+        return exits
 
 
 def minimap_npcs(stage_id: int) -> list[dict]:

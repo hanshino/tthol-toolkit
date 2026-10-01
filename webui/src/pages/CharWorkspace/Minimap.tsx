@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { get } from '../../api/client';
-import type { Minimap as MinimapData, MinimapRegion, Position } from '../../api/types';
+import type { Minimap as MinimapData, MinimapExit, MinimapRegion, Position } from '../../api/types';
 import './minimap.css';
 
 const MAX_HEIGHT = 420; // px default; CSS can lower it via --mm-max-h
@@ -23,25 +23,19 @@ export function levelTone(level: number | null | undefined, charLevel: number): 
   return delta > 3 ? 'bad' : 'mute';
 }
 
-/** A table row being hovered: light up its exits (by destination) or spawns (by npc). */
-export type MinimapHighlight = { warpTo: number } | { npcId: number } | null;
+/** A list row being hovered: light up one exit (by key) or a monster's spawns (by npc). */
+export type MinimapHighlight = { exitKey: string } | { npcId: number } | null;
 
-export function Minimap({ position, charLevel, highlight = null }: {
-  position: Position; charLevel: number; highlight?: MinimapHighlight;
-}) {
-  const stageId = position.stage_id ?? null;
+/** Destination names of an exit, for its label and its 出口 row. */
+export const exitNames = (e: MinimapExit) => e.options.map((o) => o.name).join('／');
+
+/** The stage's minimap payload; shared by the map and the 出口 list. */
+export function useMinimapData(stageId: number | null) {
   const [data, setData] = useState<MinimapData | null>(null);
   const [failed, setFailed] = useState(false);
-  const [imgBroken, setImgBroken] = useState(false);
-  const [shown, setShown] = useState<Record<Layer, boolean>>({ warps: true, npcs: true, spawns: true });
-  const [region, setRegion] = useState<MinimapRegion | null>(null);
-  const [fullMap, setFullMap] = useState(false);
-  const placed = position.px != null && position.py != null;
-
   useEffect(() => {
     setData(null);
     setFailed(false);
-    setImgBroken(false);
     if (stageId === null) return;
     let cancelled = false;
     get<MinimapData>(`/api/maps/${stageId}/minimap`)
@@ -49,6 +43,21 @@ export function Minimap({ position, charLevel, highlight = null }: {
       .catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; };
   }, [stageId]);
+  return { data, failed };
+}
+
+export function Minimap({ position, charLevel, data, failed, highlight = null }: {
+  position: Position; charLevel: number; data: MinimapData | null; failed: boolean;
+  highlight?: MinimapHighlight;
+}) {
+  const stageId = position.stage_id ?? null;
+  const [imgBroken, setImgBroken] = useState(false);
+  const [shown, setShown] = useState<Record<Layer, boolean>>({ warps: true, npcs: true, spawns: true });
+  const [region, setRegion] = useState<MinimapRegion | null>(null);
+  const [fullMap, setFullMap] = useState(false);
+  const placed = position.px != null && position.py != null;
+
+  useEffect(() => { setImgBroken(false); }, [stageId]);
 
   // The space the player stands in (city vs. one of the interiors packed into
   // the same map). Only re-asked once the player leaves the current box.
@@ -75,7 +84,12 @@ export function Minimap({ position, charLevel, highlight = null }: {
   const H = data.height_px;
   // View box in game coordinates (y grows upward): the player's space plus a
   // margin, or the whole map.
-  const cropped = !fullMap && region !== null;
+  // A lit exit outside the player's space widens the view to the whole map.
+  const litExit = highlight !== null && 'exitKey' in highlight
+    ? data.exits.find((e) => e.key === highlight.exitKey) ?? null
+    : null;
+  const litOutside = litExit !== null && region !== null && !inside(region, litExit.x, litExit.y);
+  const cropped = !fullMap && region !== null && !litOutside;
   const v = cropped
     ? {
       x0: Math.max(0, region.x0 - REGION_MARGIN), x1: Math.min(W, region.x1 + REGION_MARGIN),
@@ -96,12 +110,10 @@ export function Minimap({ position, charLevel, highlight = null }: {
   };
   // ...and above the point near the bottom edge.
   const up = (y: number) => ((v.y1 - y) / vh > 0.9 ? true : undefined);
-  const warps = data.warps.filter(inView);
+  const warps = data.exits.filter(inView);
   const npcs = data.npcs.filter(inView);
   const spawns = data.spawns.filter(inView);
-  const hlWarp = (w: (typeof warps)[number]) =>
-    highlight !== null && 'warpTo' in highlight
-    && w.destinations.some((d) => d.stage_id === highlight.warpTo);
+  const hlWarp = (w: MinimapExit) => litExit !== null && w.key === litExit.key;
   const hlSpawn = (sp: (typeof spawns)[number]) =>
     highlight !== null && 'npcId' in highlight && sp.npc_id === highlight.npcId;
   const counts: Record<Layer, number> = {
@@ -171,7 +183,7 @@ export function Minimap({ position, charLevel, highlight = null }: {
           </span>
         ))}
         {warps.map((w, i) => (shown.warps || hlWarp(w)) && (() => {
-          const names = w.destinations.map((d) => d.name || `#${d.stage_id}`).join('／');
+          const names = exitNames(w);
           return (
             <span
               key={`w${i}`} className="mm-pt mm-warp" style={at(w.x, w.y)}

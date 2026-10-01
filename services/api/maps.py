@@ -9,8 +9,9 @@ from services.api_types import (
     Minimap,
     MinimapNpc,
     MinimapRegion,
+    MinimapExit,
+    MinimapExitOption,
     MinimapSpawn,
-    MinimapWarp,
     SpawnPoint,
     StageInfo,
 )
@@ -72,15 +73,15 @@ def minimap(stage_id: int) -> Minimap:
         tile_px=tile_px,
         image_url=f"/api/maps/{stage_id}/image" if base["url"] else None,
         image_origin=base["origin"],
-        warps=[
-            MinimapWarp(
-                x=w["x"],
-                y=height_px - w["y"],
-                destinations=[
-                    StageInfo(stage_id=d["stage_id"], name=d["name"]) for d in w["destinations"]
-                ],
+        exits=[
+            MinimapExit(
+                **{
+                    **e,
+                    "y": height_px - e["y"],
+                    "options": [MinimapExitOption(**o) for o in e["options"]],
+                }
             )
-            for w in map_db.minimap_warps(stage_id)
+            for e in map_db.portal_exits(stage_id)
         ],
         npcs=[MinimapNpc(**{**n, "y": height_px - n["y"]}) for n in map_db.minimap_npcs(stage_id)],
         spawns=[

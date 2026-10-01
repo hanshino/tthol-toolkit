@@ -41,13 +41,42 @@ def test_minimap_uses_map_pixel_space():
     m = r.json()
     assert (m["width_px"], m["height_px"], m["tile_px"]) == (3200, 2400, 40)
     assert m["image_url"] == "/api/maps/1/image"
-    exits = {w["destinations"][0]["stage_id"]: (w["x"], w["y"]) for w in m["warps"]}
+    exits = {e["options"][0]["stage_id"]: (e["x"], e["y"]) for e in m["exits"]}
     assert set(exits) == {2, 3, 44}
     assert exits[2][1] > 2200  # north edge: game y grows upward
     assert exits[3][0] < 200  # west edge
     assert exits[44][0] > 2800  # east edge
     for marker in m["npcs"] + m["spawns"]:
         assert 0 <= marker["x"] <= m["width_px"] and 0 <= marker["y"] <= m["height_px"]
+
+
+def test_exits_come_only_from_map_event_warps():
+    # 成都少城: the legacy mpc_sec3 scan also "finds" 莫愁谷入口 (#1), and NPC
+    # dialogue warps (慕千影居, 天外密道) have no spot on the map; none is an exit.
+    m = client().get("/api/maps/53/minimap").json()
+    dests = sorted(o["stage_id"] for e in m["exits"] for o in e["options"])
+    assert dests == [10, 19, 27, 32, 54, 173, 173, 733]
+    assert all(e["parts"] == 1 and e["prompt"] is None for e in m["exits"])
+
+
+def test_exit_tag_split_into_zones_shares_its_menu():
+    # sestage 1827: tag 256 covers two separate zones, both opening one menu.
+    exits = [
+        e for e in client().get("/api/maps/1827/minimap").json()["exits"] if e["event_tag"] == 256
+    ]
+    assert [e["part"] for e in exits] == [1, 2] and {e["parts"] for e in exits} == {2}
+    assert exits[0]["prompt"] == "要回到流星村火島何處呢？"
+    options = {o["label"]: o for o in exits[0]["options"]}
+    assert options["回到流星冰島˙南"]["stage_id"] == 57 and options["回到流星冰島˙南"]["landed"]
+    assert options["前往莫愁谷"]["stage_id"] == 1 and not options["前往莫愁谷"]["landed"]
+
+
+def test_game_text_plain_strips_markup():
+    from services.map_db import game_text_plain
+
+    raw = "<FONT COLOR=F88900（旁白\\n）</FONT>好　　的"  # literal \n, missing '>'
+    assert game_text_plain(raw) == "（旁白\n）好\n的"
+    assert game_text_plain("") is None
 
 
 def test_region_picks_the_space_the_player_is_in():
