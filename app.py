@@ -53,6 +53,11 @@ async def _tick_runner(services: dict, stream) -> None:
     await wm.run_tick_loop(stream)
 
 
+async def _position_runner(services: dict, stream) -> None:
+    wm: WorkerManager = services["worker_manager"]
+    await wm.run_position_loop(stream)
+
+
 def _serve(app, port: int) -> None:
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(config)
@@ -62,6 +67,7 @@ def _serve(app, port: int) -> None:
     # WorldStream are loop-bound, so the tick task is scheduled here, not on
     # the main thread.
     loop.create_task(_tick_runner(app.state.services, app.state.services["world_stream"]))
+    loop.create_task(_position_runner(app.state.services, app.state.services["position_stream"]))
     loop.run_until_complete(server.serve())
 
 

@@ -44,6 +44,8 @@ export type TreasuryItem = S['TreasuryItem'];
 export type TreasuryHolder = S['TreasuryHolder'];
 export type OkResponse = S['OkResponse'];
 export type Position = S['Position'];
+// /ws/pos frame (WebSocket, so not in the OpenAPI schema): positions that moved, by pid.
+export type PositionFrame = { pos: Record<string, Position> };
 export type SaveSnapshotRequest = S['SaveSnapshotRequest'];
 export type SaveSnapshotResult = S['SaveSnapshotResult'];
 export type SetCharacterAccountRequest = S['SetCharacterAccountRequest'];

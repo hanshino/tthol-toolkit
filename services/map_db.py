@@ -13,6 +13,8 @@ from services._paths import bundled
 
 DB_PATH = bundled("tthol.sqlite")
 
+TILE_PX = 40  # every map in the DB uses 40 px tiles
+
 
 def _connect() -> sqlite3.Connection:
     con = sqlite3.connect(str(DB_PATH))
@@ -30,6 +32,14 @@ def all_stage_names() -> set[str]:
     with _connect() as con:
         rows = con.execute("SELECT DISTINCT name FROM stages").fetchall()
         return {r["name"] for r in rows if r["name"]}
+
+
+def stage_names_by_id() -> dict[int, str]:
+    """stages.id -> name. Names repeat across ids, so a (id, name) pair read from
+    memory is checked against this rather than against the name alone."""
+    with _connect() as con:
+        rows = con.execute("SELECT id, name FROM stages").fetchall()
+        return {r["id"]: r["name"] for r in rows if r["name"]}
 
 
 def stage_by_name(name: str) -> dict | None:

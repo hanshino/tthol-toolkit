@@ -4,7 +4,7 @@ States:
     DISCONNECTED  - process not found
     CONNECTING    - process found, scanning for character struct
     WAITING       - process found but character not yet located (waiting for login)
-    LOCATED       - polling every 1s from known address
+    LOCATED       - polling every 3s from known address; position every 0.1s
     READ_ERROR    - validation failed 3x, triggers rescan
     RESCANNING    - re-running locate_character
 """
@@ -12,6 +12,7 @@ States:
 from __future__ import annotations
 
 import os
+import struct
 import sys
 import threading
 import time
@@ -24,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from reader import (
     WAREHOUSE_COUNT_OFFSET,
     get_display_fields,
+    is_char_object,
     load_item_db,
     load_knowledge,
     load_status_db,
@@ -50,13 +52,25 @@ from services import diagnostics
 from services.api_types import EquipSlot
 from services.equip_stats import enhance_bonus, enhance_extra, inlays, to_stats
 from services.diag_events import ErrorCode
-from services.map_db import all_stage_names
+from services.map_db import all_stage_names, minimap_base, stage_names_by_id
 
 POLL_INTERVAL = 3.0
 FAILURE_THRESHOLD = 3
 LOCATE_RETRY_INTERVAL = 3.0
 LOCATE_MAX_RETRIES = 10
 MAP_RESCAN_EVERY = 5  # fallback locate_map_name walks the heap; cache between polls
+# Between full polls the tile position is re-read on its own. One walking step
+# takes ~215 ms at speed 12 (~170 ms at the cap of 15), so this sees every step.
+POS_INTERVAL = 0.1
+# The struct is freed on a map change; the MSVC debug heap fills it with 0xDD.
+FREED_FILL = struct.unpack("<i", b"\xdd" * 4)[0]
+# A relocate after a map change runs while the new map loads, so its first
+# retries come quickly; the attempt count (LOCATE_MAX_RETRIES) is unchanged.
+QUICK_RETRY_INTERVAL = 0.5
+QUICK_RETRIES = 4
+# A lock outside a CCharObject is provisional (seen: a look-alike block found
+# while the client was still logging in); look for the real one this often.
+PROVISIONAL_RECHECK_EVERY = 5  # polls (~15 s)
 
 
 class RelocateWindow:
@@ -107,6 +121,7 @@ class ReaderWorker(threading.Thread):
         on_money: Callable[[int], None] | None = None,
         on_appearance: Callable[[dict], None] | None = None,
         on_equipment: Callable[[list[EquipSlot]], None] | None = None,
+        on_position: Callable[[int | None, str, int, int], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._pid = pid
@@ -121,6 +136,7 @@ class ReaderWorker(threading.Thread):
         self._cb_money = on_money or (lambda _m: None)
         self._cb_appearance = on_appearance or (lambda _a: None)
         self._cb_equipment = on_equipment or (lambda _e: None)
+        self._cb_position = on_position or (lambda _s, _n, _x, _y: None)
         self._hp_value: int | None = None
         self._offset_filters = None
         self._compat_mode = False
@@ -133,12 +149,29 @@ class ReaderWorker(threading.Thread):
         self._relocate_window = RelocateWindow()
         self._knowledge = load_knowledge()
         self._display_fields = get_display_fields(self._knowledge)
+        offsets = {
+            f["name"]: int(off)
+            for off, f in self._knowledge["character_structure"]["fields"].items()
+        }
+        # Tile x and y are adjacent int32s, read together in one call.
+        self._tile_offset = offsets["X座標"]
+        assert offsets["Y座標"] == self._tile_offset + 4
+        # Last position sent: (stage_id, map_name, x, y).
+        self._pos_sent: tuple[int | None, str, int, int] | None = None
+        # Tiles read when the stage changed; they belong to the old map until
+        # they move, so samples equal to them are held back.
+        self._stale_tiles: tuple[int, int] | None = None
+        self._stage_bounds: dict[int, tuple[int, int] | None] = {}
+        # Whether the current lock sits inside a CCharObject (set on each locate).
+        self._lock_is_obj = False
         self._item_db = load_item_db()
         self._status_db = load_status_db()
         try:
             self._stage_names = all_stage_names()
+            self._stage_by_id = stage_names_by_id()
         except Exception:
             self._stage_names = None  # fall back to heuristic if DB unavailable
+            self._stage_by_id = None
 
     # ------------------------------------------------------------------
     # Public API (called from main thread)
@@ -202,7 +235,6 @@ class ReaderWorker(threading.Thread):
         self._cb_state("LOCATED")
         char_name = read_character_name(pm, hp_addr)
         failure_count = 0
-        struct_fields = self._knowledge["character_structure"]["fields"]
         map_name = ""
         stage_id = None
         map_tick = 0
@@ -218,10 +250,7 @@ class ReaderWorker(threading.Thread):
 
             try:
                 fields = read_all_fields(pm, hp_addr, self._display_fields, self._compat_mode)
-                if self._compat_mode:
-                    score = verify_structure_shifted(pm, hp_addr, struct_fields)
-                else:
-                    score = verify_structure(pm, hp_addr, struct_fields)
+                score = self._score(pm, hp_addr)
 
                 if score < 0.8:
                     failure_count += 1
@@ -264,9 +293,7 @@ class ReaderWorker(threading.Thread):
                 else:
                     failure_count = 0
                     stage = read_stage(pm)
-                    if stage is not None and (
-                        self._stage_names is None or stage[1] in self._stage_names
-                    ):
+                    if self._trusted_stage(stage):
                         stage_id, map_name = stage
                     elif map_tick % MAP_RESCAN_EVERY == 0 or not map_name:
                         # CStage global unreachable (e.g. moved by a client patch);
@@ -274,6 +301,17 @@ class ReaderWorker(threading.Thread):
                         stage_id = None
                         map_name = locate_map_name(pm, valid_names=self._stage_names)
                     map_tick += 1
+                    if not self._lock_is_obj and map_tick % PROVISIONAL_RECHECK_EVERY == 0:
+                        better = self._find_char_object(pm, hp_addr)
+                        if better is not None:
+                            hp_addr = better
+                            char_name = read_character_name(pm, hp_addr)
+                            self._log.info(
+                                "moved provisional lock to CCharObject at 0x%08X",
+                                hp_addr,
+                                extra={"cat": "locate"},
+                            )
+                            continue
                     # HP comes straight from the engine charobject pointer chain
                     # (no scan): authoritative and independent of the flat-struct
                     # lock, so it stays correct even if the scan locked a wrong
@@ -318,8 +356,28 @@ class ReaderWorker(threading.Thread):
                     stage_id = None
                     map_tick = 0
 
-            self._wake_event.wait(POLL_INTERVAL)
+            freed = self._track_position(pm, hp_addr, time.monotonic() + POLL_INTERVAL)
             self._wake_event.clear()
+            if freed and not self._stop_event.is_set():
+                # A map change, not a glitch: re-locate now rather than after
+                # FAILURE_THRESHOLD failed polls (~10 s of a dark minimap).
+                self._log.debug("character struct freed; re-locating", extra={"cat": "locate"})
+                hp_addr = self._locate_with_retries(pm, "RESCANNING", quick=True)
+                if hp_addr is None:
+                    self._cb_state("DISCONNECTED")
+                    return
+                self._log.debug(
+                    "re-acquired at 0x%08X (compat=%s)",
+                    hp_addr,
+                    self._compat_mode,
+                    extra={"cat": "locate"},
+                )
+                self._cb_state("LOCATED")
+                char_name = read_character_name(pm, hp_addr)
+                failure_count = 0
+                map_name = ""
+                stage_id = None
+                map_tick = 0
 
         self._cb_state("DISCONNECTED")
 
@@ -338,26 +396,36 @@ class ReaderWorker(threading.Thread):
             )
             return None
 
-    def _locate_with_retries(self, pm, waiting_state: str):
+    def _locate_with_retries(self, pm, waiting_state: str, quick: bool = False):
         """Locate with bounded retries (~LOCATE_MAX_RETRIES x LOCATE_RETRY_INTERVAL).
 
         The character struct lives on the heap and is reallocated on events like
         map changes, so its address moves; a single locate attempt can land in
-        the brief window where the old block is already freed (0xCDCDCDCD) and
+        the brief window where the old block is already freed (0xDDDDDDDD) and
         the new one is not yet valid. Retrying a bounded number of times lets a
         moved struct self-heal, without spinning forever for a genuinely
         logged-out character (recovery past the bound is via the UI 重偵 button).
         Emits `waiting_state` after the first miss. Returns the address or None.
+        `quick` shortens the first few waits, for a relocate known to be due to
+        a map change (the new struct appears once the map has loaded).
         """
         for attempt in range(LOCATE_MAX_RETRIES + 1):
             addr = self._locate(pm, silent=True)
             if addr is not None:
+                self._lock_is_obj = is_char_object(pm, addr)
+                if not self._lock_is_obj:
+                    self._log.info(
+                        "locked outside a CCharObject at 0x%08X; provisional",
+                        addr,
+                        extra={"cat": "locate"},
+                    )
                 return addr
             if self._stop_event.is_set():
                 return None
             if attempt == 0:
                 self._cb_state(waiting_state)
-            self._stop_event.wait(LOCATE_RETRY_INTERVAL)
+            quick_wait = quick and attempt < QUICK_RETRIES
+            self._stop_event.wait(QUICK_RETRY_INTERVAL if quick_wait else LOCATE_RETRY_INTERVAL)
         self._report_locate_exhausted(pm)
         return None
 
@@ -377,6 +445,100 @@ class ReaderWorker(threading.Thread):
                 pm, knowledge=self._knowledge, hp_value=self._hp_value
             ),
         )
+
+    def _track_position(self, pm, hp_addr: int, deadline: float) -> bool:
+        """Re-read the tile position every POS_INTERVAL until `deadline` or a wake-up.
+
+        Returns True when the character struct was freed under us (a map
+        change), so the caller re-locates now. Every other bad sample is just
+        skipped; the full poll keeps owning lock-loss detection.
+        """
+        while True:
+            if self._sample_position(pm, hp_addr):
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or self._wake_event.wait(min(POS_INTERVAL, remaining)):
+                return False
+
+    def _sample_position(self, pm, hp_addr: int) -> bool:
+        """Send the position if it changed. Returns True when the struct was freed."""
+        sent = self._pos_sent
+        stage = read_stage(pm)  # independent of hp_addr, so right even mid map change
+        if not self._trusted_stage(stage):
+            stage = None
+        try:
+            x, y = struct.unpack("<ii", pm.read_bytes(hp_addr + self._tile_offset, 8))
+        except Exception:
+            return False
+        if stage is None:
+            if sent is None:
+                return False
+            stage = (sent[0], sent[1])
+        elif sent is not None and stage[0] != sent[0]:
+            # New map: show it at once with no dot. The tiles still hold the old
+            # map's position until the character takes a step.
+            self._stale_tiles = (x, y)
+            self._send_position(stage[0], stage[1], -1, -1)
+        if self._score(pm, hp_addr) < 0.8:
+            return x == FREED_FILL and y == FREED_FILL
+        if (x, y) == self._stale_tiles:
+            return False
+        self._stale_tiles = None
+        if (x, y) != (-1, -1) and not self._tile_in_bounds(stage[0], x, y):
+            return False
+        self._send_position(stage[0], stage[1], x, y)
+        return False
+
+    def _score(self, pm, hp_addr: int) -> float:
+        """Structure score of the lock; 0 once a CCharObject lock stops being one.
+
+        verify_structure alone keeps passing a block whose memory was reused,
+        so a lock taken inside a CCharObject must stay inside one.
+        """
+        if self._lock_is_obj and not is_char_object(pm, hp_addr):
+            return 0.0
+        fields = self._knowledge["character_structure"]["fields"]
+        verify = verify_structure_shifted if self._compat_mode else verify_structure
+        return verify(pm, hp_addr, fields)
+
+    def _find_char_object(self, pm, current: int) -> int | None:
+        """A CCharObject lock for the character, if one now exists and differs from `current`."""
+        addr = self._locate(pm, silent=True)
+        if addr is None or addr == current or not is_char_object(pm, addr):
+            return None
+        self._lock_is_obj = True
+        return addr
+
+    def _trusted_stage(self, stage: tuple[int, str] | None) -> bool:
+        """The id and name must name the same DB stage. Mid map change CStage can
+        be read torn -- the old id with the new name was seen live -- and a name
+        check alone passes that."""
+        if stage is None:
+            return False
+        if self._stage_by_id is None:
+            return True
+        return self._stage_by_id.get(stage[0]) == stage[1]
+
+    def _send_position(self, stage_id: int | None, map_name: str, x: int, y: int) -> None:
+        pos = (stage_id, map_name, x, y)
+        if pos != self._pos_sent:
+            self._pos_sent = pos
+            self._cb_position(stage_id, map_name, x, y)
+
+    def _tile_in_bounds(self, stage_id: int | None, x: int, y: int) -> bool:
+        if x < 0 or y < 0:
+            return False
+        if stage_id is None:
+            return True
+        if stage_id not in self._stage_bounds:
+            try:
+                base = minimap_base(stage_id)
+            except Exception:
+                base = None
+            w, h = (base or {}).get("w_tiles"), (base or {}).get("h_tiles")
+            self._stage_bounds[stage_id] = (w, h) if w and h else None
+        bounds = self._stage_bounds[stage_id]
+        return bounds is None or (x < bounds[0] and y < bounds[1])
 
     def _locate(self, pm, silent: bool = False):
         # Try both the normal and the 4-byte-shifted (compat) layout, preferring

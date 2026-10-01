@@ -13,12 +13,13 @@ from services.api_types import (
     ConnectResult,
     ErrorInfo,
     Position,
+    PositionFrame,
     SaveSnapshotResult,
     Vitals,
     WorldSnapshot,
 )
 from services.char_session import CharSession
-from services.events import WorldStream
+from services.events import PositionStream, WorldStream
 from services.process_detector import find_tthol_processes
 from services.snapshot_db import SnapshotDB
 
@@ -181,6 +182,51 @@ class WorkerManager:
             except Exception:  # pragma: no cover
                 # print() is invisible in a windowed PyInstaller build (no stdout).
                 log.exception("tick loop publish error", extra={"cat": "api"})
+            await asyncio.sleep(interval)
+
+    def position_frame(
+        self, sent: dict[int, tuple[int, int]] | None = None
+    ) -> PositionFrame | None:
+        """Positions that changed since `sent` (all known ones when None).
+
+        `sent` maps pid -> (session id, seq) and is updated in place; keying on
+        the session too means a rebuilt session (重偵), whose seq restarts, is
+        still picked up. Pids whose session is gone are forgotten. Returns None
+        when nothing changed, so an idle game sends no frames.
+        """
+        sessions = dict(self._sessions)
+        pos: dict[int, Position] = {}
+        for pid, sess in sessions.items():
+            seq, p = sess.position()
+            if seq == 0:
+                continue  # no fast sample yet
+            mark = (id(sess), seq)
+            if sent is None or sent.get(pid) != mark:
+                pos[pid] = p
+                if sent is not None:
+                    sent[pid] = mark
+        if sent is not None:
+            for pid in sent.keys() - sessions.keys():
+                del sent[pid]
+        if sent is not None and not pos:
+            return None
+        return PositionFrame(pos=pos)
+
+    async def run_position_loop(self, stream: PositionStream, interval: float = 0.1) -> None:
+        """Coroutine: every `interval` seconds, publish the positions that moved.
+
+        One frame per tick however many clients are open; nothing when idle.
+        Pulls from the sessions, so worker threads never touch the event loop.
+        Same loop constraint as run_tick_loop.
+        """
+        sent: dict[int, tuple[int, int]] = {}
+        while True:
+            try:
+                frame = self.position_frame(sent)
+                if frame is not None:
+                    await stream.publish(frame)
+            except Exception:  # pragma: no cover
+                log.exception("position loop publish error", extra={"cat": "api"})
             await asyncio.sleep(interval)
 
 

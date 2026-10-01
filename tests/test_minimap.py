@@ -120,12 +120,17 @@ def test_minimap_image(monkeypatch, tmp_path):
 
 
 def test_position_hides_pixels_until_placed():
-    placed = _position(
-        {"map_name": "地英莊", "stage_id": 1054, "x": 52, "y": 9, "px": 2082, "py": 375}
-    )
-    assert (placed.stage_id, placed.px, placed.py) == (1054, 2082, 375)
-    fresh = _position({"map_name": "地英莊", "stage_id": 1054, "x": -1, "y": -1, "px": 0, "py": 0})
+    placed = _position({"map_name": "地英莊", "stage_id": 1054, "x": 52, "y": 9})
+    assert (placed.stage_id, placed.px, placed.py) == (1054, 2100, 380)
+    fresh = _position({"map_name": "地英莊", "stage_id": 1054, "x": -1, "y": -1})
     assert fresh.px is None and fresh.py is None
+
+
+def test_position_ignores_move_target_pixels():
+    # Mid-walk sample from a live probe: the struct's pixel pair already holds
+    # the click destination while the tiles are still at (64, 142).
+    pos = _position({"stage_id": 53, "x": 64, "y": 142, "px": 1860, "py": 5039})
+    assert (pos.px, pos.py) == (64 * 40 + 20, 142 * 40 + 20)
 
 
 def test_minimap_image_falls_back_to_original(monkeypatch, tmp_path):

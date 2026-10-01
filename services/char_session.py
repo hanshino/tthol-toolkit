@@ -20,6 +20,7 @@ from services.api_types import (
     Position,
     Vitals,
 )
+from services.map_db import TILE_PX
 from services.worker import ReaderWorker
 
 # Worker emits stats with raw Chinese labels from knowledge.json + the two
@@ -38,8 +39,6 @@ _FIELD_MAP: dict[str, str] = {
     "最大負重": "weight_max",
     "X座標": "x",
     "Y座標": "y",
-    "X像素": "px",
-    "Y像素": "py",
     "外功": "waigong",
     "內力": "neili",
     "根骨": "genggu",
@@ -58,16 +57,22 @@ _FIELD_MAP: dict[str, str] = {
 
 
 def _position(s: dict) -> Position:
-    # Right after a map change the tile pair reads -1 until the first step and
-    # the pixel pair is stale, so there is no usable minimap position yet.
-    placed = s.get("x", -1) >= 0 and s.get("y", -1) >= 0
+    # Right after a map change the tile pair reads -1 until the first step, so
+    # there is no usable minimap position yet.
+    x, y = s.get("x", -1), s.get("y", -1)
+    placed = x >= 0 and y >= 0
+    # The dot sits on the tile centre. The struct's pixel pair (HP+636/+640)
+    # is the move target, not the live position: while walking it already
+    # holds the click destination, so drawing it put the dot ahead of the
+    # character.
+    half = TILE_PX // 2
     return Position(
         map_name=s.get("map_name"),
         stage_id=s.get("stage_id"),
         x=s.get("x", 0),
         y=s.get("y", 0),
-        px=s.get("px") if placed else None,
-        py=s.get("py") if placed else None,
+        px=x * TILE_PX + half if placed else None,
+        py=y * TILE_PX + half if placed else None,
     )
 
 
@@ -87,6 +92,7 @@ class CharSession:
         self._equipment: list[EquipSlot] | None = None
         self._latest_buffs: list[BuffInfo] = []
         self._inv_seq: int = 0
+        self._pos_seq: int = 0
         self._wh_seq: int = 0
         self._inv_ts: float | None = None
         self._wh_ts: float | None = None
@@ -111,6 +117,7 @@ class CharSession:
             on_money=self._on_money,
             on_appearance=self._on_appearance,
             on_equipment=self._on_equipment,
+            on_position=self._on_position,
         )
 
     @property
@@ -272,6 +279,22 @@ class CharSession:
                 if name != self.name:
                     self._log = diagnostics.bind(self.pid, name)
                 self.name = name
+
+    def _on_position(self, stage_id: int | None, map_name: str, x: int, y: int) -> None:
+        # Written into the same stats the 3 s row reads, so the row is never
+        # older than the fast position stream.
+        with self._lock:
+            s = self._latest_stats
+            s["stage_id"] = stage_id
+            s["map_name"] = map_name
+            s["x"] = x
+            s["y"] = y
+            self._pos_seq += 1
+
+    def position(self) -> tuple[int, Position]:
+        """(seq, position); seq advances on every fast position update."""
+        with self._lock:
+            return self._pos_seq, _position(self._latest_stats)
 
     def _on_buffs(self, items: list[tuple[int, str, str]]) -> None:
         with self._lock:

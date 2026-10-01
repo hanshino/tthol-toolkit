@@ -33,8 +33,15 @@ class Position(_Base):
     # until the first step.
     x: int
     y: int
-    px: int | None = None  # map pixel position, same space as Minimap; None until placed
+    # Map pixels of the tile centre, same space as Minimap; None until placed.
+    px: int | None = None
     py: int | None = None
+
+
+class PositionFrame(_Base):
+    """One /ws/pos frame: positions that changed since the last frame, by pid."""
+
+    pos: dict[int, Position]
 
 
 class AutoClickStatus(_Base):
