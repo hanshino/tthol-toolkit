@@ -70,7 +70,7 @@ export function AutoClickTab({ pid }: { pid: number }) {
     : '—';
 
   return (
-    <Panel title="輔助·召喚商人">
+    <Panel title="輔助·英雄培養">
       <div style={{ display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--tt-dim)' }}>

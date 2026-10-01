@@ -13,7 +13,7 @@ const TABS: { k: CharTab; n: string; s: string }[] = [
   { k: 'items', n: '行囊', s: '道具' },
   { k: 'body', n: '根脈', s: '屬性' },
   { k: 'maps', n: '行止', s: '地圖' },
-  { k: 'assist', n: '輔助', s: '召喚商人' },
+  { k: 'assist', n: '輔助', s: '英雄培養' },
 ];
 
 export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {

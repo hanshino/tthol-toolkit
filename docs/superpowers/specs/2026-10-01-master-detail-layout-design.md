@@ -47,10 +47,10 @@ Found by reading the current webui (`App.tsx`, `TopNav.tsx`, `Dashboard.tsx`, `p
 │ 御 御心鑒     │ CharHeader (sticky)                           │
 │──────────────│  seal · name · sect·Lv·pid   [保持渲染] [↻ 重偵] │
 │ 總覽 全角色一覽│  氣血 ▬▬  內力 ▬▬  負重 ▬▬  方位 map · x,y      │
-│ 帳房 全角色道具│  buff chips …            ● 召喚商人執行中      │
+│ 帳房 全角色道具│  buff chips …            ● 英雄培養執行中      │
 │ 留影 背包快照 │  [error / lost banner when applicable]        │
 │── 角色 6/7 ──│───────────────────────────────────────────────│
-│ ● 月下獨酌    │ 行囊 道具 · 根脈 屬性 · 行止 地圖 · 輔助 召喚商人 │
+│ ● 月下獨酌    │ 行囊 道具 · 根脈 屬性 · 行止 地圖 · 輔助 英雄培養 │
 │   Lv92 · 洛陽 │───────────────────────────────────────────────│
 │ ● 青衫客 …    │ tab content (scrolls)                         │
 │   (scrolls)   │                                               │
@@ -81,7 +81,7 @@ Keep the stylised names and add a small plain-language subtitle next to each:
 | char tab | 行囊 | 道具 |
 | char tab | 根脈 | 屬性 |
 | char tab | 行止 | 地圖 |
-| char tab | 輔助 | 召喚商人 |
+| char tab | 輔助 | 英雄培養 |
 
 Wording fix: user-facing text says 庫房 everywhere. The `E_WH_NOT_FOUND` message currently says 倉庫.
 
@@ -144,7 +144,7 @@ CharWorkspace/
   - **保持渲染 toggle**: a switch-style `<button aria-pressed>`. Moved here from the 輔助 tab. It owns the existing `/keep-active/{status,start,stop}` calls and 2s status poll, taken over from `KeepActiveTab`, which is deleted.
   - **↻ 重偵**: same `/rescan` call and error handling as the dashboard today. Gold when the worker is stopped or the character is unlocated; disabled when gone.
 - **Row 2**: a 4-column grid with 氣血 / 內力 / 負重 (label, `v / max`, bar) and 方位 (`map · x,y`). HP below 30% turns the HP text `--tt-bad` and appends 偏低, so the warning does not rely on colour alone.
-- **Row 3**: `BuffChips`. When `autoclick.running`, a right-aligned `● 召喚商人執行中 · {runtime}s` in `--tt-ok`.
+- **Row 3**: `BuffChips`. When `autoclick.running`, a right-aligned `● 英雄培養執行中 · {runtime}s` in `--tt-ok`.
 - When the character is unlocated, rows 2–3 are hidden.
 
 ### 6.2 Banners (inside the header, below row 3)

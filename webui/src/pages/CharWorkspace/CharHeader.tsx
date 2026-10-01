@@ -113,7 +113,7 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
           <div className="ws-buffs ws-dim-when-lost">
             <BuffChips buffs={char.buffs} emptyText="目前無增益狀態" />
             {char.autoclick.running && (
-              <span className="ws-auto">● 召喚商人執行中{runtime != null ? ` · ${runtime}s` : ''}</span>
+              <span className="ws-auto">● 英雄培養執行中{runtime != null ? ` · ${runtime}s` : ''}</span>
             )}
           </div>
         </>
