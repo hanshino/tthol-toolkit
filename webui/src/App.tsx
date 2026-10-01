@@ -41,7 +41,7 @@ export function App() {
       <Sidebar view={view} chars={snap.chars} onNav={nav} onOpenChar={openChar} />
       <main className="app-main">
         <ErrorBoundary key={boundaryKey} component={boundaryKey}>
-          {view.kind === 'overview' && <Dashboard chars={snap.chars} onPick={c => openChar(c.pid)} />}
+          {view.kind === 'overview' && <Dashboard chars={snap.chars} onOpenChar={openChar} />}
           {view.kind === 'treasury' && <Treasury />}
           {view.kind === 'snapshots' && <Snapshots />}
           {view.kind === 'diagnostics' && <Diagnostics />}
@@ -56,7 +56,7 @@ export function App() {
                 onNav={nav}
               />
             )
-            : <Dashboard chars={snap.chars} onPick={c => openChar(c.pid)} />)}
+            : <Dashboard chars={snap.chars} onOpenChar={openChar} />)}
         </ErrorBoundary>
       </main>
     </div>
