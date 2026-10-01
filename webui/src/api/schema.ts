@@ -421,6 +421,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maps/{stage_id}/minimap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Minimap */
+        get: operations["minimap_api_maps__stage_id__minimap_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maps/{stage_id}/region": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Minimap Region
+         * @description The walkable space holding game tile (x, y); null when none (e.g. no mask).
+         */
+        get: operations["minimap_region_api_maps__stage_id__region_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maps/{stage_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Minimap Image */
+        get: operations["minimap_image_api_maps__stage_id__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items": {
         parameters: {
             query?: never;
@@ -430,6 +484,23 @@ export interface paths {
         };
         /** Items By Id */
         get: operations["items_by_id_api_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/items/{item_id}/icon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Item Icon */
+        get: operations["item_icon_api_items__item_id__icon_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1083,6 +1154,108 @@ export interface components {
             /** Dst Tag */
             dst_tag?: number | null;
         };
+        /** Minimap */
+        Minimap: {
+            stage: components["schemas"]["StageInfo"];
+            /** Width Px */
+            width_px: number;
+            /** Height Px */
+            height_px: number;
+            /** Tile Px */
+            tile_px: number;
+            /** Image Url */
+            image_url?: string | null;
+            /** Image Origin */
+            image_origin?: string | null;
+            /**
+             * Exits
+             * @default []
+             */
+            exits: components["schemas"]["MinimapExit"][];
+            /**
+             * Npcs
+             * @default []
+             */
+            npcs: components["schemas"]["MinimapNpc"][];
+            /**
+             * Spawns
+             * @default []
+             */
+            spawns: components["schemas"]["MinimapSpawn"][];
+        };
+        /**
+         * MinimapExit
+         * @description A walk-on exit (genbu getPortalExits): one cluster of a map_event tag's cells.
+         */
+        MinimapExit: {
+            /** Key */
+            key: string;
+            /** Event Tag */
+            event_tag: number;
+            /** Part */
+            part: number;
+            /** Parts */
+            parts: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Prompt */
+            prompt?: string | null;
+            /** Options */
+            options: components["schemas"]["MinimapExitOption"][];
+        };
+        /** MinimapExitOption */
+        MinimapExitOption: {
+            /** Label */
+            label?: string | null;
+            /** Stage Id */
+            stage_id: number;
+            /** Name */
+            name: string;
+            /** Instance */
+            instance: boolean;
+            /** Landed */
+            landed: boolean;
+        };
+        /** MinimapNpc */
+        MinimapNpc: {
+            /** Npc Id */
+            npc_id: number;
+            /** Name */
+            name?: string | null;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /**
+         * MinimapRegion
+         * @description Bounding box of one walkable space (a map can pack a city plus interiors).
+         */
+        MinimapRegion: {
+            /** X0 */
+            x0: number;
+            /** Y0 */
+            y0: number;
+            /** X1 */
+            x1: number;
+            /** Y1 */
+            y1: number;
+        };
+        /** MinimapSpawn */
+        MinimapSpawn: {
+            /** Npc Id */
+            npc_id: number;
+            /** Name */
+            name?: string | null;
+            /** Level */
+            level?: number | null;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
         /** OkResponse */
         OkResponse: {
             /** Ok */
@@ -1094,10 +1267,16 @@ export interface components {
         Position: {
             /** Map Name */
             map_name?: string | null;
+            /** Stage Id */
+            stage_id?: number | null;
             /** X */
             x: number;
             /** Y */
             y: number;
+            /** Px */
+            px?: number | null;
+            /** Py */
+            py?: number | null;
         };
         /** RelocateRequest */
         RelocateRequest: {
@@ -2050,6 +2229,113 @@ export interface operations {
             };
         };
     };
+    minimap_api_maps__stage_id__minimap_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stage_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Minimap"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    minimap_region_api_maps__stage_id__region_get: {
+        parameters: {
+            query: {
+                x: number;
+                y: number;
+            };
+            header?: never;
+            path: {
+                stage_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MinimapRegion"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    minimap_image_api_maps__stage_id__image_get: {
+        parameters: {
+            query?: {
+                /** @description Longest side in px, one of (512, 1024, 2048) */
+                size?: number;
+            };
+            header?: never;
+            path: {
+                stage_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/webp": unknown;
+                };
+            };
+            /** @description No image available */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     items_by_id_api_items_get: {
         parameters: {
             query: {
@@ -2070,6 +2356,45 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ItemMeta"][];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    item_icon_api_items__item_id__icon_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description No icon available */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

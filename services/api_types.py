@@ -27,8 +27,14 @@ class Vitals(_Base):
 
 class Position(_Base):
     map_name: str | None = None
+    stage_id: int | None = None  # stages.id; None when only the scan fallback found the map
+    # Game coordinates: origin bottom-left, y grows upward (same as
+    # map_placements.tile_x/tile_y). Tiles read -1 right after a map change
+    # until the first step.
     x: int
     y: int
+    px: int | None = None  # map pixel position, same space as Minimap; None until placed
+    py: int | None = None
 
 
 class AutoClickStatus(_Base):
@@ -380,6 +386,69 @@ class MapInfo(_Base):
     monsters: list[MapMonster] = []
     warps: list[MapWarp] = []
     nearby: list[SpawnPoint] = []
+
+
+# ---- Minimap -------------------------------------------------------------
+# All coordinates are game map pixels: origin bottom-left, y grows upward, the
+# same space as Position.px / Position.py. The image is drawn top-down, so a
+# point sits at image row (height_px - y).
+
+
+class MinimapExitOption(_Base):
+    label: str | None = None  # dialogue-menu text; None for a direct warp
+    stage_id: int
+    name: str
+    instance: bool  # enters a dungeon instance (A64)
+    landed: bool  # the destination's landing point is known
+
+
+class MinimapExit(_Base):
+    """A walk-on exit (genbu getPortalExits): one cluster of a map_event tag's cells."""
+
+    key: str  # "<event_tag>-<part>"
+    event_tag: int
+    part: int  # which zone of the tag (1-based); a tag can cover separate zones
+    parts: int
+    x: int  # centroid of the zone's walk-on cells
+    y: int
+    prompt: str | None = None  # dialogue-menu question, when the exit opens one
+    options: list[MinimapExitOption]  # one for a direct warp, several for a menu
+
+
+class MinimapNpc(_Base):
+    npc_id: int
+    name: str | None = None
+    x: int
+    y: int
+
+
+class MinimapSpawn(_Base):
+    npc_id: int
+    name: str | None = None
+    level: int | None = None
+    x: int
+    y: int
+
+
+class MinimapRegion(_Base):
+    """Bounding box of one walkable space (a map can pack a city plus interiors)."""
+
+    x0: int  # left
+    y0: int  # bottom
+    x1: int  # right
+    y1: int  # top
+
+
+class Minimap(_Base):
+    stage: StageInfo
+    width_px: int  # full map size in pixels (tiles x tile_px)
+    height_px: int
+    tile_px: int
+    image_url: str | None = None  # app-relative; None when the DB has no image for the map
+    image_origin: str | None = None  # 'img' (official art) or 'composed' (rebuilt from tiles)
+    exits: list[MinimapExit] = []
+    npcs: list[MinimapNpc] = []
+    spawns: list[MinimapSpawn] = []
 
 
 # ---- Generic -------------------------------------------------------------

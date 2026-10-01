@@ -34,15 +34,29 @@ def default_cache_dir() -> Path:
 
 
 class IconCache:
+    # Subclasses (map_image_cache) swap these to cache other immutable images.
+    max_bytes = MAX_ICON_BYTES
+    log_cat = "items"
+
     def __init__(self, cache_dir: Path | None = None, fetch=None) -> None:
         self._dir = cache_dir or default_cache_dir()
-        self._fetch = fetch or _download
+        self._fetch = fetch or (lambda url: _download(url, self.max_bytes))
+
+    def cache_name(self, url: str) -> str | None:
+        """File name to cache url under, or None when the URL looks wrong."""
+        name = url.rsplit("/", 1)[-1]
+        return name if _SAFE_NAME.match(name) else None
+
+    def is_valid(self, data: bytes) -> bool:
+        return data.startswith(_PNG_MAGIC)
 
     def get(self, url: str) -> bytes | None:
-        """PNG bytes for an icon URL, from disk or fetched once; None if unavailable."""
-        name = url.rsplit("/", 1)[-1]
-        if not _SAFE_NAME.match(name):
-            log.warning("icon url has an unexpected file name: %s", url, extra={"cat": "items"})
+        """Image bytes for a URL, from disk or fetched once; None if unavailable."""
+        name = self.cache_name(url)
+        if name is None:
+            log.warning(
+                "image url has an unexpected file name: %s", url, extra={"cat": self.log_cat}
+            )
             return None
         path = self._dir / name
         try:
@@ -50,15 +64,17 @@ class IconCache:
         except FileNotFoundError:
             pass
         except OSError as exc:
-            log.debug("icon cache read failed: %s", exc, extra={"cat": "items"})
+            log.debug("image cache read failed: %s", exc, extra={"cat": self.log_cat})
         try:
             data = self._fetch(url)
         except Exception as exc:
             # Offline or host down: routine, the UI falls back to the name.
-            log.debug("icon fetch failed for %s: %s", url, exc, extra={"cat": "items"})
+            log.debug("image fetch failed for %s: %s", url, exc, extra={"cat": self.log_cat})
             return None
-        if not data.startswith(_PNG_MAGIC) or len(data) > MAX_ICON_BYTES:
-            log.warning("icon at %s is not a PNG; not cached", url, extra={"cat": "items"})
+        if not self.is_valid(data) or len(data) > self.max_bytes:
+            log.warning(
+                "image at %s is not the expected type; not cached", url, extra={"cat": self.log_cat}
+            )
             return None
         self._store(path, data)
         return data
@@ -73,14 +89,14 @@ class IconCache:
                 f.write(data)
             os.replace(tmp, path)
         except OSError as exc:
-            log.debug("icon cache write failed: %s", exc, extra={"cat": "items"})
+            log.debug("image cache write failed: %s", exc, extra={"cat": self.log_cat})
             if tmp is not None:
                 Path(tmp).unlink(missing_ok=True)
 
 
-def _download(url: str) -> bytes:
+def _download(url: str, max_bytes: int) -> bytes:
     with urllib.request.urlopen(url, timeout=FETCH_TIMEOUT) as resp:
-        return resp.read(MAX_ICON_BYTES + 1)
+        return resp.read(max_bytes + 1)
 
 
 _cache = IconCache()
