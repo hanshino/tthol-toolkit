@@ -69,11 +69,20 @@ def monsters_on_stage(stage_id: int) -> list[dict]:
 
 
 def spawn_points(stage_id: int) -> list[dict]:
+    """Spawn points in game tiles (bottom-left origin, like the player's x/y).
+
+    monster_spawns.x/y are image pixels (top-left origin), so they are
+    converted the same way map_placements derives tile_x/tile_y.
+    """
     with _connect() as con:
         rows = con.execute(
             """
-            SELECT s.npc_id, s.x, s.y, COALESCE(n.name, m.name) AS name
+            SELECT s.npc_id,
+                   CAST(ROUND(s.x / 40.0) AS INTEGER) AS x,
+                   d.height - CAST(ROUND(s.y / 40.0) AS INTEGER) AS y,
+                   COALESCE(n.name, m.name) AS name
             FROM monster_spawns s
+            JOIN map_dims d ON d.stage_id = s.stage_id
             LEFT JOIN npc n ON n.id = s.npc_id
             LEFT JOIN monsters m ON m.id = s.npc_id
             WHERE s.stage_id = ?
@@ -110,9 +119,9 @@ def warps_from_stage(stage_id: int) -> list[dict]:
 
 
 # ---- Minimap -------------------------------------------------------------
-# Every minimap coordinate is a map pixel with a top-left origin: the space of
-# map_images, map_placements.raw_x/raw_y and the player's pixel position
-# (reader HP+636/+640). map_placements.tile_y is bottom-origin, so it is not used.
+# These return map_placements raw_x/raw_y: image pixels, top-left origin. The
+# API flips y into game coordinates (bottom-left origin, like the player's
+# position and map_placements.tile_y).
 
 
 def minimap_base(stage_id: int) -> dict | None:

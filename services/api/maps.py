@@ -1,13 +1,14 @@
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
-from services import map_db, map_image_cache
+from services import map_db, map_image_cache, map_regions
 from services.api_types import (
     MapInfo,
     MapMonster,
     MapWarp,
     Minimap,
     MinimapNpc,
+    MinimapRegion,
     MinimapSpawn,
     MinimapWarp,
     SpawnPoint,
@@ -62,26 +63,41 @@ def minimap(stage_id: int) -> Minimap:
     if base is None:
         raise HTTPException(status_code=404, detail=f"No stage {stage_id}")
     tile_px = base["tile_px"] or DEFAULT_TILE_PX
+    height_px = (base["h_tiles"] or 0) * tile_px
+    # map_placements raw_y is an image row (top-down); flip into game coordinates.
     return Minimap(
         stage=StageInfo(stage_id=base["stage_id"], name=base["name"]),
         width_px=(base["w_tiles"] or 0) * tile_px,
-        height_px=(base["h_tiles"] or 0) * tile_px,
+        height_px=height_px,
         tile_px=tile_px,
         image_url=f"/api/maps/{stage_id}/image" if base["url"] else None,
         image_origin=base["origin"],
         warps=[
             MinimapWarp(
                 x=w["x"],
-                y=w["y"],
+                y=height_px - w["y"],
                 destinations=[
                     StageInfo(stage_id=d["stage_id"], name=d["name"]) for d in w["destinations"]
                 ],
             )
             for w in map_db.minimap_warps(stage_id)
         ],
-        npcs=[MinimapNpc(**n) for n in map_db.minimap_npcs(stage_id)],
-        spawns=[MinimapSpawn(**sp) for sp in map_db.minimap_spawns(stage_id)],
+        npcs=[MinimapNpc(**{**n, "y": height_px - n["y"]}) for n in map_db.minimap_npcs(stage_id)],
+        spawns=[
+            MinimapSpawn(**{**sp, "y": height_px - sp["y"]})
+            for sp in map_db.minimap_spawns(stage_id)
+        ],
     )
+
+
+@router.get("/{stage_id}/region", response_model=MinimapRegion | None)
+def minimap_region(stage_id: int, x: int, y: int) -> MinimapRegion | None:
+    """The walkable space holding game tile (x, y); null when none (e.g. no mask)."""
+    base = map_db.minimap_base(stage_id)
+    if base is None:
+        raise HTTPException(status_code=404, detail=f"No stage {stage_id}")
+    box = map_regions.region_box(stage_id, x, y, base["tile_px"] or DEFAULT_TILE_PX)
+    return MinimapRegion(x0=box[0], y0=box[1], x1=box[2], y1=box[3]) if box else None
 
 
 @router.get(

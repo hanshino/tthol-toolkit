@@ -29,8 +29,8 @@ def test_map_cache_names_by_size_and_hash(tmp_path):
 def test_map_cache_refuses_non_webp_and_odd_urls(tmp_path):
     assert MapImageCache(tmp_path, fetch=lambda _u: b"<html>").get(thumbnail_url(URL, 512)) is None
     cache = MapImageCache(tmp_path / "maps", fetch=lambda _u: WEBP)
-    assert cache.get(URL) is None  # no size segment
     assert cache.get("https://img.hanshino.dev/512/../x.exe") is None
+    assert cache.get("https://img.hanshino.dev/512/evil.png") is None
     assert not (tmp_path / "maps").exists()
 
 
@@ -43,11 +43,33 @@ def test_minimap_uses_map_pixel_space():
     assert m["image_url"] == "/api/maps/1/image"
     exits = {w["destinations"][0]["stage_id"]: (w["x"], w["y"]) for w in m["warps"]}
     assert set(exits) == {2, 3, 44}
-    assert exits[2][1] < 200  # north edge: top-left origin, not flipped
+    assert exits[2][1] > 2200  # north edge: game y grows upward
     assert exits[3][0] < 200  # west edge
     assert exits[44][0] > 2800  # east edge
     for marker in m["npcs"] + m["spawns"]:
         assert 0 <= marker["x"] <= m["width_px"] and 0 <= marker["y"] <= m["height_px"]
+
+
+def test_region_picks_the_space_the_player_is_in():
+    # Stage 53 成都少城: the city fills the top of the image, interiors sit below.
+    # Game y grows upward, so the city is the high-y box.
+    c = client()
+    city = c.get("/api/maps/53/region?x=67&y=151").json()
+    assert city["y1"] > city["y0"] > 3000 and city["x1"] - city["x0"] > 4000
+    room = c.get("/api/maps/53/region?x=60&y=20").json()
+    assert room["y1"] < 2000 and room["x1"] - room["x0"] < 2000
+    assert c.get("/api/maps/53/region?x=0&y=0").json() is None  # blocked corner
+
+
+def test_region_snaps_to_a_nearby_walkable_cell():
+    from services.map_regions import _label
+
+    # 14x5 map, walkable only on the second image row (game y=3); game y=0 is
+    # the bottom row.
+    reg = _label(14, 5, "0" * 14 + "1" * 14 + "0" * 42)
+    assert reg.at(5, 3) == 0
+    assert reg.at(5, 4) == 0  # one row above the path: snapped
+    assert reg.at(5, 0) is None  # three rows off: too far
 
 
 def test_minimap_unknown_stage_404():
@@ -75,3 +97,15 @@ def test_position_hides_pixels_until_placed():
     assert (placed.stage_id, placed.px, placed.py) == (1054, 2082, 375)
     fresh = _position({"map_name": "地英莊", "stage_id": 1054, "x": -1, "y": -1, "px": 0, "py": 0})
     assert fresh.px is None and fresh.py is None
+
+
+def test_minimap_image_falls_back_to_original(monkeypatch, tmp_path):
+    # PictShare answers 500 for resizes of very large maps; the original still serves.
+    def fetch(u):
+        if "/1024/" in u:
+            raise OSError("HTTP Error 500")
+        return WEBP
+
+    monkeypatch.setattr(map_image_cache, "_cache", MapImageCache(tmp_path, fetch=fetch))
+    assert map_image_cache.get(URL, 1024) == WEBP
+    assert (tmp_path / "full_g3zc0h.webp").exists()

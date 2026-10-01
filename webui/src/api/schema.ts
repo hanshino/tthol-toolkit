@@ -438,6 +438,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maps/{stage_id}/region": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Minimap Region
+         * @description The walkable space holding game tile (x, y); null when none (e.g. no mask).
+         */
+        get: operations["minimap_region_api_maps__stage_id__region_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/maps/{stage_id}/image": {
         parameters: {
             query?: never;
@@ -1173,6 +1193,20 @@ export interface components {
             x: number;
             /** Y */
             y: number;
+        };
+        /**
+         * MinimapRegion
+         * @description Bounding box of one walkable space (a map can pack a city plus interiors).
+         */
+        MinimapRegion: {
+            /** X0 */
+            x0: number;
+            /** Y0 */
+            y0: number;
+            /** X1 */
+            x1: number;
+            /** Y1 */
+            y1: number;
         };
         /** MinimapSpawn */
         MinimapSpawn: {
@@ -2187,6 +2221,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Minimap"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    minimap_region_api_maps__stage_id__region_get: {
+        parameters: {
+            query: {
+                x: number;
+                y: number;
+            };
+            header?: never;
+            path: {
+                stage_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MinimapRegion"] | null;
                 };
             };
             /** @description Validation Error */

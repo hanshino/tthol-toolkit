@@ -28,9 +28,12 @@ class Vitals(_Base):
 class Position(_Base):
     map_name: str | None = None
     stage_id: int | None = None  # stages.id; None when only the scan fallback found the map
-    x: int  # tile x (top-left origin); -1 right after a map change until the first step
+    # Game coordinates: origin bottom-left, y grows upward (same as
+    # map_placements.tile_x/tile_y). Tiles read -1 right after a map change
+    # until the first step.
+    x: int
     y: int
-    px: int | None = None  # map pixel x, same space as Minimap; None until placed
+    px: int | None = None  # map pixel position, same space as Minimap; None until placed
     py: int | None = None
 
 
@@ -386,8 +389,9 @@ class MapInfo(_Base):
 
 
 # ---- Minimap -------------------------------------------------------------
-# All coordinates are map pixels, top-left origin: the same space as the image
-# (scaled by image_width / width_px) and Position.px / Position.py.
+# All coordinates are game map pixels: origin bottom-left, y grows upward, the
+# same space as Position.px / Position.py. The image is drawn top-down, so a
+# point sits at image row (height_px - y).
 
 
 class MinimapWarp(_Base):
@@ -409,6 +413,15 @@ class MinimapSpawn(_Base):
     level: int | None = None
     x: int
     y: int
+
+
+class MinimapRegion(_Base):
+    """Bounding box of one walkable space (a map can pack a city plus interiors)."""
+
+    x0: int  # left
+    y0: int  # bottom
+    x1: int  # right
+    y1: int  # top
 
 
 class Minimap(_Base):
