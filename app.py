@@ -17,6 +17,7 @@ import webview
 
 from services._paths import bundled
 from services import diagnostics
+from services import window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.fake_active import KeepActiveManager
@@ -133,7 +134,32 @@ def main() -> int:
     webview.settings["ALLOW_DOWNLOADS"] = True
 
     target_url = "http://127.0.0.1:5173" if args.dev else f"http://127.0.0.1:{port}"
-    webview.create_window("御心鑒", target_url, width=1024, height=768)
+    # Geometry is best-effort: a screen query failure or a bad prefs file
+    # falls back to the clamped default instead of blocking startup.
+    prefs_path = window_prefs.default_prefs_path()
+    try:
+        screens = list(webview.screens)
+    except Exception:
+        screens = []
+    geo = window_prefs.compute_geometry(window_prefs.load_saved(prefs_path), screens)
+    window = webview.create_window(
+        "御心鑒",
+        target_url,
+        width=geo.width,
+        height=geo.height,
+        x=geo.x,
+        y=geo.y,
+        min_size=geo.min_size,
+    )
+    # `closing` runs synchronously on the WinForms UI thread and get_size /
+    # get_position read the form directly (checked in pywebview 6.2.1), so
+    # reading geometry here cannot deadlock.
+    win_state = {"maximized": False}
+    window.events.maximized += lambda: win_state.update(maximized=True)
+    window.events.restored += lambda: win_state.update(maximized=False)
+    window.events.closing += lambda: window_prefs.remember(
+        prefs_path, window, maximized=win_state["maximized"]
+    )
     # Window / taskbar icon. The winforms backend builds a .NET Icon(path), so
     # the file must be a .ico (a PNG would raise). When frozen with no icon
     # passed, the backend falls back to extracting the exe's own icon; passing
