@@ -34,7 +34,7 @@ export function BodyTab({ detail, error }: { detail: CharacterDetail | null; err
 
   const worn = gear.filter(g => g.item_id);
   const current = worn.find(g => g.slot === selected) ?? worn[0];
-  const bonus = sumStats(worn.flatMap(g => [...g.stats, ...g.enhance]));
+  const bonus = sumStats(worn.flatMap(g => [...g.stats, ...g.enhance, ...(g.enhance_extra ?? [])]));
 
   // Buffs live in the workspace header, so this tab shows stats and worn gear.
   return (
@@ -102,28 +102,40 @@ function GearRow({ slot, meta, selected, onSelect }: {
   );
 }
 
-/** Stats as the game tooltip shows them: own value (with 真元) then "+x" from enhancement. */
+/**
+ * Stats as the game tooltip shows them: own value (with 真元), then "+x" from
+ * the enhancement level and "(+x)" from unlocked enhancement milestones.
+ */
 function GearStats({ slot }: { slot: EquipSlot }) {
   const enh = new Map(slot.enhance.map(s => [s.label, s.value]));
-  const rows = [
-    ...slot.stats.map(s => ({ label: s.label, value: s.value, plus: enh.get(s.label) ?? 0 })),
-    ...slot.enhance.filter(e => !slot.stats.some(s => s.label === e.label))
-      .map(e => ({ label: e.label, value: 0, plus: e.value })),
-  ];
-  if (rows.length === 0) return null;
+  const extra = new Map((slot.enhance_extra ?? []).map(s => [s.label, s.value]));
+  const labels = [...new Set([
+    ...slot.stats.map(s => s.label), ...enh.keys(), ...extra.keys(),
+  ])];
+  const own = new Map(slot.stats.map(s => [s.label, s.value]));
+  if (labels.length === 0) return null;
+  const enhanced = enh.size > 0 || extra.size > 0;
   return (
     <div className="inv-d-sec">
-      <span className="inv-d-label">屬性{slot.enhance.length > 0 && <span className="body-note">金色為 +{slot.plus} 強化加成</span>}</span>
+      <span className="inv-d-label">
+        屬性{enhanced && <span className="body-note">金色為 +{slot.plus} 強化加成</span>}
+      </span>
       <dl className="inv-stats">
-        {rows.map(r => (
-          <div key={r.label} style={{ display: 'contents' }}>
-            <dt>{r.label}</dt>
-            <dd>
-              {r.value !== 0 && (r.value > 0 ? `+${r.value}` : r.value)}
-              {r.plus !== 0 && <span className="body-plus">+{r.plus}</span>}
-            </dd>
-          </div>
-        ))}
+        {labels.map(label => {
+          const v = own.get(label) ?? 0;
+          const p = enh.get(label) ?? 0;
+          const x = extra.get(label) ?? 0;
+          return (
+            <div key={label} style={{ display: 'contents' }}>
+              <dt>{label}</dt>
+              <dd>
+                {v !== 0 && (v > 0 ? `+${v}` : v)}
+                {p !== 0 && <span className="body-plus">+{p}</span>}
+                {x !== 0 && <span className="body-plus">(+{x})</span>}
+              </dd>
+            </div>
+          );
+        })}
       </dl>
     </div>
   );
@@ -153,9 +165,9 @@ function sumStats(stats: ItemStat[]): [string, number][] {
 
 function Grid({ pairs, signed }: { pairs: readonly (readonly [string, number])[]; signed?: boolean }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
       {pairs.map(([k, v]) => (
-        <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+        <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, whiteSpace: 'nowrap' }}>
           <span style={{ color: 'var(--tt-dim)', letterSpacing: 2 }}>{k}</span>
           {signed && v > 0
             ? <span className="body-signed">+<StatNum value={v} /></span>

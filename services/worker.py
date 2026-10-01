@@ -48,7 +48,7 @@ from reader import (
 )
 from services import diagnostics
 from services.api_types import EquipSlot
-from services.equip_stats import enhance_bonus, to_stats
+from services.equip_stats import enhance_bonus, enhance_extra, to_stats
 from services.diag_events import ErrorCode
 from services.map_db import all_stage_names
 
@@ -542,6 +542,7 @@ class ReaderWorker(threading.Thread):
                             plus=plus,
                             stats=to_stats(stats),
                             enhance=enhance_bonus(iid, plus) if iid else [],
+                            enhance_extra=enhance_extra(iid, plus) if iid else [],
                         )
                         for slot, iid, plus, stats in gear
                     ]

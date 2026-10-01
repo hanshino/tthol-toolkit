@@ -140,7 +140,7 @@ def test_reads_equipment_slots_and_skips_bad_pointers():
     pm.u32(OBJ + cap_off, inst)
     pm.write(inst + ITEM_ID_OFFSET, struct.pack("<i", 50401))
     pm.write(inst + ENHANCE_OFFSET, bytes([15]))  # stored as N + 10
-    # hp 950 flat (flag 1), mp 650 with a non-flat flag, def 89, mdef 35
+    # hp 950 flat (flag 1), mp 650 with a potion-only flag, def 89, mdef 35
     pm.write(inst + ITEM_STATS_OFFSET, struct.pack("<hhhh", 950, 1, 650, 2))
     pm.write(inst + ITEM_STATS_OFFSET + 0x24, struct.pack("<hh", 89, 35))
     pm.u32(OBJ + body_off, 0x00000044)  # not a heap pointer
@@ -185,6 +185,9 @@ def test_enhance_bonus_is_the_current_level_row_not_a_running_sum(tmp_path):
     table = EnhanceTable(db)
     # 160 cap +5 shows 防禦 89+10 in game: only the level-5 common row counts.
     assert table.bonus(50401, 5) == {"extra_def": 10}
+    # ...and the +5 milestone row shows as 護勁 35(+24); not unlocked at +4.
+    assert table.extra(50401, 5) == {"magic_def": 24}
+    assert table.extra(50401, 4) == {}
     assert table.bonus(50401, 0) == {}
     assert table.bonus(21514, 5) == {}
     assert [(s.label, s.value) for s in to_stats({"extra_def": 10, "hp": 0})] == [("防禦", 10)]

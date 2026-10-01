@@ -147,6 +147,9 @@ class EquipSlot(_Base):
     stats: list[ItemStat] = []
     # Bonus of the current enhancement level (strong_formula), on top of `stats`.
     enhance: list[ItemStat] = []
+    # Milestone bonuses unlocked at or below the current level (the tooltip's
+    # "(+x)"), on top of `stats` and `enhance`.
+    enhance_extra: list[ItemStat] = []
 
 
 # ---- Avatar (paper-doll head) --------------------------------------------

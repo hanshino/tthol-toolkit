@@ -1032,7 +1032,10 @@ ITEM_STAT_FIELDS = (
     ("run_speed", 0x44),
 )
 ITEM_STATS_SIZE = 0x46
-FLAT_STAT_FLAG = 1  # hp / mp count as a flat bonus only with this flag
+# On gear, hp / mp flags are only ever 0 or 1 and both mean a flat bonus
+# (天御蒼龍甲's 體力 2375 has flag 0 and shows in the tooltip); 2 / 3 are the
+# potion restore / percent modes.
+FLAT_STAT_FLAGS = (0, 1)
 
 
 def read_item_stats(pm, ptr):
@@ -1040,7 +1043,7 @@ def read_item_stats(pm, ptr):
     raw = pm.read_bytes(ptr + ITEM_STATS_OFFSET, ITEM_STATS_SIZE)
     vals = {col: struct.unpack_from("<h", raw, off)[0] for col, off in ITEM_STAT_FIELDS}
     for col in ("hp", "mp"):
-        if vals.pop(f"{col}_flag") != FLAT_STAT_FLAG:
+        if vals.pop(f"{col}_flag") not in FLAT_STAT_FLAGS:
             vals[col] = 0
     return {col: v for col, v in vals.items() if v}
 

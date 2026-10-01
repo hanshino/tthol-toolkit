@@ -1,13 +1,14 @@
-"""Stats of worn gear: the instance's own stats plus the enhancement bonus.
+"""Stats of worn gear: the instance's own stats plus the enhancement bonuses.
 
 The item instance in memory already holds the item's stats with 真元 inlays
-applied (reader.read_item_stats). Enhancement (+N) is not baked in: the
-tooltip shows it as a separate "+x" next to each stat. Its bonus is the
-strong_formula row of the item's current level -- one row per level, not a
-running sum (a 160 cap at +5 shows 防禦 89+10, and 160帽+5 is 防禦+10).
+applied (reader.read_item_stats). Enhancement (+N) is not baked in; the
+tooltip shows it in two parts, both verified on a +5 160 cap:
 
-Each level can also list a "bonus" row (e.g. 160帽+5"1 護勁+24). Whether the
-game grants it is not verified, so it is left out.
+* "+x": the `common` strong_formula row of the current level only, not a
+  running sum (防禦 89+10, and 160帽+5 is 防禦+10).
+* "(+x)": `bonus` rows that some levels add (160帽+5"1 護勁+24 -> 護勁 35(+24)).
+  Taken as unlocked once reached, so every bonus row up to the current level
+  counts. Only +5 has been checked in game.
 """
 
 from __future__ import annotations
@@ -63,11 +64,11 @@ def to_stats(cols: dict[str, int]) -> list[ItemStat]:
 class EnhanceTable:
     def __init__(self, db_path: Path = DB_PATH) -> None:
         self._db_path = db_path
-        # item id -> {level: (column, value)}
-        self._levels: dict[int, dict[int, tuple[str, int]]] | None = None
+        # item id -> {level: {"common" | "bonus": (column, value)}}
+        self._levels: dict[int, dict[int, dict[str, tuple[str, int]]]] | None = None
         self._lock = threading.Lock()
 
-    def _load(self) -> dict[int, dict[int, tuple[str, int]]]:
+    def _load(self) -> dict[int, dict[int, dict[str, tuple[str, int]]]]:
         try:
             con = sqlite3.connect(f"file:{self._db_path}?mode=ro", uri=True)
         except sqlite3.Error as exc:
@@ -90,36 +91,47 @@ class EnhanceTable:
         finally:
             con.close()
 
-        per_list: dict[int, dict[int, tuple[str, int]]] = {}
+        per_list: dict[int, dict[int, dict[str, tuple[str, int]]]] = {}
         for list_id, raw in lists.items():
-            levels: dict[int, tuple[str, int]] = {}
+            levels: dict[int, dict[str, tuple[str, int]]] = {}
             try:
                 data = json.loads(raw)["data"]
             except (TypeError, ValueError, KeyError):
                 continue
             for step in data:
-                formula = formulas.get(step.get("common"))
-                if formula is None:
-                    continue
-                col = BONUS_COLUMN.get(formula[0])
-                try:
-                    value = int(formula[1])
-                except (TypeError, ValueError):
-                    continue
-                if col:
-                    levels[step["level"]] = (col, value)
+                for kind in ("common", "bonus"):
+                    formula = formulas.get(step.get(kind))
+                    if formula is None:
+                        continue
+                    col = BONUS_COLUMN.get(formula[0])
+                    try:
+                        value = int(formula[1])
+                    except (TypeError, ValueError):
+                        continue
+                    if col:
+                        levels.setdefault(step["level"], {})[kind] = (col, value)
             per_list[list_id] = levels
         return {item_id: per_list[lid] for item_id, lid in items if lid in per_list}
 
-    def bonus(self, item_id: int, level: int) -> dict[str, int]:
-        """Enhancement bonus of an item at +level as {column: value}."""
-        if level <= 0:
-            return {}
+    def _steps(self, item_id: int) -> dict[int, dict[str, tuple[str, int]]]:
         with self._lock:
             if self._levels is None:
                 self._levels = self._load()
-            step = self._levels.get(item_id, {}).get(level)
+            return self._levels.get(item_id, {})
+
+    def bonus(self, item_id: int, level: int) -> dict[str, int]:
+        """The "+x" part at +level: that level's common row, as {column: value}."""
+        step = self._steps(item_id).get(level, {}).get("common") if level > 0 else None
         return {step[0]: step[1]} if step else {}
+
+    def extra(self, item_id: int, level: int) -> dict[str, int]:
+        """The "(+x)" part at +level: every bonus row up to it, summed."""
+        total: dict[str, int] = {}
+        for lv, kinds in self._steps(item_id).items():
+            if lv <= level and "bonus" in kinds:
+                col, value = kinds["bonus"]
+                total[col] = total.get(col, 0) + value
+        return total
 
 
 _table = EnhanceTable()
@@ -127,3 +139,7 @@ _table = EnhanceTable()
 
 def enhance_bonus(item_id: int, level: int) -> list[ItemStat]:
     return to_stats(_table.bonus(item_id, level))
+
+
+def enhance_extra(item_id: int, level: int) -> list[ItemStat]:
+    return to_stats(_table.extra(item_id, level))

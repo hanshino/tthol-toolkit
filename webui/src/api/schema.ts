@@ -1070,6 +1070,11 @@ export interface components {
              * @default []
              */
             enhance: components["schemas"]["ItemStat"][];
+            /**
+             * Enhance Extra
+             * @default []
+             */
+            enhance_extra: components["schemas"]["ItemStat"][];
         };
         /**
          * ErrorInfo

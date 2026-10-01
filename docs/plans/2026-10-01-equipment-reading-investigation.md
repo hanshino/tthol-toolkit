@@ -112,6 +112,6 @@ Cheat Engine（CE MCP bridge）在 `0x4190a4` 下只記錄的硬體中斷點。�
 
 - instance `+0x1B0` 起的屬性 = **道具原值 + 真元**（35 + 27×2 = 89），不含強化。欄位順序同 items 表，每個 i16：hp、hp_flag、mp、mp_flag、str(+0x1B8)、pow、vit、dex、agi、wis(+0x1CC)、atk(+0x1D0)、matk、extra_def、magic_def、hit、dodge、…、critical_hit(+0x1E0)、run_speed(+0x1F4)。用背包 33 件未鑲嵌道具對 DB 全部吻合（含 vit / wis）。
 - 強化加成 = strong_formula 中**目前等級那一列**的 common 值，不是 1..N 累加（160帽+5 = 防禦+10）。
-- 每級另有的 "bonus" 列（如 160帽+5"1 護勁+24）是否生效未確認，目前不計。
-- 天御蒼龍甲 instance 有 hp 2375 / mp 1563，但 hp_flag / mp_flag 是 0；依 item_catalog 規則（只有 flag 1 算固定加成）目前不計入，待對照 tooltip。
+- 每級另有的 "bonus" 列會生效：tooltip 用括號顯示（160帽+5"1 護勁+24 → 「護勁 35(+24)」，使用者確認）。當作「達到該級即解鎖」，所以目前等級以下的 bonus 列全部累計；只實測過 +5。
+- 裝備的 hp/mp flag 只有 0 和 1，兩者都算固定加成（天御蒼龍甲 體力 2375 是 flag 0，tooltip 有顯示，使用者確認）；2/3 是藥品的回復／百分比。
 - 實作：`reader.read_item_stats`、`services/equip_stats.py`；根脈的「裝備加成」改為含真元、強化。
