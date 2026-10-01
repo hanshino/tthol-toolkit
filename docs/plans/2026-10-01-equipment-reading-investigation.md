@@ -93,7 +93,7 @@ Cheat Engine（CE MCP bridge）在 `0x4190a4` 下只記錄的硬體中斷點。�
 - `+0x4EC` 起是客戶端**實際在畫的**各圖層 sequence，外裝（EXTRA_CAP …）已經套進去了。自己戴的帽子欄是 50401 血龍魔尊冠（sequence 101153），這裡卻是 101018 聖誕帽，畫面上也確實戴聖誕帽。所以頭像直接讀這裡，不從裝備欄指標反查（其他玩家的帽／衣／鞋欄指標也常是 0，但這裡有值）。
 - sequence 編碼：性別基底（男 100000 / 女 300000）+ 圖層序號 × 1000 + 部件號；頭 = 0、帽 = 1。陣列第 3 格以後的順序跟 `doll_slots` 不同，頭像用不到，沒追。
 - 讀法：`reader.read_appearance`；圖：`services/doll_catalog.py` 查 `doll_frame_images`（`action='wait'`，dir 6 沒有圖，依 `doll_slot_rules` 用 dir 8 左右翻轉）。
-- 未確認：髮色 1（黑色）畫出來偏棕／橄欖色，要對照遊戲畫面確認 `+0x29C` 與標籤對應是否有偏移。紫（8）、黃（5）看起來吻合。
+- 髮色 `+0x29C` 與 `doll_frame_images.color` 一致，使用者對照遊戲畫面確認（2026-10-01）。
 
 ## 已接進程式
 
