@@ -17,6 +17,11 @@ wheels/
 # Snapshot database (user data, not source code)
 *.db
 
+# Game DB: lives on a GitHub Release, pinned by db.lock.json
+# (uv run scripts/db_release.py pull)
+tthol.sqlite
+tthol.sqlite.download
+
 # Generated scan data
 candidates.json
 pointer_history.json

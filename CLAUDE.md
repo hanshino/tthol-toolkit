@@ -12,6 +12,13 @@ Read-only memory reader for the Tthol game (`tthola.dat`, 32-bit process). Reads
 # Install dependencies
 uv sync
 
+# Fetch the game DB (tthol.sqlite is not in git; db.lock.json pins the version)
+uv run scripts/db_release.py pull
+
+# After refreshing tthol.sqlite from tthol_data: upload it as a db-YYYY-MM-DD
+# release and rewrite db.lock.json (needs a logged-in gh CLI), then commit the lock
+uv run scripts/db_release.py publish
+
 # Fast scan (requires known HP value)
 uv run reader.py <current_hp> [--loop]
 
@@ -39,6 +46,8 @@ The character struct lives on the heap and moves (`0xFDFDFDFD` after restart), s
 1. **Player HP chain** — `reader.PLAYER_HP_CHAIN_BASE` / `PLAYER_HP_CHAIN_OFFSETS` resolve to the engine charobject and yield current HP with no user input; the app's worker then scans for that HP. Fixed for a given game build; a game patch moves the root — re-derive with `/tthol-update-scan`.
 2. **`reader.py`** — Fast scan (~0.4s) for a known HP value (from the chain, or typed by the user), validated with structure scoring (>= 0.8 match). `auto_detect.py` imports shared utilities from here.
 3. **`auto_detect.py`** — Auto-detect (~14s): pattern-matches the character struct by checking multiple field constraints (HP/MP ranges, level ratio, combat stat bounds) without any known value.
+
+**`tthol.sqlite`** (item / map / status data from the tthol_data project) is kept out of git: it is a prerelease asset on this repo's GitHub Releases, pinned by `db.lock.json` (tag + sha256). `release.yml` pulls it before PyInstaller bundles it, so the release zip still ships it.
 
 **`knowledge.json`** is the structure knowledge base defining field offsets relative to the HP address (offset 0) — the source of truth for the character struct layout.
 

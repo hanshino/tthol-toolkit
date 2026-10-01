@@ -43,6 +43,12 @@ try {
 } finally { Pop-Location }
 
 Write-Host "[2/5] PyInstaller build ..." -ForegroundColor Cyan
+# The game DB is not in git (see scripts/db_release.py). Fetch the pinned one
+# when missing; an existing local DB is used as-is, so an unpublished DB can be
+# test-built before it is released.
+if (-not (Test-Path 'tthol.sqlite')) {
+    Invoke-Exe 'db pull' { & uv run scripts/db_release.py pull }
+}
 Invoke-Exe 'pyinstaller' { & uv run pyinstaller --noconfirm --clean tthol-reader.spec }
 if (-not (Test-Path 'dist\tthol-reader\tthol-reader.exe')) {
     throw "PyInstaller did not produce tthol-reader.exe"
