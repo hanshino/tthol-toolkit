@@ -2,10 +2,17 @@ import { useEffect, useState } from 'react';
 import { get } from '../../api/client';
 import { Panel, StatNum } from '../../primitives';
 import type { CharacterRow, MapInfo } from '../../api/types';
+import { levelTone, Minimap, type MinimapHighlight } from './Minimap';
 
+type ListTab = 'warps' | 'monsters' | 'nearby';
+
+// Map on the left (fixed while the list scrolls), one list at a time on the
+// right. Hovering a row lights its points on the map.
 export function MapAnalysis({ char }: { char: CharacterRow }) {
   const [info, setInfo] = useState<MapInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<ListTab>('warps');
+  const [hl, setHl] = useState<MinimapHighlight>(null);
   const mapName = char.position.map_name;
   const px = char.position.x;
   const py = char.position.y;
@@ -37,128 +44,82 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
   }
 
   const charLevel = char.level ?? 0;
+  const tabs: { k: ListTab; n: string; count: number }[] = [
+    { k: 'warps', n: '出口', count: info.warps.length },
+    { k: 'monsters', n: '怪物', count: info.monsters.length },
+    { k: 'nearby', n: '刷新點', count: info.nearby.length },
+  ];
+  // Spread onto a row: hover and keyboard focus both light the map.
+  const lights = (h: MinimapHighlight) => ({
+    tabIndex: 0,
+    onMouseEnter: () => setHl(h), onMouseLeave: () => setHl(null),
+    onFocus: () => setHl(h), onBlur: () => setHl(null),
+  });
+
   return (
-    <div style={{ display: 'grid', gap: 16, gridTemplateColumns: '1fr 1fr' }}>
-      <Panel title={`現址 · ${info.stage.name}`}>
-        <KV label="地圖編號" value={`#${info.stage.stage_id}`} />
-        <KV label="角色座標" value={`${px} , ${py}`} />
-        <KV label="等級" value={charLevel} />
-        <KV label="出口" value={`${info.warps.length} 處`} />
-        <KV label="怪物種類" value={`${info.monsters.length} 種`} />
-      </Panel>
+    <div className="ma">
+      <div className="ma-map">
+        <Panel title={`輿圖 · ${info.stage.name}　#${info.stage.stage_id}`}>
+          <Minimap position={char.position} charLevel={charLevel} highlight={hl} />
+        </Panel>
+      </div>
 
-      <Panel title="出口 · 行徑">
-        {info.warps.length === 0 ? (
-          <Empty text="此地無對外出口" />
-        ) : (
-          <div style={{ display: 'grid', gap: 4 }}>
-            {info.warps.map((w) => (
-              <Row
-                key={`${w.dst_stage_id}-${w.dst_tag ?? 0}`}
-                left={w.dst_name ?? `#${w.dst_stage_id}`}
-                right={`#${w.dst_stage_id}`}
-              />
-            ))}
-          </div>
-        )}
-      </Panel>
+      <Panel style={{ minWidth: 0 }}>
+        <div className="ma-tabs" role="tablist" aria-label="地圖資料">
+          {tabs.map((t) => (
+            <button
+              key={t.k} type="button" role="tab" className="ma-tab"
+              aria-selected={tab === t.k} onClick={() => { setTab(t.k); setHl(null); }}
+            >
+              {t.n}<span className="ma-count">{t.count}</span>
+            </button>
+          ))}
+        </div>
 
-      <Panel title="駐紮怪物">
-        {info.monsters.length === 0 ? (
-          <Empty text="此地無怪物棲息" />
-        ) : (
-          <div style={{ display: 'grid', gap: 4 }}>
-            <MonsterHeader />
-            {info.monsters.map((m) => {
-              const lvDelta = (m.level ?? 0) - charLevel;
-              const tone =
-                Math.abs(lvDelta) <= 3 ? 'var(--tt-ok)' :
-                lvDelta > 3 ? 'var(--tt-bad)' :
-                'var(--tt-mute)';
-              return (
-                <div
-                  key={m.npc_id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1.2fr 40px 70px 90px 60px',
-                    gap: 8,
-                    fontSize: 12,
-                    padding: '4px 6px',
-                    borderBottom: '1px solid var(--tt-line-soft)',
-                  }}
-                >
-                  <span style={{ fontFamily: 'var(--tt-font-serif)' }}>
-                    {m.name ?? `#${m.npc_id}`}
-                  </span>
-                  <span style={{ color: tone, fontFamily: 'var(--tt-font-mono)' }}>Lv {m.level ?? '—'}</span>
-                  <span style={{ fontFamily: 'var(--tt-font-mono)', color: 'var(--tt-dim)' }}>
-                    HP {m.hp ?? '—'}
-                  </span>
-                  <span style={{ fontFamily: 'var(--tt-font-mono)', color: 'var(--tt-gold)' }}>
-                    {m.drop_money_min ?? 0}–{m.drop_money_max ?? 0}
-                  </span>
+        <div role="tabpanel" className="ma-list">
+          {tab === 'warps' && (info.warps.length === 0 ? <Empty text="此地無對外出口" /> : (
+            info.warps.map((w) => (
+              <div
+                key={`${w.dst_stage_id}-${w.dst_tag ?? 0}`} className="ma-row"
+                {...lights({ warpTo: w.dst_stage_id })}
+              >
+                <span className="ma-name">{w.dst_name ?? `#${w.dst_stage_id}`}</span>
+                <span className="ma-mono ma-dim">#{w.dst_stage_id}</span>
+              </div>
+            ))
+          ))}
+
+          {tab === 'monsters' && (info.monsters.length === 0 ? <Empty text="此地無怪物棲息" /> : (
+            <>
+              <div className="ma-row ma-mon ma-head">
+                <span>名</span><span>級</span><span>氣血</span><span>掉銀</span>
+                <span style={{ textAlign: 'right' }}>數量</span>
+              </div>
+              {info.monsters.map((m) => (
+                <div key={m.npc_id} className="ma-row ma-mon" {...lights({ npcId: m.npc_id })}>
+                  <span className="ma-name">{m.name ?? `#${m.npc_id}`}</span>
+                  <span className="ma-mono" data-tone={levelTone(m.level, charLevel)}>Lv {m.level ?? '—'}</span>
+                  <span className="ma-mono ma-dim">HP {m.hp ?? '—'}</span>
+                  <span className="ma-mono ma-gold">{m.drop_money_min ?? 0}–{m.drop_money_max ?? 0}</span>
                   <span style={{ textAlign: 'right' }}><StatNum value={m.count} /></span>
                 </div>
-              );
-            })}
-          </div>
-        )}
+              ))}
+            </>
+          ))}
+
+          {tab === 'nearby' && (info.nearby.length === 0 ? <Empty text="無資料" /> : (
+            info.nearby.map((sp, i) => (
+              <div
+                key={`${sp.npc_id}-${sp.x}-${sp.y}-${i}`} className="ma-row"
+                {...lights({ npcId: sp.npc_id })}
+              >
+                <span className="ma-name">{sp.name ?? `#${sp.npc_id}`}</span>
+                <span className="ma-mono ma-dim">{sp.distance ?? '—'} 格 · {sp.x},{sp.y}</span>
+              </div>
+            ))
+          ))}
+        </div>
       </Panel>
-
-      <Panel title="周遭刷新點 (距離)">
-        {info.nearby.length === 0 ? (
-          <Empty text="無資料" />
-        ) : (
-          <div style={{ display: 'grid', gap: 4 }}>
-            {info.nearby.map((sp, i) => (
-              <Row
-                key={`${sp.npc_id}-${sp.x}-${sp.y}-${i}`}
-                left={`${sp.name ?? `#${sp.npc_id}`}`}
-                right={`Δ${sp.distance ?? '—'} · ${sp.x},${sp.y}`}
-              />
-            ))}
-          </div>
-        )}
-      </Panel>
-    </div>
-  );
-}
-
-function KV({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-      <span style={{ color: 'var(--tt-dim)', letterSpacing: 2, fontSize: 12 }}>{label}</span>
-      <span style={{ fontFamily: 'var(--tt-font-mono)' }}>{value}</span>
-    </div>
-  );
-}
-
-function Row({ left, right }: { left: string; right: string }) {
-  return (
-    <div style={{
-      display: 'flex', justifyContent: 'space-between',
-      padding: '4px 6px', borderBottom: '1px solid var(--tt-line-soft)',
-      fontSize: 12,
-    }}>
-      <span style={{ fontFamily: 'var(--tt-font-serif)' }}>{left}</span>
-      <span style={{ fontFamily: 'var(--tt-font-mono)', color: 'var(--tt-dim)' }}>{right}</span>
-    </div>
-  );
-}
-
-function MonsterHeader() {
-  return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: '1.2fr 40px 70px 90px 60px',
-      gap: 8, padding: '4px 6px',
-      fontSize: 11, color: 'var(--tt-mute)', letterSpacing: 2,
-      borderBottom: '1px solid var(--tt-line-soft)',
-    }}>
-      <span>名</span>
-      <span>級</span>
-      <span>氣血</span>
-      <span>掉銀</span>
-      <span style={{ textAlign: 'right' }}>數量</span>
     </div>
   );
 }

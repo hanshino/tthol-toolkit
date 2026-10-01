@@ -1,0 +1,129 @@
+/* Minimap: a map thumbnail with markers placed by percentage, so marker size
+   stays fixed in screen px whatever the map's scale. Buttons are written as
+   `button.x` to outrank the global button styles in styles.css. */
+.mm { display: grid; gap: 10px; }
+.mm-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mm-layers { display: flex; gap: 6px; }
+button.mm-layer {
+  display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 10px;
+  font-size: 12px; letter-spacing: 1px; color: var(--tt-mute); background: var(--tt-bg);
+  transition: color 150ms ease, border-color 150ms ease;
+}
+button.mm-layer[aria-pressed="true"] { color: var(--tt-text); border-color: var(--tt-accent-dim); }
+button.mm-layer:disabled { opacity: 0.4; cursor: default; }
+button.mm-layer:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
+button.mm-layer > i { width: 8px; height: 8px; border-radius: 50%; }
+button.mm-layer[data-layer="warps"] > i { background: var(--tt-accent); border-radius: 1px; transform: rotate(45deg); }
+button.mm-layer[data-layer="npcs"] > i { background: var(--tt-gold); }
+button.mm-layer[data-layer="spawns"] > i { background: var(--tt-bad); }
+button.mm-layer[aria-pressed="false"] > i { opacity: 0.35; }
+.mm-count { font-family: var(--tt-font-mono); font-size: 11px; color: var(--tt-mute); }
+button.mm-scope { margin-left: 4px; }
+button.mm-scope[aria-pressed="true"] { color: var(--tt-gold); border-color: var(--tt-gold); }
+.mm-coord { margin-left: auto; font-family: var(--tt-font-mono); font-size: 12px; color: var(--tt-dim); }
+
+.mm-map {
+  position: relative; width: 100%; margin: 0 auto; overflow: hidden;
+  background: var(--tt-bg); border: 1px solid var(--tt-line);
+}
+.mm-map > img { position: absolute; max-width: none; display: block; user-select: none; } /* box set inline from the view */
+.mm-noimg {
+  position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: var(--tt-mute);
+  background-image: linear-gradient(var(--tt-grid) 1px, transparent 1px), linear-gradient(90deg, var(--tt-grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.mm-empty { color: var(--tt-mute); font-size: 12px; padding: 24px; text-align: center; }
+
+/* z-index scale: spawns 10, npcs 20, warps 30, player 40, hovered tip 50 */
+.mm-pt { position: absolute; transform: translate(-50%, -50%); }
+.mm-spawn { z-index: 10; width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+.mm-spawn[data-tone="ok"] { background: var(--tt-ok); }
+.mm-spawn[data-tone="bad"] { background: var(--tt-bad); }
+.mm-spawn[data-tone="mute"] { background: var(--tt-mute); }
+.mm-npc { z-index: 20; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7); }
+.mm-warp { z-index: 30; width: 10px; height: 10px; }
+.mm-warp::before {
+  content: ""; position: absolute; inset: 0; transform: rotate(45deg);
+  background: var(--tt-accent); border: 1px solid var(--tt-text);
+}
+/* The player must stand out on sand, grass and dark interiors alike, and must
+   not read as a (gold) NPC: white core, seal-red ring, dark outline. */
+.mm-player {
+  z-index: 40; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box;
+  background: #fff; border: 3px solid var(--tt-seal); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
+}
+.mm-player::after {
+  content: ""; position: absolute; inset: -7px; border-radius: 50%; border: 2px solid var(--tt-seal);
+  animation: mm-ping 1.8s ease-out infinite;
+}
+@keyframes mm-ping { from { transform: scale(0.6); opacity: 0.9; } to { transform: scale(1.6); opacity: 0; } }
+
+/* Warp labels are always shown (exits are few); point labels only on hover/focus. */
+.mm-label, .mm-tip {
+  position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%);
+  white-space: nowrap; font-weight: normal; font-size: 11px; letter-spacing: 1px; line-height: 1.4;
+  padding: 1px 6px; color: var(--tt-text); background: rgba(12, 16, 20, 0.82); border: 1px solid var(--tt-line);
+  pointer-events: none; font-family: var(--tt-font-serif);
+}
+.mm-label[data-side="start"], .mm-tip[data-side="start"] { left: -2px; transform: none; }
+.mm-label[data-side="end"], .mm-tip[data-side="end"] { left: auto; right: -2px; transform: none; }
+.mm-label[data-up], .mm-tip[data-up] { top: auto; bottom: calc(100% + 4px); }
+.mm-tip { display: none; }
+.mm-spawn:hover, .mm-spawn:focus-visible, .mm-npc:hover, .mm-npc:focus-visible { z-index: 50; outline: none; box-shadow: 0 0 0 2px var(--tt-text); }
+.mm-pt:hover > .mm-tip, .mm-pt:focus-visible > .mm-tip { display: block; }
+
+/* Hovering a table row: lift its points, fade the rest. */
+.mm-map[data-hl] .mm-spawn:not([data-lit]), .mm-map[data-hl] .mm-npc,
+.mm-map[data-hl] .mm-warp:not([data-lit]) { opacity: 0.3; }
+.mm-spawn[data-lit] { z-index: 45; width: 10px; height: 10px; box-shadow: 0 0 0 2px var(--tt-text), 0 0 0 3px rgba(0, 0, 0, 0.7); }
+.mm-warp[data-lit] { z-index: 45; }
+.mm-warp[data-lit]::before { background: var(--tt-gold); border-color: #fff; }
+.mm-warp[data-lit] > .mm-label { border-color: var(--tt-gold); color: var(--tt-gold); }
+.mm-pt { transition: opacity 150ms ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-pt { transition: none; }
+  .mm-player::after { animation: none; opacity: 0.6; }
+  button.mm-layer { transition: none; }
+}
+
+/* 行止 layout: map column (sticky while the list scrolls) + list column. */
+.ma { display: grid; grid-template-columns: minmax(300px, 452px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.ma-map { position: sticky; top: 12px; min-width: 0; }
+.ma-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--tt-line); margin-bottom: 8px; }
+button.ma-tab {
+  display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 6px 12px;
+  font-family: var(--tt-font-serif); font-size: 13px; letter-spacing: 2px;
+  color: var(--tt-dim); background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color 150ms ease;
+}
+button.ma-tab:hover { color: var(--tt-text); }
+button.ma-tab[aria-selected="true"] { color: var(--tt-gold); border-bottom-color: var(--tt-gold); }
+button.ma-tab:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
+.ma-count { font-family: var(--tt-font-mono); font-size: 11px; color: var(--tt-mute); letter-spacing: 0; }
+.ma-list { display: grid; }
+.ma-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 6px 8px; font-size: 12px; border-bottom: 1px solid var(--tt-line-soft);
+  transition: background 150ms ease;
+}
+.ma-row[tabindex]:hover, .ma-row[tabindex]:focus-visible { background: var(--tt-raised); outline: none; }
+.ma-row.ma-mon { display: grid; grid-template-columns: 1.2fr 48px 80px 96px 56px; }
+.ma-head { font-size: 11px; color: var(--tt-mute); letter-spacing: 2px; }
+.ma-name { font-family: var(--tt-font-serif); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ma-mono { font-family: var(--tt-font-mono); }
+.ma-dim { color: var(--tt-dim); }
+.ma-gold { color: var(--tt-gold); }
+.ma-mono[data-tone="ok"] { color: var(--tt-ok); }
+.ma-mono[data-tone="bad"] { color: var(--tt-bad); }
+.ma-mono[data-tone="mute"] { color: var(--tt-mute); }
+
+/* Narrow window: stack, and keep the map short. */
+@media (max-width: 960px) {
+  .ma { grid-template-columns: minmax(0, 1fr); }
+  .ma-map { position: static; }
+  .ma-map { --mm-max-h: 320px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  button.ma-tab, .ma-row { transition: none; }
+}
