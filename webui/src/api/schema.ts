@@ -353,6 +353,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/walk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_characters__pid__walk_get"];
+        put?: never;
+        /**
+         * Start
+         * @description Walk the character to tile (x, y) with background clicks.
+         */
+        post: operations["start_api_characters__pid__walk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/walk/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__walk_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/keep-active/start": {
         parameters: {
             query?: never;
@@ -450,6 +488,26 @@ export interface paths {
          * @description The walkable space holding game tile (x, y); null when none (e.g. no mask).
          */
         get: operations["minimap_region_api_maps__stage_id__region_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maps/{stage_id}/walk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Walk Plan
+         * @description Clicks that walk from tile (x, y) to tile (tx, ty); preview only, nothing is sent.
+         */
+        get: operations["walk_plan_api_maps__stage_id__walk_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1524,6 +1582,48 @@ export interface components {
             /** Weight Max */
             weight_max: number;
         };
+        /**
+         * WalkPlan
+         * @description A click-to-walk plan in game coordinates (origin bottom-left, y up).
+         */
+        WalkPlan: {
+            start?: components["schemas"]["WalkPoint"] | null;
+            /** Hops */
+            hops: components["schemas"]["WalkPoint"][];
+            goal?: components["schemas"]["WalkPoint"] | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** WalkPoint */
+        WalkPoint: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** WalkRequest */
+        WalkRequest: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** WalkStatus */
+        WalkStatus: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "walking" | "done" | "failed" | "stopped";
+            goal?: components["schemas"]["WalkPoint"] | null;
+            /**
+             * Legs
+             * @default 0
+             */
+            legs: number;
+            /** Message */
+            message?: string | null;
+        };
         /** WorldSnapshot */
         WorldSnapshot: {
             /** Chars */
@@ -2205,6 +2305,103 @@ export interface operations {
             };
         };
     };
+    status_api_characters__pid__walk_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalkStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_characters__pid__walk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WalkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalkStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__walk_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalkStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     start_api_characters__pid__keep_active_start_post: {
         parameters: {
             query?: never;
@@ -2384,6 +2581,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MinimapRegion"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    walk_plan_api_maps__stage_id__walk_get: {
+        parameters: {
+            query: {
+                x: number;
+                y: number;
+                tx: number;
+                ty: number;
+            };
+            header?: never;
+            path: {
+                stage_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalkPlan"];
                 };
             };
             /** @description Validation Error */

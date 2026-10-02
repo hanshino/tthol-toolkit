@@ -69,6 +69,7 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
       <div className="ma-map">
         <Panel title={`輿圖 · ${pos.map_name ?? info.stage.name}　#${pos.stage_id ?? info.stage.stage_id}`}>
           <Minimap
+            pid={char.pid}
             position={pos} charLevel={charLevel} highlight={hl}
             data={minimap.data} failed={minimap.failed}
           />

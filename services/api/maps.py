@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
-from services import map_db, map_image_cache, map_regions
+from services import map_db, map_image_cache, map_regions, walk_path
 from services.api_types import (
     MapInfo,
     MapMonster,
@@ -14,6 +14,8 @@ from services.api_types import (
     MinimapSpawn,
     SpawnPoint,
     StageInfo,
+    WalkPlan,
+    WalkPoint,
 )
 
 router = APIRouter(prefix="/api/maps", tags=["maps"])
@@ -96,6 +98,19 @@ def minimap_region(stage_id: int, x: int, y: int) -> MinimapRegion | None:
         raise HTTPException(status_code=404, detail=f"No stage {stage_id}")
     box = map_regions.region_box(stage_id, x, y, base["tile_px"] or map_db.TILE_PX)
     return MinimapRegion(x0=box[0], y0=box[1], x1=box[2], y1=box[3]) if box else None
+
+
+@router.get("/{stage_id}/walk", response_model=WalkPlan)
+def walk_plan(stage_id: int, x: int, y: int, tx: int, ty: int) -> WalkPlan:
+    """Clicks that walk from tile (x, y) to tile (tx, ty); preview only, nothing is sent."""
+    plan = walk_path.plan(stage_id, (x, y), (tx, ty))
+    start = plan.path[0] if plan.path else None
+    return WalkPlan(
+        start=WalkPoint(x=int(start[0]), y=int(start[1])) if start else None,
+        hops=[WalkPoint(x=hx, y=hy) for hx, hy in plan.hops],
+        goal=WalkPoint(x=plan.goal[0], y=plan.goal[1]) if plan.goal else None,
+        reason=plan.reason,
+    )
 
 
 @router.get(

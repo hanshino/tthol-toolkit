@@ -66,6 +66,25 @@ button.mm-scope[aria-pressed="true"] { color: var(--tt-gold); border-color: var(
 }
 @keyframes mm-ping { from { transform: scale(0.6); opacity: 0.9; } to { transform: scale(1.6); opacity: 0; } }
 
+/* Click-to-walk preview: the route sits under the markers (z 5), hops and the
+   goal over the spawns but under the player. */
+.mm-map[data-pick] { cursor: crosshair; }
+.mm-route-line { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; overflow: visible; }
+.mm-route-line > polyline {
+  fill: none; stroke: var(--tt-gold); stroke-width: 2; stroke-dasharray: 6 4;
+  stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+}
+.mm-hop { z-index: 35; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8); pointer-events: none; }
+.mm-goal {
+  z-index: 38; width: 12px; height: 12px; pointer-events: none;
+  border: 2px solid var(--tt-gold); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8);
+}
+.mm-goal[data-bad] { border-color: var(--tt-bad); border-style: dashed; }
+.mm-route { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tt-gold); }
+.mm-route[data-bad] { color: var(--tt-bad); }
+button.mm-clear, button.mm-go { min-height: 24px; padding: 2px 8px; }
+button.mm-go { color: var(--tt-gold); border-color: var(--tt-gold); }
+
 /* Labels show only on hover/focus or when a list row lights the point: always-on
    exit labels collided on maps whose exits sit close together. */
 .mm-label, .mm-tip {

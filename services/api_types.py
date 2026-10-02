@@ -516,6 +516,32 @@ class MinimapRegion(_Base):
     y1: int  # top
 
 
+class WalkPoint(_Base):
+    x: int
+    y: int
+
+
+class WalkPlan(_Base):
+    """A click-to-walk plan in game coordinates (origin bottom-left, y up)."""
+
+    start: WalkPoint | None = None  # tiles: where the walk starts (snapped)
+    hops: list[WalkPoint]  # tiles, one click each, in order
+    goal: WalkPoint | None = None  # tiles: the target after snapping to walkable ground
+    reason: str | None = None  # why there is no plan, or why it stops short
+
+
+class WalkRequest(_Base):
+    x: int  # target tile, game coordinates
+    y: int
+
+
+class WalkStatus(_Base):
+    state: Literal["idle", "walking", "done", "failed", "stopped"]
+    goal: WalkPoint | None = None
+    legs: int = 0  # clicks sent so far
+    message: str | None = None  # why it failed or stopped
+
+
 class Minimap(_Base):
     stage: StageInfo
     width_px: int  # full map size in pixels (tiles x tile_px)
