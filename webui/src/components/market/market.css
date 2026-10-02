@@ -90,12 +90,31 @@ button.mk-who:focus-visible { outline: 1px solid var(--tt-gold); outline-offset:
 .mk-caret { flex: none; color: var(--tt-mute); transition: transform 120ms ease; }
 button.mk-who[aria-expanded="true"] .mk-caret { transform: rotate(90deg); color: var(--tt-gold); }
 .mk-plus { font-family: var(--tt-font-mono); color: var(--tt-gold); }
-.mk-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); border-bottom: 1px solid var(--tt-line); background: #10161b; }
-.mk-detail .inv-d-sec { border-bottom: 0; border-right: 1px solid var(--tt-line-soft); }
-.mk-detail-place dd { font-family: var(--tt-font); }
-.mk-detail-place .mk-price { justify-items: end; }
 @media (prefers-reduced-motion: reduce) { .mk-caret { transition: none; } }
-.mk-goto { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.mk-goto select { font-family: var(--tt-font); }
-.mk-attr[data-tone="ok"] { color: var(--tt-ok); }
-.mk-attr[data-tone="bad"] { color: var(--tt-bad); }
+
+/* Listing detail: the stall card (who, where, 帶我去) beside the item itself. */
+.mk-detail { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); border-bottom: 1px solid var(--tt-line); background: #10161b; }
+.mk-stall-card { display: grid; gap: 8px; align-content: start; padding: 12px 14px; border-right: 1px solid var(--tt-line-soft); }
+.mk-stall-card-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.mk-stall-card-name { font-family: var(--tt-font-serif); font-size: 15px; letter-spacing: 2px; }
+.mk-stall-card-sign { font-size: 12px; color: var(--tt-dim); }
+.mk-stall-card-foot { font-size: 11px; color: var(--tt-mute); line-height: 1.6; }
+.mk-detail-gear { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-content: start; }
+.mk-detail-gear .inv-d-sec { border-bottom: 0; }
+
+.mk-place { display: grid; gap: 4px; padding: 8px 10px; background: var(--tt-panel); border: 1px solid var(--tt-line-soft); }
+.mk-place-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mk-pin { flex: none; color: var(--tt-gold); }
+.mk-place-text { flex: 1; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+select.mk-go-who { font-family: var(--tt-font); font-size: 12px; padding: 3px 6px; max-width: 110px; }
+button.mk-go { display: inline-flex; align-items: center; gap: 4px; flex: none; font-size: 12px; letter-spacing: 1px; padding: 4px 10px; min-height: 28px; background: transparent; border-color: var(--tt-gold); color: var(--tt-gold); }
+button.mk-go:hover:not(:disabled) { background: var(--tt-raised); color: var(--tt-text); }
+button.mk-go:disabled { border-color: var(--tt-line); color: var(--tt-mute); }
+button.mk-go:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: 1px; }
+.mk-place-status { font-size: 11px; color: var(--tt-dim); padding-left: 22px; }
+.mk-place-status[data-tone="ok"] { color: var(--tt-ok); }
+.mk-place-status[data-tone="bad"] { color: var(--tt-bad); }
+@media (max-width: 900px) {
+  .mk-detail { grid-template-columns: minmax(0, 1fr); }
+  .mk-stall-card { border-right: 0; border-bottom: 1px solid var(--tt-line-soft); }
+}

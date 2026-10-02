@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get, put } from '../api/client';
 import type { CharacterRow, ItemMeta, MarketItemSummary, MarketListing, MarketTotals } from '../api/types';
-import { GotoStall } from '../components/market/GotoStall';
+import { placeText, StallPlace } from '../components/market/StallPlace';
 import { GearInlays, GearStats } from '../components/items/GearStats';
 import { ItemIcon } from '../components/items/ItemCells';
 import { useItemMeta } from '../components/items/useItemMeta';
@@ -217,14 +217,6 @@ function Stat({ k, v, gold }: { k: string; v: number | null | undefined; gold?: 
   );
 }
 
-/** Where to go: the stall's own tile when known, else where it was seen from. */
-function placeText(l: MarketListing): string {
-  const map = l.map || '—';
-  if (l.x != null && l.y != null) return `${map} (${l.x}, ${l.y})`;
-  if (l.viewer_x != null && l.viewer_y != null) return `${map} · 在 (${l.viewer_x}, ${l.viewer_y}) 附近`;
-  return map;
-}
-
 function ListingRow({ l, busy, meta, chars, open, onToggle, onExcludeListing, onExcludeSeller }: {
   l: MarketListing; busy: boolean; meta: Map<number, ItemMeta>; chars: CharacterRow[]; open: boolean; onToggle: () => void;
   onExcludeListing: (id: number, excluded: boolean) => void;
@@ -269,26 +261,29 @@ function ListingRow({ l, busy, meta, chars, open, onToggle, onExcludeListing, on
       </div>
       {open && (
         <div className="mk-detail">
-          <div className="inv-d-sec">
+          <section className="mk-stall-card" aria-label="攤位">
             <span className="inv-d-label">攤位</span>
-            <dl className="inv-stats mk-detail-place">
-              <dt>攤主</dt><dd>{l.seller}</dd>
-              <dt>招牌</dt><dd>{l.sign ? `「${l.sign}」` : '—'}</dd>
-              <dt>攤位位置</dt><dd>{l.x != null && l.y != null ? `${l.map} (${l.x}, ${l.y})` : '未知'}</dd>
-              <dt>當時你站在</dt><dd>{l.viewer_x != null && l.viewer_y != null ? `(${l.viewer_x}, ${l.viewer_y})` : '—'}</dd>
-              <dt>單價</dt><dd><PriceCell p={l} /></dd>
-              <dt>數量</dt><dd>{l.count.toLocaleString()}</dd>
-            </dl>
+            <div className="mk-stall-card-head">
+              <span className="mk-stall-card-name">{l.seller}</span>
+              {l.sign && <span className="mk-stall-card-sign">「{l.sign}」</span>}
+            </div>
+            <StallPlace listing={l} chars={chars} />
+            <span className="mk-stall-card-foot">
+              {l.viewer_x != null && l.viewer_y != null && <>你在 ({l.viewer_x}, {l.viewer_y}) 看到 · </>}
+              最後看到 {dateText(l.last_seen)}
+              {l.ended_at && <span style={{ color: 'var(--tt-warn)' }}> · 重開時已不在，可能收攤了</span>}
+            </span>
+          </section>
+          <div className="mk-detail-gear">
+            {hasGear
+              ? (
+                <>
+                  <GearStats gear={l} />
+                  <GearInlays inlays={l.inlays} meta={meta} />
+                </>
+              )
+              : <div className="inv-d-sec mk-attr">這件道具沒有個別屬性。</div>}
           </div>
-          <GotoStall listing={l} chars={chars} />
-          {hasGear
-            ? (
-              <>
-                <GearStats gear={l} />
-                <GearInlays inlays={l.inlays} meta={meta} />
-              </>
-            )
-            : <div className="inv-d-sec mk-attr">這件道具沒有個別屬性，詳細說明和道具資料庫相同。</div>}
         </div>
       )}
     </div>
