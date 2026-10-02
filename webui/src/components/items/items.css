@@ -196,3 +196,11 @@ button.tr-holder-link {
   font: inherit; color: var(--tt-gold); text-align: left; cursor: pointer;
 }
 button.tr-holder-link:hover:not(:disabled) { background: transparent; text-decoration: underline; }
+
+/* Gear stats and inlays (根脈 worn gear, 市價 listings): see GearStats.tsx. */
+.body-note { font-family: var(--tt-font); font-size: 11px; letter-spacing: 0; font-weight: 400; color: var(--tt-mute); margin-left: 6px; }
+.body-plus { margin-left: 6px; font-family: var(--tt-font-mono); font-size: 12px; color: var(--tt-gold); }
+.body-inlays { display: grid; gap: 6px; }
+.body-inlay { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; }
+.body-inlay .inv-row-icon { width: 36px; height: 36px; }
+.body-count { margin-left: 6px; font-family: var(--tt-font-mono); font-size: 12px; color: var(--tt-dim); }

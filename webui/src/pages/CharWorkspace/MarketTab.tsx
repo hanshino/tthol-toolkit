@@ -113,6 +113,7 @@ export function MarketTab({ pid, onOpenPrices }: { pid: number; onOpenPrices: ()
                     <span className="mk-chip" data-tone={cur.open ? 'gold' : undefined}>{cur.open ? '開啟中' : '已關閉'}</span>
                     <span className="mk-box-title" style={{ letterSpacing: 2, fontSize: 16 }}>{cur.seller}</span>
                     {cur.sign && <span className="mk-hint">「{cur.sign}」</span>}
+                    {cur.x != null && cur.y != null && <span className="mk-hint mk-mono">({cur.x}, {cur.y})</span>}
                     <span className="mk-right mk-mono mk-hint">{clockText(cur.recorded_at)} · {cur.settle_s} 秒讀完</span>
                   </div>
                   <div className="mk-sum">
@@ -200,7 +201,10 @@ function StallLine({ s, open }: { s: MarketStallInView; open: boolean }) {
     <div className="mk-stall" data-open={open || undefined}>
       <span className="mk-stall-name">{s.seller}</span>
       {chip}
-      <span className="mk-stall-sign">{s.sign ? `「${s.sign}」` : '（無招牌）'}</span>
+      <span className="mk-stall-sign">
+        {s.sign ? `「${s.sign}」` : '（無招牌）'}
+        {s.x != null && s.y != null && <span className="mk-mono"> · ({s.x}, {s.y})</span>}
+      </span>
     </div>
   );
 }

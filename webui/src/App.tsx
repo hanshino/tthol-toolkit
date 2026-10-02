@@ -44,7 +44,7 @@ export function App() {
         <ErrorBoundary key={boundaryKey} component={boundaryKey}>
           {view.kind === 'overview' && <Dashboard chars={snap.chars} onOpenChar={openChar} />}
           {view.kind === 'treasury' && <Treasury chars={snap.chars} onOpenChar={openChar} />}
-          {view.kind === 'market' && <Market />}
+          {view.kind === 'market' && <Market chars={snap.chars} />}
           {view.kind === 'snapshots' && <Snapshots chars={snap.chars} onOpenChar={openChar} />}
           {view.kind === 'diagnostics' && <Diagnostics />}
           {view.kind === 'char' && (workspace

@@ -652,6 +652,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/market/listings/{listing_id}/goto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Market Goto Listing
+         * @description 帶我去: walk a character on the listing's map to the tile beside its stall.
+         */
+        post: operations["market_goto_listing_api_market_listings__listing_id__goto_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market/export.csv": {
         parameters: {
             query?: never;
@@ -1481,6 +1501,14 @@ export interface components {
             seller: string;
             /** Sign */
             sign: string;
+            /** X */
+            x?: number | null;
+            /** Y */
+            y?: number | null;
+            /** Viewer X */
+            viewer_x?: number | null;
+            /** Viewer Y */
+            viewer_y?: number | null;
             /** Open */
             open: boolean;
             /** Opened At */
@@ -1523,6 +1551,18 @@ export interface components {
             silver?: number | null;
             /** Item Id */
             item_id: number;
+        };
+        /** MarketGotoRequest */
+        MarketGotoRequest: {
+            /** Pid */
+            pid: number;
+        };
+        /** MarketGotoResult */
+        MarketGotoResult: {
+            goal?: components["schemas"]["WalkPoint"] | null;
+            walk?: components["schemas"]["WalkStatus"] | null;
+            /** Note */
+            note?: string | null;
         };
         /** MarketItemSummary */
         MarketItemSummary: {
@@ -1571,6 +1611,8 @@ export interface components {
             excluded?: ("seller" | "listing") | null;
             /** Seller */
             seller: string;
+            /** Sign */
+            sign: string;
             /** Item Id */
             item_id: number;
             /** Count */
@@ -1579,12 +1621,30 @@ export interface components {
             plus: number;
             /** Stats */
             stats: components["schemas"]["ItemStat"][];
+            /**
+             * Enhance
+             * @default []
+             */
+            enhance: components["schemas"]["ItemStat"][];
+            /**
+             * Enhance Extra
+             * @default []
+             */
+            enhance_extra: components["schemas"]["ItemStat"][];
             /** Inlays */
             inlays: components["schemas"]["Inlay"][];
             /** Stage Id */
             stage_id?: number | null;
             /** Map */
             map: string;
+            /** X */
+            x?: number | null;
+            /** Y */
+            y?: number | null;
+            /** Viewer X */
+            viewer_x?: number | null;
+            /** Viewer Y */
+            viewer_y?: number | null;
             /** First Seen */
             first_seen: number;
             /** Last Seen */
@@ -1638,6 +1698,10 @@ export interface components {
             seller: string;
             /** Sign */
             sign: string;
+            /** X */
+            x?: number | null;
+            /** Y */
+            y?: number | null;
             /** Last Recorded */
             last_recorded?: number | null;
         };
@@ -3316,6 +3380,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_goto_listing_api_market_listings__listing_id__goto_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarketGotoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketGotoResult"];
                 };
             };
             /** @description Validation Error */

@@ -3,6 +3,7 @@ import type { CharacterDetail, EquipSlot, ItemMeta, ItemStat } from '../../api/t
 import { ItemIcon } from '../../components/items/ItemCells';
 import { ItemDetail } from '../../components/items/ItemDetail';
 import type { Entry } from '../../components/items/entries';
+import { GearInlays, GearStats } from '../../components/items/GearStats';
 import { useItemMeta } from '../../components/items/useItemMeta';
 import { Panel, StatNum } from '../../primitives';
 import '../../components/items/items.css';
@@ -68,8 +69,8 @@ export function BodyTab({ detail, error }: { detail: CharacterDetail | null; err
         </div>
       </div>
       <ItemDetail entry={current ? toEntry(current, meta.get(current.item_id!)) : undefined}>
-        {current && <GearStats slot={current} />}
-        {current && <GearInlays slot={current} meta={meta} />}
+        {current && <GearStats gear={current} />}
+        {current && <GearInlays inlays={current.inlays ?? []} meta={meta} />}
       </ItemDetail>
     </div>
   );
@@ -106,67 +107,6 @@ function GearRow({ slot, meta, selected, onSelect }: {
         {sub && <span className="inv-row-sub">{sub}</span>}
       </span>
     </button>
-  );
-}
-
-/**
- * Stats as the game tooltip shows them: own value (with 真元), then "+x" from
- * the enhancement level and "(+x)" from unlocked enhancement milestones.
- */
-function GearStats({ slot }: { slot: EquipSlot }) {
-  const enh = new Map(slot.enhance.map(s => [s.label, s.value]));
-  const extra = new Map((slot.enhance_extra ?? []).map(s => [s.label, s.value]));
-  const labels = [...new Set([
-    ...slot.stats.map(s => s.label), ...enh.keys(), ...extra.keys(),
-  ])];
-  const own = new Map(slot.stats.map(s => [s.label, s.value]));
-  if (labels.length === 0) return null;
-  const enhanced = enh.size > 0 || extra.size > 0;
-  return (
-    <div className="inv-d-sec">
-      <span className="inv-d-label">
-        屬性{enhanced && <span className="body-note">金色為 +{slot.plus} 強化加成</span>}
-      </span>
-      <dl className="inv-stats">
-        {labels.map(label => {
-          const v = own.get(label) ?? 0;
-          const p = enh.get(label) ?? 0;
-          const x = extra.get(label) ?? 0;
-          return (
-            <div key={label} style={{ display: 'contents' }}>
-              <dt>{label}</dt>
-              <dd>
-                {v !== 0 && (v > 0 ? `+${v}` : v)}
-                {p !== 0 && <span className="body-plus">+{p}</span>}
-                {x !== 0 && <span className="body-plus">(+{x})</span>}
-              </dd>
-            </div>
-          );
-        })}
-      </dl>
-    </div>
-  );
-}
-
-/** 真元 / 魂石 set into the item, one row per kind. */
-function GearInlays({ slot, meta }: { slot: EquipSlot; meta: Map<number, ItemMeta> }) {
-  const inlays = slot.inlays ?? [];
-  if (inlays.length === 0) return null;
-  return (
-    <div className="inv-d-sec">
-      <span className="inv-d-label">鑲嵌</span>
-      <div className="body-inlays">
-        {inlays.map(i => (
-          <div key={i.item_id} className="body-inlay">
-            <span className="inv-row-icon"><ItemIcon name={i.name} meta={meta.get(i.item_id)} size={28} /></span>
-            <span className="inv-row-name">
-              <span>{i.name}{i.count > 1 && <span className="body-count">×{i.count}</span>}</span>
-              <span className="inv-row-sub">{i.effect}{i.count > 1 ? ' / 顆' : ''}</span>
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 

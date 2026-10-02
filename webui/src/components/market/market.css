@@ -80,3 +80,22 @@ button.mk-mode:focus-visible, button.mk-item:focus-visible { outline: 1px solid 
 @media (max-width: 900px) {
   .mk-split { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* 市價 listing rows: the seller cell toggles the detail panel. */
+.mk-listing[data-open] { background: var(--tt-raised); box-shadow: inset 2px 0 0 var(--tt-gold); }
+button.mk-who { display: grid; gap: 1px; min-width: 0; padding: 0; text-align: left; letter-spacing: 0; background: transparent; border: 0; color: var(--tt-text); }
+button.mk-who:hover:not(:disabled) { background: transparent; color: var(--tt-gold); }
+button.mk-who:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: 2px; }
+.mk-who-name { display: flex; align-items: center; gap: 6px; font-family: var(--tt-font-serif); letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-caret { flex: none; color: var(--tt-mute); transition: transform 120ms ease; }
+button.mk-who[aria-expanded="true"] .mk-caret { transform: rotate(90deg); color: var(--tt-gold); }
+.mk-plus { font-family: var(--tt-font-mono); color: var(--tt-gold); }
+.mk-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); border-bottom: 1px solid var(--tt-line); background: #10161b; }
+.mk-detail .inv-d-sec { border-bottom: 0; border-right: 1px solid var(--tt-line-soft); }
+.mk-detail-place dd { font-family: var(--tt-font); }
+.mk-detail-place .mk-price { justify-items: end; }
+@media (prefers-reduced-motion: reduce) { .mk-caret { transition: none; } }
+.mk-goto { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mk-goto select { font-family: var(--tt-font); }
+.mk-attr[data-tone="ok"] { color: var(--tt-ok); }
+.mk-attr[data-tone="bad"] { color: var(--tt-bad); }
