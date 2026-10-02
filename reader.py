@@ -1205,6 +1205,29 @@ WND_HANDLE_OFFSET = 0x0C  # every CWnd*: own handle
 WND_PARENT_OFFSET = 0x10  # every CWnd*: parent's handle
 MAX_WND_DEPTH = 5
 
+# Other players' tile fields read -1; where they stand is only on their
+# CDollSprite: anchor (+0x18C) minus draw offset (+0x198) is the screen point,
+# the viewer's own at the window centre. A stalling (seated) sprite sits half a
+# tile right and down of its tile. Verified 2026-10-02: 珍珠皮亞力 read (20, 26)
+# from two viewer positions, and standing right of it read a one-tile offset.
+DOLL_SPRITE_VTABLE = 0x005FCCF4  # CDollSprite
+DOLL_OWNER_OFFSET = 0x120  # -> CCharObject
+DOLL_ANCHOR_OFFSET = 0x18C  # int32 x, y screen anchor
+DOLL_DRAW_OFFSET = 0x198  # int32 x, y draw offset, subtracted from the anchor
+TILE_PX = 40
+STALL_POSE_TILE_SHIFT = 0.5
+TILE_X_OFFSET = 416  # relative to hp_addr; see knowledge.json 座標X / 座標Y
+# MSVC debug-heap fills, as signed int32: freed and never-initialised memory.
+FREED_FILL = struct.unpack("<i", bytes([0xDD]) * 4)[0]
+UNINIT_FILL = struct.unpack("<i", bytes([0xCD]) * 4)[0]
+
+
+@dataclass(frozen=True)
+class Staller:
+    sign: str
+    x: int | None = None  # game tile (y up), None when the sprite was not found
+    y: int | None = None
+
 
 @dataclass(frozen=True)
 class StallItem:
@@ -1235,10 +1258,30 @@ def normalize_player_name(name):
     return name
 
 
-def scan_stallers(pm):
-    """{normalized name: sign} of every stalling player held in memory (~1 s heap scan)."""
-    pattern = struct.pack("<I", CHAR_OBJ_VTABLE)
-    stallers = {}
+def _find_aligned(buf, pattern):
+    i = buf.find(pattern)
+    while i != -1:
+        if i % 4 == 0:
+            yield i
+        i = buf.find(pattern, i + 1)
+
+
+def stall_tile(own_tile, own_screen, screen):
+    """Game tile of a seated stall sprite at `screen`, from the viewer's tile and screen point."""
+    dx = (screen[0] - own_screen[0]) / TILE_PX + STALL_POSE_TILE_SHIFT
+    dy = (screen[1] - own_screen[1]) / TILE_PX + STALL_POSE_TILE_SHIFT
+    # Screen y grows down, game y grows up.
+    return own_tile[0] + round(dx), own_tile[1] - round(dy)
+
+
+def scan_stallers(pm, hp_addr=None):
+    """{normalized name: Staller} of every stalling player held in memory (~1 s heap scan).
+
+    With hp_addr (the viewer), each staller also gets the tile it sits on."""
+    char_pattern = struct.pack("<I", CHAR_OBJ_VTABLE)
+    doll_pattern = struct.pack("<I", DOLL_SPRITE_VTABLE)
+    found = {}  # CCharObject address -> (name, sign)
+    screens = {}  # CCharObject address -> screen point of its sprite
     for base, size in get_memory_regions(pm.process_handle):
         if base < HEAP_MIN_PTR:
             continue
@@ -1246,20 +1289,44 @@ def scan_stallers(pm):
             buf = pm.read_bytes(base, size)
         except Exception:
             continue
-        i = buf.find(pattern)
-        while i != -1:
-            if i % 4 == 0 and i + STALL_SIGN_OFFSET + 64 <= size:
-                state = struct.unpack_from("<i", buf, i + CHAR_STATE_OFFSET)[0]
-                if state == CHAR_STATE_STALLING:
-                    obj = base + i
-                    try:
-                        name = _read_big5(pm, obj + CHAR_NAME_OFFSET, 32)
-                        sign = _read_big5(pm, obj + STALL_SIGN_OFFSET)
-                    except Exception:
-                        name = None
-                    if name:
-                        stallers[normalize_player_name(name)] = sign or ""
-            i = buf.find(pattern, i + 1)
+        for i in _find_aligned(buf, char_pattern):
+            if i + STALL_SIGN_OFFSET + 64 > size:
+                continue
+            if struct.unpack_from("<i", buf, i + CHAR_STATE_OFFSET)[0] != CHAR_STATE_STALLING:
+                continue
+            try:
+                name = _read_big5(pm, base + i + CHAR_NAME_OFFSET, 32)
+                sign = _read_big5(pm, base + i + STALL_SIGN_OFFSET)
+            except Exception:
+                name = None
+            if name:
+                found[base + i] = (normalize_player_name(name), sign or "")
+        if hp_addr is None:
+            continue
+        for i in _find_aligned(buf, doll_pattern):
+            if i + DOLL_DRAW_OFFSET + 8 > size:
+                continue
+            owner = struct.unpack_from("<I", buf, i + DOLL_OWNER_OFFSET)[0]
+            ax, ay = struct.unpack_from("<ii", buf, i + DOLL_ANCHOR_OFFSET)
+            ox, oy = struct.unpack_from("<ii", buf, i + DOLL_DRAW_OFFSET)
+            if FREED_FILL not in (ax, ay, ox, oy) and UNINIT_FILL not in (ax, ay, ox, oy):
+                screens[owner] = (ax - ox, ay - oy)
+    own_tile = own_screen = None
+    if hp_addr is not None:
+        own_screen = screens.get(hp_addr - CHAR_OBJ_HP_OFFSET)
+        try:
+            own_tile = struct.unpack("<ii", pm.read_bytes(hp_addr + TILE_X_OFFSET, 8))
+        except Exception:
+            own_tile = None
+        if own_tile is not None and min(own_tile) < 0:
+            own_tile = None  # -1 right after a map change, until the first step
+    stallers = {}
+    for obj, (name, sign) in found.items():
+        screen = screens.get(obj)
+        if own_tile and own_screen and screen:
+            stallers[name] = Staller(sign, *stall_tile(own_tile, own_screen, screen))
+        else:
+            stallers[name] = Staller(sign)
     return stallers
 
 

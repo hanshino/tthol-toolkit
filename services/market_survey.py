@@ -10,6 +10,7 @@ See docs/plans/2026-10-02-market-survey.md.
 """
 
 import logging
+import struct
 import threading
 import time
 from collections import OrderedDict, deque
@@ -164,7 +165,8 @@ class _Char:
     reason: str = "waiting"  # recording | not_market | off | no_character
     stage_id: int | None = None
     map_name: str | None = None
-    stallers: dict[str, str] = field(default_factory=dict)
+    stallers: dict[str, reader.Staller] = field(default_factory=dict)
+    viewer: tuple[int, int] | None = None  # the character's own tile, read every poll
     stallers_at: float = 0.0
     rescanned_wnd: int | None = None
     current: dict | None = None
@@ -257,7 +259,7 @@ class MarketSurveyManager:
             self._log(ch, "start", f"開始記錄（{ch.map_name or '未知地圖'}）")
         scan_at = self._clock()
         if scan_at - ch.stallers_at > STALLERS_REFRESH_S:
-            ch.stallers, ch.stallers_at = reader.scan_stallers(pm), scan_at
+            ch.stallers, ch.stallers_at = reader.scan_stallers(pm, hp_addr), scan_at
         windows = reader._window_list(pm)
         wnd = reader.find_shop_window(pm, windows)
         seller = None
@@ -267,12 +269,13 @@ class MarketSurveyManager:
             if seller is None and labels and ch.rescanned_wnd != wnd:
                 # The seller may have walked into view after the last scan.
                 ch.stallers, ch.stallers_at, ch.rescanned_wnd = (
-                    reader.scan_stallers(pm),
+                    reader.scan_stallers(pm, hp_addr),
                     scan_at,
                     wnd,
                 )
                 seller = next((t for t in labels if t in ch.stallers), None)
         content = reader.read_viewed_stall(pm, hp_addr)
+        ch.viewer = _own_tile(pm, hp_addr) or ch.viewer
         # Taken after the heap scans (~1 s each), so a scan does not eat into
         # the tracker's seller / stale timeouts.
         now = self._clock()
@@ -301,12 +304,22 @@ class MarketSurveyManager:
             self._record(ch, payload, now)
 
     def _record(self, ch: _Char, s: Settled, now: float):
-        sign = ch.stallers.get(s.seller, "")
+        staller = ch.stallers.get(s.seller)
+        sign = staller.sign if staller else ""
+        pos = (staller.x, staller.y) if staller and staller.x is not None else None
         # Marked first: a failing write must not be retried every poll.
         ch.tracker.mark_recorded(s)
         try:
             result = self._db.record(
-                s.seller, sign, ch.stage_id, ch.map_name, s.opened_at, s.items, now=now
+                s.seller,
+                sign,
+                ch.stage_id,
+                ch.map_name,
+                s.opened_at,
+                s.items,
+                now=now,
+                pos=pos,
+                viewer=ch.viewer,
             )
         except Exception:
             log.exception("market survey: recording %s failed", s.seller)
@@ -320,6 +333,10 @@ class MarketSurveyManager:
         ch.current = {
             "seller": s.seller,
             "sign": sign,
+            "x": pos[0] if pos else None,
+            "y": pos[1] if pos else None,
+            "viewer_x": ch.viewer[0] if ch.viewer else None,
+            "viewer_y": ch.viewer[1] if ch.viewer else None,
             "open": True,
             "opened_at": s.opened_at,
             "recorded_at": now,
@@ -345,8 +362,14 @@ class MarketSurveyManager:
         ch = self._char(pid)
         recorded = self._db.last_recorded()
         stalls = [
-            {"seller": name, "sign": sign, "last_recorded": recorded.get(name)}
-            for name, sign in sorted(ch.stallers.items())
+            {
+                "seller": name,
+                "sign": st.sign,
+                "x": st.x,
+                "y": st.y,
+                "last_recorded": recorded.get(name),
+            }
+            for name, st in sorted(ch.stallers.items())
         ]
         return {
             "mode": self._modes.get(pid, "auto"),
@@ -363,6 +386,15 @@ class MarketSurveyManager:
                 "reads": ch.session_reads,
             },
         }
+
+
+def _own_tile(pm, hp_addr) -> tuple[int, int] | None:
+    """The character's own tile; None right after a map change (reads -1)."""
+    try:
+        x, y = struct.unpack("<ii", pm.read_bytes(hp_addr + reader.TILE_X_OFFSET, 8))
+    except Exception:
+        return None
+    return (x, y) if 0 <= x < 10_000 and 0 <= y < 10_000 else None
 
 
 def _summary(r: RecordResult) -> str:

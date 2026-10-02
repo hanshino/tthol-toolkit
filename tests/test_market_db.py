@@ -139,3 +139,89 @@ def test_manual_exclusions(db):
     db.set_listing_excluded(b_listing["id"], False)
     assert all(r["excluded"] is None for r in db.listings_for_item(20100))
     assert db.set_listing_excluded(99999, True) is False
+
+
+def test_positions_follow_the_last_read(db):
+    db.record(
+        "A",
+        "清倉",
+        173,
+        "成都市集",
+        0,
+        (item(20100, 2_000_000),),
+        now=10,
+        pos=(20, 26),
+        viewer=(21, 26),
+    )
+    db.record(
+        "A",
+        "清倉!",
+        173,
+        "成都市集",
+        0,
+        (item(20100, 2_000_000),),
+        now=20,
+        pos=(20, 26),
+        viewer=(22, 27),
+    )
+    (row,) = db.listings_for_item(20100)
+    assert (row["sign"], row["x"], row["y"], row["viewer_x"], row["viewer_y"]) == (
+        "清倉!",
+        20,
+        26,
+        22,
+        27,
+    )
+
+
+def test_migrates_a_first_release_database(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.executescript(
+        "CREATE TABLE visits (id INTEGER PRIMARY KEY, seller TEXT NOT NULL, sign TEXT NOT NULL DEFAULT '',"
+        " stage_id INTEGER, map TEXT NOT NULL DEFAULT '', opened_at REAL NOT NULL, recorded_at REAL NOT NULL,"
+        " fingerprint TEXT NOT NULL, items TEXT NOT NULL);"
+        "CREATE TABLE listings (id INTEGER PRIMARY KEY, seller TEXT NOT NULL, item_id INTEGER NOT NULL,"
+        " price INTEGER NOT NULL, price_kind TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 0, attrs TEXT NOT NULL,"
+        " count INTEGER NOT NULL, stage_id INTEGER, map TEXT NOT NULL DEFAULT '', first_seen REAL NOT NULL,"
+        " last_seen REAL NOT NULL, ended_at REAL);"
+        "INSERT INTO listings (seller, item_id, price, price_kind, attrs, count, first_seen, last_seen)"
+        " VALUES ('A', 20100, 5, 'silver', '{\"plus\":0,\"stats\":{},\"inlays\":[]}', 1, 1, 1);"
+    )
+    con.commit()
+    con.close()
+    db = MarketDB(str(path), values={})
+    (row,) = db.listings_for_item(20100)
+    assert (row["sign"], row["x"], row["viewer_x"]) == ("", None, None)
+    db.record("A", "s", 173, "成都市集", 0, (item(20100, 5),), now=10, pos=(1, 2))
+    assert db.listings_for_item(20100)[0]["x"] == 1
+    db.close()
+
+
+def test_migration_backfills_signs_from_visits(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    con = sqlite3.connect(path)
+    con.executescript(
+        "CREATE TABLE visits (id INTEGER PRIMARY KEY, seller TEXT NOT NULL, sign TEXT NOT NULL DEFAULT '',"
+        " stage_id INTEGER, map TEXT NOT NULL DEFAULT '', opened_at REAL NOT NULL, recorded_at REAL NOT NULL,"
+        " fingerprint TEXT NOT NULL, items TEXT NOT NULL);"
+        "CREATE TABLE listings (id INTEGER PRIMARY KEY, seller TEXT NOT NULL, item_id INTEGER NOT NULL,"
+        " price INTEGER NOT NULL, price_kind TEXT NOT NULL, coins INTEGER NOT NULL DEFAULT 0, attrs TEXT NOT NULL,"
+        " count INTEGER NOT NULL, stage_id INTEGER, map TEXT NOT NULL DEFAULT '', first_seen REAL NOT NULL,"
+        " last_seen REAL NOT NULL, ended_at REAL);"
+        "INSERT INTO visits (seller, sign, opened_at, recorded_at, fingerprint, items)"
+        " VALUES ('A', '舊招牌', 0, 1, 'f', '[]'), ('A', '新招牌', 0, 2, 'f', '[]');"
+        "INSERT INTO listings (seller, item_id, price, price_kind, attrs, count, first_seen, last_seen)"
+        " VALUES ('A', 20100, 5, 'silver', '{\"plus\":0,\"stats\":{},\"inlays\":[]}', 1, 1, 1),"
+        " ('B', 20100, 6, 'silver', '{\"plus\":0,\"stats\":{},\"inlays\":[]}', 1, 1, 1);"
+    )
+    con.commit()
+    con.close()
+    db = MarketDB(str(path), values={})
+    signs = {r["seller"]: r["sign"] for r in db.listings_for_item(20100)}
+    assert signs == {"A": "新招牌", "B": ""}
+    db.close()

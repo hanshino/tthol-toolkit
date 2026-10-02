@@ -2,13 +2,18 @@
 Market survey database: player stall listings recorded while browsing stalls.
 
 Schema:
-    visits(id, seller, sign, stage_id, map, opened_at, recorded_at, fingerprint, items)
+    visits(id, seller, sign, stage_id, map, opened_at, recorded_at, fingerprint, items,
+           x, y, viewer_x, viewer_y)
         One row per settled read of a stall. Local only; the raw log.
     listings(id, seller, item_id, price, price_kind, coins, attrs, count,
-             stage_id, map, first_seen, last_seen, ended_at)
+             stage_id, map, first_seen, last_seen, ended_at,
+             sign, x, y, viewer_x, viewer_y)
         One row per listing: (seller, item_id, price, attrs) while it stays up.
         count is the total qty across identical lots. Re-opening a stall only
         moves last_seen; a listing that disappears gets ended_at.
+        x / y is the tile the stall sits on (None when its sprite was not
+        found), viewer_x / viewer_y where the player stood when reading it;
+        both in game tiles (origin bottom-left). The last read wins.
 
     excluded_sellers(seller), excluded_listings(listing_id)
         The player's own "不採計" marks.
@@ -81,6 +86,24 @@ CREATE INDEX IF NOT EXISTS listings_item ON listings (item_id);
 CREATE TABLE IF NOT EXISTS excluded_sellers (seller TEXT PRIMARY KEY, created_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS excluded_listings (listing_id INTEGER PRIMARY KEY, created_at REAL NOT NULL);
 """
+
+# Columns added after the tables first shipped; _migrate() adds whichever an
+# older market.db lacks. The CREATE TABLE statements above stay as shipped.
+ADDED_COLUMNS = {
+    "visits": (
+        ("x", "INTEGER"),
+        ("y", "INTEGER"),
+        ("viewer_x", "INTEGER"),
+        ("viewer_y", "INTEGER"),
+    ),
+    "listings": (
+        ("sign", "TEXT NOT NULL DEFAULT ''"),
+        ("x", "INTEGER"),
+        ("y", "INTEGER"),
+        ("viewer_x", "INTEGER"),
+        ("viewer_y", "INTEGER"),
+    ),
+}
 
 
 def classify_price(price: int) -> tuple[str, int]:
@@ -180,15 +203,36 @@ class MarketDB:
         self._values = values  # items.value override for tests; None = the game DB
         with self._lock:
             self._con.executescript(SCHEMA)
+            self._migrate()
             self._con.commit()
+
+    def _migrate(self):
+        for table, columns in ADDED_COLUMNS.items():
+            have = {r[1] for r in self._con.execute(f"PRAGMA table_info({table})")}
+            for name, decl in columns:
+                if name not in have:
+                    self._con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                    if (table, name) == ("listings", "sign"):
+                        # Signs were always kept per visit: backfill each seller's latest.
+                        self._con.execute(
+                            "UPDATE listings SET sign = COALESCE((SELECT v.sign FROM visits v"
+                            " WHERE v.seller = listings.seller ORDER BY v.recorded_at DESC LIMIT 1), '')"
+                        )
 
     def close(self):
         with self._lock:
             self._con.close()
 
-    def record(self, seller, sign, stage_id, map_name, opened_at, items, now=None) -> RecordResult:
-        """Store a settled read of a stall and diff it into its listings."""
+    def record(
+        self, seller, sign, stage_id, map_name, opened_at, items, now=None, pos=None, viewer=None
+    ) -> RecordResult:
+        """Store a settled read of a stall and diff it into its listings.
+
+        pos is the stall's (x, y) tile and viewer the reader's; either may be None."""
         now = time.time() if now is None else now
+        sign, map_name = sign or "", map_name or ""
+        x, y = pos or (None, None)
+        vx, vy = viewer or (None, None)
         fp = fingerprint(items)
         seen: dict[tuple[int, int, str], int] = {}
         for item in items:
@@ -198,13 +242,17 @@ class MarketDB:
         with self._lock:
             con = self._con
             con.execute(
-                "INSERT INTO visits (seller, sign, stage_id, map, opened_at, recorded_at, fingerprint, items)"
-                " VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO visits (seller, sign, stage_id, map, x, y, viewer_x, viewer_y,"
+                " opened_at, recorded_at, fingerprint, items) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     seller,
-                    sign or "",
+                    sign,
                     stage_id,
-                    map_name or "",
+                    map_name,
+                    x,
+                    y,
+                    vx,
+                    vy,
                     opened_at,
                     now,
                     fp,
@@ -225,8 +273,9 @@ class MarketDB:
                 if key in active:
                     lid, old = active.pop(key)
                     con.execute(
-                        "UPDATE listings SET last_seen=?, count=?, stage_id=?, map=? WHERE id=?",
-                        (now, count, stage_id, map_name or "", lid),
+                        "UPDATE listings SET last_seen=?, count=?, sign=?, stage_id=?, map=?,"
+                        " x=?, y=?, viewer_x=?, viewer_y=? WHERE id=?",
+                        (now, count, sign, stage_id, map_name, x, y, vx, vy, lid),
                     )
                     if count != old:
                         result.changed.append((key[0], key[1], old, count))
@@ -237,10 +286,12 @@ class MarketDB:
                 else:
                     kind, coins = classify_price(key[1])
                     con.execute(
-                        "INSERT INTO listings (seller, item_id, price, price_kind, coins, attrs, count,"
-                        " stage_id, map, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO listings (seller, sign, item_id, price, price_kind, coins, attrs,"
+                        " count, stage_id, map, x, y, viewer_x, viewer_y, first_seen, last_seen)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             seller,
+                            sign,
                             key[0],
                             key[1],
                             kind,
@@ -248,7 +299,11 @@ class MarketDB:
                             key[2],
                             count,
                             stage_id,
-                            map_name or "",
+                            map_name,
+                            x,
+                            y,
+                            vx,
+                            vy,
                             now,
                             now,
                         ),
@@ -379,6 +434,10 @@ class MarketDB:
         rows, sellers, ids = self._listing_rows(where + order, (item_id,))
         return [self._listing_dict(r, sellers, ids) for r in rows]
 
+    def get_listing(self, listing_id: int) -> dict | None:
+        rows, sellers, ids = self._listing_rows("WHERE id=?", (listing_id,))
+        return self._listing_dict(rows[0], sellers, ids) if rows else None
+
     def all_listings(self) -> list[dict]:
         rows, sellers, ids = self._listing_rows("ORDER BY last_seen DESC", ())
         return [self._listing_dict(r, sellers, ids) for r in rows]
@@ -400,8 +459,13 @@ class MarketDB:
             "plus": attrs["plus"],
             "stats": attrs["stats"],
             "inlays": attrs["inlays"],
+            "sign": r["sign"],
             "stage_id": r["stage_id"],
             "map": r["map"],
+            "x": r["x"],
+            "y": r["y"],
+            "viewer_x": r["viewer_x"],
+            "viewer_y": r["viewer_y"],
             "first_seen": r["first_seen"],
             "last_seen": r["last_seen"],
             "ended_at": r["ended_at"],

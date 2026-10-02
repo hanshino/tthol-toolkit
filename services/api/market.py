@@ -8,10 +8,12 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 
-from services import equip_stats, item_catalog
+from services import equip_stats, item_catalog, market_goto
 from services.api_types import (
     MarketCurrentStall,
     MarketExcludeRequest,
+    MarketGotoRequest,
+    MarketGotoResult,
     MarketGoneRow,
     MarketItemSummary,
     MarketListing,
@@ -22,6 +24,7 @@ from services.api_types import (
     MarketStallRow,
     MarketTotals,
     OkResponse,
+    WalkPoint,
 )
 from services.market_db import classify_price, silver_value
 
@@ -140,6 +143,10 @@ def market_item_listings(
                 **r,
                 "stats": equip_stats.to_stats(r["stats"]),
                 "inlays": equip_stats.inlays(r["inlays"]),
+                "enhance": equip_stats.enhance_bonus(r["item_id"], r["plus"]) if r["plus"] else [],
+                "enhance_extra": equip_stats.enhance_extra(r["item_id"], r["plus"])
+                if r["plus"]
+                else [],
             }
         )
         for r in _db(request).listings_for_item(item_id, include_ended=include_ended)
@@ -161,6 +168,54 @@ def market_exclude_seller(body: MarketSellerExcludeRequest, request: Request) ->
     return OkResponse(ok=True)
 
 
+@router.post("/market/listings/{listing_id}/goto", response_model=MarketGotoResult)
+def market_goto_listing(
+    listing_id: int, body: MarketGotoRequest, request: Request
+) -> MarketGotoResult:
+    """帶我去: walk a character on the listing's map to near its stall (services/market_goto.py)."""
+    services = request.app.state.services
+    listing = _db(request).get_listing(listing_id)
+    if listing is None:
+        raise HTTPException(status_code=404, detail=f"no listing {listing_id}")
+    wm, walker = services.get("worker_manager"), services.get("walk_manager")
+    if wm is None or walker is None:
+        raise HTTPException(status_code=503, detail="walking is unavailable")
+    sample = wm.walk_sample(body.pid)
+    if sample is None:
+        raise HTTPException(status_code=409, detail="讀不到角色位置")
+    stage_id, x, y = sample[0], sample[1], sample[2]
+    if listing["stage_id"] is None or stage_id != listing["stage_id"]:
+        raise HTTPException(status_code=409, detail=f"角色不在{listing['map'] or '那張地圖'}")
+    note = None
+    if listing["x"] is not None and listing["y"] is not None:
+        stall = (listing["x"], listing["y"])
+        mgr = services.get("market_manager")
+        occupied = set()
+        if mgr is not None:
+            occupied = {
+                (s["x"], s["y"])
+                for s in mgr.status(body.pid)["stalls"]
+                if s["x"] is not None and s["seller"] != listing["seller"]
+            }
+        goal, note = market_goto.pick_goal(stage_id, stall, (x, y), occupied)
+    elif listing["viewer_x"] is not None and listing["viewer_y"] is not None:
+        goal, note = (listing["viewer_x"], listing["viewer_y"]), "viewer position"
+    else:
+        raise HTTPException(
+            status_code=422, detail="這筆上架沒有記錄到位置，重新逛一次這攤就會補上"
+        )
+    if goal is None:
+        raise HTTPException(status_code=422, detail="攤位附近沒有走得到的格子")
+    point = WalkPoint(x=goal[0], y=goal[1])
+    if note == "already there":
+        return MarketGotoResult(goal=point, note=note)
+    return MarketGotoResult(goal=point, walk=walker.start(body.pid, goal), note=note)
+
+
+def _tile(x: int | None, y: int | None) -> str:
+    return f"({x}, {y})" if x is not None and y is not None else ""
+
+
 def _fmt_time(t: float | None) -> str:
     return datetime.fromtimestamp(t).strftime("%Y-%m-%d %H:%M:%S") if t else ""
 
@@ -176,6 +231,7 @@ def market_export(request: Request) -> Response:
             "道具",
             "道具ID",
             "攤主",
+            "招牌",
             "單價",
             "價格類型",
             "百萬官幣",
@@ -185,6 +241,8 @@ def market_export(request: Request) -> Response:
             "屬性",
             "鑲嵌",
             "地圖",
+            "攤位座標",
+            "查看時位置",
             "首次看到",
             "最後看到",
             "已不在",
@@ -199,6 +257,7 @@ def market_export(request: Request) -> Response:
                 names.get(r["item_id"], ""),
                 r["item_id"],
                 r["seller"],
+                r["sign"],
                 r["price"],
                 kinds[r["price_kind"]],
                 r["coins"] or "",
@@ -208,6 +267,8 @@ def market_export(request: Request) -> Response:
                 " ".join(f"{st.label}{st.value}" for st in equip_stats.to_stats(r["stats"])),
                 " ".join(f"{i.name}x{i.count}" for i in equip_stats.inlays(r["inlays"])),
                 r["map"],
+                _tile(r["x"], r["y"]),
+                _tile(r["viewer_x"], r["viewer_y"]),
                 _fmt_time(r["first_seen"]),
                 _fmt_time(r["last_seen"]),
                 _fmt_time(r["ended_at"]),
@@ -217,7 +278,7 @@ def market_export(request: Request) -> Response:
         )
     # BOM so Excel opens the UTF-8 file with the right encoding.
     return Response(
-        content="﻿" + buf.getvalue(),
+        content="\ufeff" + buf.getvalue(),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="market.csv"'},
     )

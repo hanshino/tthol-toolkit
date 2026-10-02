@@ -1,7 +1,7 @@
 import pytest
 
 import reader
-from reader import StallItem
+from reader import Staller, StallItem
 from services import market_survey
 from services.market_db import MarketDB
 from services.market_survey import MarketSurveyManager, StallTracker
@@ -157,7 +157,7 @@ class FakeGame:
         self.wnd = None
         self.labels = []
         self.content = B
-        self.stallers = {"A": "A的商店", "B": "清倉"}
+        self.stallers = {"A": Staller("A的商店", 20, 26), "B": Staller("清倉")}
         self.scans = 0
 
     def install(self, monkeypatch):
@@ -167,7 +167,7 @@ class FakeGame:
         monkeypatch.setattr(reader, "read_shop_labels", lambda pm, ws, w: list(self.labels))
         monkeypatch.setattr(reader, "read_viewed_stall", lambda pm, hp: self.content)
 
-        def scan(pm):
+        def scan(pm, hp_addr=None):
             self.scans += 1
             return dict(self.stallers)
 
@@ -207,8 +207,11 @@ def test_manager_records_an_opened_stall(game, mgr):
     st = mgr.status(1)
     assert st["active"] and st["reason"] == "recording"
     assert st["current"]["seller"] == "A" and st["current"]["new"] == 2
+    assert (st["current"]["sign"], st["current"]["x"], st["current"]["y"]) == ("A的商店", 20, 26)
+    listing = mgr._db.listings_for_item(1)[0]
+    assert (listing["sign"], listing["x"], listing["y"]) == ("A的商店", 20, 26)
     assert st["session"] == {"stalls": 1, "new": 2, "reads": 1}
-    assert {s["seller"] for s in st["stalls"]} == {"A", "B"}
+    assert {(s["seller"], s["x"]) for s in st["stalls"]} == {("A", 20), ("B", None)}
 
 
 def test_manager_pauses_off_market(game, mgr):
@@ -230,7 +233,7 @@ def test_manager_off_mode(game, mgr):
 def test_manager_rescans_for_unknown_seller(game, mgr):
     run(mgr, 2)
     scans = game.scans
-    game.stallers["C"] = "新來的"
+    game.stallers["C"] = Staller("新來的")
     game.wnd, game.labels, game.content = 0x500, ["C"], (item(9),)
     run(mgr)
     assert game.scans == scans + 1
@@ -257,11 +260,11 @@ def test_mode_survives_a_pid_gap(game, tmp_path):
 
 def test_scan_time_does_not_count_toward_timeouts(game, mgr, monkeypatch):
     run(mgr, 2)
-    game.stallers["C"] = "新來的"
+    game.stallers["C"] = Staller("新來的")
     game.wnd, game.labels, game.content = 0x500, ["C"], (item(9),)
     slow = game.scans
 
-    def slow_scan(pm):
+    def slow_scan(pm, hp_addr=None):
         game.scans += 1
         for _ in range(30):  # ~3 s of clock per scan
             mgr._clock()
