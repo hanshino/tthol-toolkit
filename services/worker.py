@@ -62,6 +62,9 @@ MAP_RESCAN_EVERY = 5  # fallback locate_map_name walks the heap; cache between p
 # Between full polls the tile position is re-read on its own. One walking step
 # takes ~215 ms at speed 12 (~170 ms at the cap of 15), so this sees every step.
 POS_INTERVAL = 0.1
+# Move target (click destination) in map pixels, x then y; equals the live
+# position only once the character has arrived.
+MOVE_TARGET_OFFSET = 636
 # The struct is freed on a map change; the MSVC debug heap fills it with 0xDD.
 FREED_FILL = struct.unpack("<i", b"\xdd" * 4)[0]
 # A relocate after a map change runs while the new map loads, so its first
@@ -164,6 +167,8 @@ class ReaderWorker(threading.Thread):
         self._stage_bounds: dict[int, tuple[int, int] | None] = {}
         # Whether the current lock sits inside a CCharObject (set on each locate).
         self._lock_is_obj = False
+        # (pm, hp_addr) of the lock the position loop is tracking, for walk_sample().
+        self._live: tuple[object, int] | None = None
         self._item_db = load_item_db()
         self._status_db = load_status_db()
         try:
@@ -214,6 +219,30 @@ class ReaderWorker(threading.Thread):
     def stop(self) -> None:
         self._stop_event.set()
         self._wake_event.set()
+        self._live = None
+
+    def walk_sample(self) -> tuple[int, int, int, int, int] | None:
+        """(stage_id, x, y, target_px, target_py) read now, for the click-to-walk runner.
+
+        Reads straight from the lock the position loop tracks, so it is as fresh
+        as memory and independent of the 100 ms position stream. None while
+        there is no lock or the stage cannot be trusted.
+        """
+        live = self._live
+        if live is None or not self.is_alive():
+            return None
+        pm, hp_addr = live
+        try:
+            stage = read_stage(pm)
+            if not self._trusted_stage(stage):
+                return None
+            x, y = struct.unpack("<ii", pm.read_bytes(hp_addr + self._tile_offset, 8))
+            px, py = struct.unpack("<ii", pm.read_bytes(hp_addr + MOVE_TARGET_OFFSET, 8))
+        except Exception:
+            return None
+        if FREED_FILL in (x, y, px, py) or self._live is not live:
+            return None  # freed on a map change, or the lock moved while reading
+        return stage[0], x, y, px, py
 
     # ------------------------------------------------------------------
     # Thread entry point
@@ -397,6 +426,10 @@ class ReaderWorker(threading.Thread):
             return None
 
     def _locate_with_retries(self, pm, waiting_state: str, quick: bool = False):
+        self._live = None  # the old lock is gone; walk_sample must not read it
+        return self._locate_with_retries_inner(pm, waiting_state, quick)
+
+    def _locate_with_retries_inner(self, pm, waiting_state: str, quick: bool = False):
         """Locate with bounded retries (~LOCATE_MAX_RETRIES x LOCATE_RETRY_INTERVAL).
 
         The character struct lives on the heap and is reallocated on events like
@@ -453,6 +486,7 @@ class ReaderWorker(threading.Thread):
         change), so the caller re-locates now. Every other bad sample is just
         skipped; the full poll keeps owning lock-loss detection.
         """
+        self._live = (pm, hp_addr)
         while True:
             if self._sample_position(pm, hp_addr):
                 return True

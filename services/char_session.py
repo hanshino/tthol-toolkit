@@ -151,6 +151,9 @@ class CharSession:
     def stop(self) -> None:
         self._worker.stop()
 
+    def walk_sample(self) -> tuple[int, int, int, int, int] | None:
+        return self._worker.walk_sample()
+
     def request_inventory(self) -> None:
         self._worker.request_inventory()
 

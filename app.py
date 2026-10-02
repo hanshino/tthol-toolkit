@@ -23,6 +23,7 @@ from services.auto_click import AutoClickManager
 from services.fake_active import KeepActiveManager
 from services.snapshot_db import SnapshotDB
 from services.runtime_info import clear_runtime_json, write_runtime_json
+from services.walker import WalkManager
 from services.worker_manager import WorkerManager
 
 DEV_PORT_FILE = Path(".omc/.dev-port")
@@ -40,8 +41,10 @@ def _build_services(dev: bool) -> dict:
     db = SnapshotDB()
     autoclick = AutoClickManager()
     keep_active = KeepActiveManager()
+    wm = WorkerManager(snapshot_db=db, autoclick_manager=autoclick)
     return {
-        "worker_manager": WorkerManager(snapshot_db=db, autoclick_manager=autoclick),
+        "worker_manager": wm,
+        "walk_manager": WalkManager(sample=wm.walk_sample),
         "snapshot_db": db,
         "autoclick_manager": autoclick,
         "keep_active_manager": keep_active,
@@ -174,7 +177,12 @@ def main() -> int:
     icon_path = bundled("icon.ico")
     if icon_path.exists():
         start_kwargs["icon"] = str(icon_path)
-    _runtime_lifecycle(port, lambda: webview.start(**start_kwargs))
+    try:
+        _runtime_lifecycle(port, lambda: webview.start(**start_kwargs))
+    finally:
+        # Walk threads are daemons: end any drag cleanly before the process dies,
+        # or the game is left in follow-the-cursor mode.
+        services["walk_manager"].shutdown()
     return 0
 
 

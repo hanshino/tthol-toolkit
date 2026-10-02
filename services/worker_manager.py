@@ -99,6 +99,11 @@ class WorkerManager:
         if sess:
             sess.stop()
 
+    def walk_sample(self, pid: int) -> tuple[int, int, int, int, int] | None:
+        """(stage_id, x, y, target_px, target_py) for the click-to-walk runner, or None."""
+        sess = self._sessions.get(pid)
+        return sess.walk_sample() if sess is not None else None
+
     def request_inventory_scan(self, pid: int) -> bool:
         sess = self._sessions.get(pid)
         if sess is None:
