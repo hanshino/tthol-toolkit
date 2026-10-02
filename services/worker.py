@@ -43,6 +43,7 @@ from reader import (
     read_equipment,
     read_money,
     read_pet_inventory,
+    read_skills,
     read_stage,
     read_warehouse,
     verify_structure,
@@ -125,6 +126,7 @@ class ReaderWorker(threading.Thread):
         on_appearance: Callable[[dict], None] | None = None,
         on_equipment: Callable[[list[EquipSlot]], None] | None = None,
         on_position: Callable[[int | None, str, int, int], None] | None = None,
+        on_skills: Callable[[list[tuple[int, int]]], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._pid = pid
@@ -140,6 +142,7 @@ class ReaderWorker(threading.Thread):
         self._cb_appearance = on_appearance or (lambda _a: None)
         self._cb_equipment = on_equipment or (lambda _e: None)
         self._cb_position = on_position or (lambda _s, _n, _x, _y: None)
+        self._cb_skills = on_skills or (lambda _s: None)
         self._hp_value: int | None = None
         self._offset_filters = None
         self._compat_mode = False
@@ -697,8 +700,8 @@ class ReaderWorker(threading.Thread):
             self._cb_warehouse([])
 
     def _auto_read_items(self, pm, hp_addr):
-        """Refresh bag, pet bag, money, appearance, equipment and warehouse on every poll; all are
-        direct reads (~1 ms).
+        """Refresh bag, pet bag, money, appearance, equipment, skills and warehouse on every poll;
+        all are direct reads (~1 ms).
 
         The warehouse is read whenever its window is open in game, and the last
         read is kept after it closes. Failures here are routine (warehouse
@@ -746,6 +749,12 @@ class ReaderWorker(threading.Thread):
                 )
         except Exception as exc:
             self._log.debug("equipment read failed: %s", exc, extra={"cat": "inventory"})
+        try:
+            skills = read_skills(pm, hp_addr)
+            if skills is not None:
+                self._cb_skills(skills)
+        except Exception as exc:
+            self._log.debug("skill read failed: %s", exc, extra={"cat": "inventory"})
         try:
             data = locate_warehouse(pm)
             self._cb_warehouse_open(data is not None)

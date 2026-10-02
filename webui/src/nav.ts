@@ -1,6 +1,6 @@
 import type { CharacterRow } from './api/types';
 
-export type CharTab = 'items' | 'body' | 'maps' | 'assist';
+export type CharTab = 'items' | 'body' | 'skills' | 'maps' | 'assist';
 export type GlobalView = 'overview' | 'treasury' | 'snapshots' | 'diagnostics';
 export type View = { kind: GlobalView } | { kind: 'char'; pid: number };
 export type OpenChar = (pid: number, tab?: CharTab) => void;

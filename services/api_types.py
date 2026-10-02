@@ -126,6 +126,22 @@ class BuffInfo(_Base):
     kind: Literal["buff", "debuff"] = "buff"
 
 
+class SkillInfo(_Base):
+    """One learned skill (magic id + level), read from the CCharObject and
+    described from the magic tables."""
+
+    magic_id: int
+    level: int
+    name: str
+    max_level: int  # highest learnable level (magic_learn)
+    group: str  # clan code, or general / bonus / meridian
+    group_label: str  # 火狐 / 神武 / 通用 · 生活 ...
+    passive: bool  # 自動使用 skills, stat bonuses and meridians
+    mp_cost: int = 0
+    description: str = ""  # help text of the current level
+    icon_url: str | None = None
+
+
 # ---- Equipment -------------------------------------------------------------
 
 
@@ -251,6 +267,10 @@ class CharacterDetail(_Base):
     money: int | None = None
     # Worn gear in reader.EQUIP_SLOTS order; None until first read.
     equipment: list[EquipSlot] | None = None
+    # Learned skills in ascending magic id order; None until first read.
+    skills: list[SkillInfo] | None = None
+    # Flat bonuses the skills' help text adds (體力上限, 真氣上限, 物攻 ...).
+    skill_caps: list[ItemStat] = []
     # Epoch seconds of the last successful read; None until the first one.
     inventory_updated_at: float | None = None
     warehouse_updated_at: float | None = None

@@ -51,6 +51,7 @@ export type PositionFrame = { pos: Record<string, Position> };
 export type SaveSnapshotRequest = S['SaveSnapshotRequest'];
 export type SaveSnapshotResult = S['SaveSnapshotResult'];
 export type SetCharacterAccountRequest = S['SetCharacterAccountRequest'];
+export type SkillInfo = S['SkillInfo'];
 export type SnapshotRow = S['SnapshotRow'];
 export type Vitals = S['Vitals'];
 export type WorldSnapshot = S['WorldSnapshot'];
