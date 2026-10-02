@@ -11,7 +11,7 @@ import './workspace.css';
 
 const TABS: { k: CharTab; n: string; s: string }[] = [
   { k: 'items', n: '行囊', s: '道具' },
-  { k: 'body', n: '根脈', s: '屬性 · 裝備' },
+  { k: 'body', n: '根脈', s: '屬性 · 裝備 · 武學' },
   { k: 'maps', n: '行止', s: '地圖' },
   { k: 'assist', n: '輔助', s: '英雄培養' },
 ];

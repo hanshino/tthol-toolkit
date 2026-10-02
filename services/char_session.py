@@ -18,6 +18,7 @@ from services.api_types import (
     ErrorInfo,
     Item,
     Position,
+    SkillInfo,
     Vitals,
 )
 from services.map_db import TILE_PX
@@ -90,6 +91,7 @@ class CharSession:
         self._appearance: dict | None = None
         self._avatar: Avatar | None = None
         self._equipment: list[EquipSlot] | None = None
+        self._skills: list[SkillInfo] | None = None
         self._latest_buffs: list[BuffInfo] = []
         self._inv_seq: int = 0
         self._pos_seq: int = 0
@@ -118,6 +120,7 @@ class CharSession:
             on_appearance=self._on_appearance,
             on_equipment=self._on_equipment,
             on_position=self._on_position,
+            on_skills=self._on_skills,
         )
 
     @property
@@ -234,6 +237,7 @@ class CharSession:
                 warehouse=self._latest_wh or None,
                 money=self._money,
                 equipment=self._equipment,
+                skills=self._skills,
                 inventory_updated_at=self._inv_ts,
                 warehouse_updated_at=self._wh_ts,
                 warehouse_open=self._wh_open,
@@ -326,6 +330,13 @@ class CharSession:
     def _on_equipment(self, slots: list[EquipSlot]) -> None:
         with self._lock:
             self._equipment = slots
+
+    def _on_skills(self, skills: list[tuple[int, int, str, int]]) -> None:
+        with self._lock:
+            self._skills = [
+                SkillInfo(magic_id=mid, level=lv, name=name, max_level=mx)
+                for mid, lv, name, mx in skills
+            ]
 
     def _on_appearance(self, appearance: dict) -> None:
         # Read every poll but rarely changes; only rebuild the layers on change.

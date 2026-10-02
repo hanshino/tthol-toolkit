@@ -28,6 +28,7 @@ from reader import (
     is_char_object,
     load_item_db,
     load_knowledge,
+    load_magic_db,
     load_status_db,
     locate_character,
     locate_map_name,
@@ -43,6 +44,7 @@ from reader import (
     read_equipment,
     read_money,
     read_pet_inventory,
+    read_skills,
     read_stage,
     read_warehouse,
     verify_structure,
@@ -125,6 +127,7 @@ class ReaderWorker(threading.Thread):
         on_appearance: Callable[[dict], None] | None = None,
         on_equipment: Callable[[list[EquipSlot]], None] | None = None,
         on_position: Callable[[int | None, str, int, int], None] | None = None,
+        on_skills: Callable[[list[tuple[int, int, str, int]]], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._pid = pid
@@ -140,6 +143,7 @@ class ReaderWorker(threading.Thread):
         self._cb_appearance = on_appearance or (lambda _a: None)
         self._cb_equipment = on_equipment or (lambda _e: None)
         self._cb_position = on_position or (lambda _s, _n, _x, _y: None)
+        self._cb_skills = on_skills or (lambda _s: None)
         self._hp_value: int | None = None
         self._offset_filters = None
         self._compat_mode = False
@@ -171,6 +175,7 @@ class ReaderWorker(threading.Thread):
         self._live: tuple[object, int] | None = None
         self._item_db = load_item_db()
         self._status_db = load_status_db()
+        self._magic_db = load_magic_db()
         try:
             self._stage_names = all_stage_names()
             self._stage_by_id = stage_names_by_id()
@@ -697,8 +702,8 @@ class ReaderWorker(threading.Thread):
             self._cb_warehouse([])
 
     def _auto_read_items(self, pm, hp_addr):
-        """Refresh bag, pet bag, money, appearance, equipment and warehouse on every poll; all are
-        direct reads (~1 ms).
+        """Refresh bag, pet bag, money, appearance, equipment, skills and warehouse on every poll;
+        all are direct reads (~1 ms).
 
         The warehouse is read whenever its window is open in game, and the last
         read is kept after it closes. Failures here are routine (warehouse
@@ -747,6 +752,12 @@ class ReaderWorker(threading.Thread):
         except Exception as exc:
             self._log.debug("equipment read failed: %s", exc, extra={"cat": "inventory"})
         try:
+            skills = read_skills(pm, hp_addr)
+            if skills is not None:
+                self._cb_skills(self._name_skills(skills))
+        except Exception as exc:
+            self._log.debug("skill read failed: %s", exc, extra={"cat": "inventory"})
+        try:
             data = locate_warehouse(pm)
             self._cb_warehouse_open(data is not None)
             if data is not None:
@@ -757,3 +768,12 @@ class ReaderWorker(threading.Thread):
 
     def _name_items(self, items):
         return [(item_id, qty, self._item_db.get(item_id, "???")) for item_id, qty in items]
+
+    def _name_skills(self, skills):
+        """[(magic_id, level, name, max_level)]; an id missing from the DB keeps
+        its own level as the max."""
+        out = []
+        for magic_id, level in skills:
+            name, max_level = self._magic_db.get(magic_id, ("???", level))
+            out.append((magic_id, level, name, max_level))
+        return out

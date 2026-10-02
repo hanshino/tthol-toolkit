@@ -126,6 +126,15 @@ class BuffInfo(_Base):
     kind: Literal["buff", "debuff"] = "buff"
 
 
+class SkillInfo(_Base):
+    """One learned skill (magic id + level), read from the CCharObject."""
+
+    magic_id: int
+    level: int
+    name: str
+    max_level: int
+
+
 # ---- Equipment -------------------------------------------------------------
 
 
@@ -251,6 +260,8 @@ class CharacterDetail(_Base):
     money: int | None = None
     # Worn gear in reader.EQUIP_SLOTS order; None until first read.
     equipment: list[EquipSlot] | None = None
+    # Learned skills in ascending magic id order; None until first read.
+    skills: list[SkillInfo] | None = None
     # Epoch seconds of the last successful read; None until the first one.
     inventory_updated_at: float | None = None
     warehouse_updated_at: float | None = None

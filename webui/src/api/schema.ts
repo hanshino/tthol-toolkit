@@ -913,6 +913,8 @@ export interface components {
             money?: number | null;
             /** Equipment */
             equipment?: components["schemas"]["EquipSlot"][] | null;
+            /** Skills */
+            skills?: components["schemas"]["SkillInfo"][] | null;
             /** Inventory Updated At */
             inventory_updated_at?: number | null;
             /** Warehouse Updated At */
@@ -1465,6 +1467,20 @@ export interface components {
         SetCharacterAccountRequest: {
             /** Account Id */
             account_id: number | null;
+        };
+        /**
+         * SkillInfo
+         * @description One learned skill (magic id + level), read from the CCharObject.
+         */
+        SkillInfo: {
+            /** Magic Id */
+            magic_id: number;
+            /** Level */
+            level: number;
+            /** Name */
+            name: string;
+            /** Max Level */
+            max_level: number;
         };
         /** SnapshotRow */
         SnapshotRow: {

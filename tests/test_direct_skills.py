@@ -69,3 +69,46 @@ def test_null_array_pointer_raises():
     pm.u32(HP + SKILL_LEVELS_OFFSET, 0)
     with pytest.raises(ValueError):
         read_skills(pm, HP)
+
+
+def _worker(got):
+    from services.worker import ReaderWorker
+
+    w = ReaderWorker(
+        pid=1,
+        on_state=lambda _s: None,
+        on_stats=lambda _s: None,
+        on_inventory=lambda _i: None,
+        on_warehouse=lambda _w: None,
+        on_error=lambda _m, **_kw: None,
+        on_skills=got.append,
+    )
+    w._magic_db = {24: ("養精蓄銳", 10), 186: ("回春", 12)}
+    return w
+
+
+def test_auto_read_pushes_named_skills():
+    pm = FakePm()
+    _char(pm, [(24, 6), (186, 11), (9999, 3)])
+    got = []
+    _worker(got)._auto_read_items(pm, HP)
+    assert got == [[(24, 6, "養精蓄銳", 10), (186, 11, "回春", 12), (9999, 3, "???", 3)]]
+
+
+def test_auto_read_skips_unreadable_skills():
+    pm = FakePm()
+    _char(pm, [(24, 6)])
+    pm.u32(HP + SKILL_COUNT_OFFSET, -1)
+    got = []
+    _worker(got)._auto_read_items(pm, HP)
+    assert got == []
+
+
+def test_session_exposes_skills_in_detail():
+    from services.char_session import CharSession
+
+    s = CharSession(pid=1)
+    assert s.detail().skills is None
+    s._on_skills([(24, 6, "養精蓄銳", 10)])
+    (skill,) = s.detail().skills
+    assert (skill.magic_id, skill.level, skill.name, skill.max_level) == (24, 6, "養精蓄銳", 10)

@@ -878,6 +878,29 @@ def load_status_db():
             conn.close()
 
 
+def load_magic_db():
+    """Map magic id -> (name, max level) from tthol.sqlite.
+
+    A skill keeps its name across levels, so one row per id is enough to label
+    the learned-skill list and show "level / max".
+    """
+    db_path = bundled("tthol.sqlite")
+    if not db_path.exists():
+        return {}
+    conn = None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.text_factory = lambda b: b.decode("utf-8", errors="replace")
+        cur = conn.cursor()
+        cur.execute("SELECT id, MIN(name), MAX(level) FROM magic GROUP BY id")
+        return {mid: (name, max_level) for mid, name, max_level in cur.fetchall()}
+    except Exception:
+        return {}
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def _read_u32(pm, addr):
     return struct.unpack("<I", pm.read_bytes(addr, 4))[0]
 
