@@ -6,7 +6,7 @@ import threading
 import time
 from typing import Literal
 
-from services import diagnostics, doll_catalog
+from services import diagnostics, doll_catalog, skill_catalog
 from services.api_types import (
     AutoClickStatus,
     Avatar,
@@ -17,6 +17,7 @@ from services.api_types import (
     EquipSlot,
     ErrorInfo,
     Item,
+    ItemStat,
     Position,
     SkillInfo,
     Vitals,
@@ -92,6 +93,8 @@ class CharSession:
         self._avatar: Avatar | None = None
         self._equipment: list[EquipSlot] | None = None
         self._skills: list[SkillInfo] | None = None
+        self._raw_skills: list[tuple[int, int]] | None = None
+        self._skill_caps: list[ItemStat] = []
         self._latest_buffs: list[BuffInfo] = []
         self._inv_seq: int = 0
         self._pos_seq: int = 0
@@ -238,6 +241,7 @@ class CharSession:
                 money=self._money,
                 equipment=self._equipment,
                 skills=self._skills,
+                skill_caps=list(self._skill_caps),
                 inventory_updated_at=self._inv_ts,
                 warehouse_updated_at=self._wh_ts,
                 warehouse_open=self._wh_open,
@@ -331,12 +335,16 @@ class CharSession:
         with self._lock:
             self._equipment = slots
 
-    def _on_skills(self, skills: list[tuple[int, int, str, int]]) -> None:
+    def _on_skills(self, skills: list[tuple[int, int]]) -> None:
+        # Read every poll but rarely changes; only describe it again on change.
+        if skills == self._raw_skills:
+            return
+        described = skill_catalog.describe(skills)
+        caps = skill_catalog.skill_caps(described)
         with self._lock:
-            self._skills = [
-                SkillInfo(magic_id=mid, level=lv, name=name, max_level=mx)
-                for mid, lv, name, mx in skills
-            ]
+            self._raw_skills = skills
+            self._skills = described
+            self._skill_caps = caps
 
     def _on_appearance(self, appearance: dict) -> None:
         # Read every poll but rarely changes; only rebuild the layers on change.

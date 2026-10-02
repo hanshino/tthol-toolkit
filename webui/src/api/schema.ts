@@ -567,6 +567,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/{magic_id}/icon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Skill Icon */
+        get: operations["skill_icon_api_skills__magic_id__icon_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/doll/{gender}/{slot}/{sequence}.png": {
         parameters: {
             query?: never;
@@ -915,6 +932,11 @@ export interface components {
             equipment?: components["schemas"]["EquipSlot"][] | null;
             /** Skills */
             skills?: components["schemas"]["SkillInfo"][] | null;
+            /**
+             * Skill Caps
+             * @default []
+             */
+            skill_caps: components["schemas"]["ItemStat"][];
             /** Inventory Updated At */
             inventory_updated_at?: number | null;
             /** Warehouse Updated At */
@@ -1470,7 +1492,8 @@ export interface components {
         };
         /**
          * SkillInfo
-         * @description One learned skill (magic id + level), read from the CCharObject.
+         * @description One learned skill (magic id + level), read from the CCharObject and
+         *     described from the magic tables.
          */
         SkillInfo: {
             /** Magic Id */
@@ -1481,6 +1504,24 @@ export interface components {
             name: string;
             /** Max Level */
             max_level: number;
+            /** Group */
+            group: string;
+            /** Group Label */
+            group_label: string;
+            /** Passive */
+            passive: boolean;
+            /**
+             * Mp Cost
+             * @default 0
+             */
+            mp_cost: number;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Icon Url */
+            icon_url?: string | null;
         };
         /** SnapshotRow */
         SnapshotRow: {
@@ -2726,6 +2767,47 @@ export interface operations {
             header?: never;
             path: {
                 item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/png": unknown;
+                };
+            };
+            /** @description No icon available */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_icon_api_skills__magic_id__icon_get: {
+        parameters: {
+            query?: {
+                level?: number;
+            };
+            header?: never;
+            path: {
+                magic_id: number;
             };
             cookie?: never;
         };

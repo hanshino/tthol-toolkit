@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { CharacterDetail, EquipSlot, ItemMeta, ItemStat, SkillInfo } from '../../api/types';
+import type { CharacterDetail, EquipSlot, ItemMeta, ItemStat } from '../../api/types';
 import { ItemIcon } from '../../components/items/ItemCells';
 import { ItemDetail } from '../../components/items/ItemDetail';
 import type { Entry } from '../../components/items/entries';
@@ -39,7 +39,7 @@ export function BodyTab({ detail, error }: { detail: CharacterDetail | null; err
   const current = worn.find(g => g.slot === selected) ?? worn[0];
   const bonus = sumStats(worn.flatMap(g => [...g.stats, ...g.enhance, ...(g.enhance_extra ?? [])]));
 
-  // Buffs live in the workspace header, so this tab shows stats, worn gear and skills.
+  // Buffs live in the workspace header, so this tab shows stats and worn gear.
   return (
     <div className="inv-main">
       <div style={{ display: 'grid', gap: 16, minWidth: 0 }}>
@@ -66,11 +66,6 @@ export function BodyTab({ detail, error }: { detail: CharacterDetail | null; err
             </Panel>
           )}
         </div>
-        <Panel title={<>武學{detail.skills && <span className="body-note">{detail.skills.length} 項</span>}</>}>
-          {detail.skills == null
-            ? <div className="inv-empty">等待角色定位後自動讀取</div>
-            : <SkillList skills={detail.skills} />}
-        </Panel>
       </div>
       <ItemDetail entry={current ? toEntry(current, meta.get(current.item_id!)) : undefined}>
         {current && <GearStats slot={current} />}
@@ -172,26 +167,6 @@ function GearInlays({ slot, meta }: { slot: EquipSlot; meta: Map<number, ItemMet
         ))}
       </div>
     </div>
-  );
-}
-
-/** Learned skills in the client's (ascending id) order, with level / max. */
-function SkillList({ skills }: { skills: SkillInfo[] }) {
-  if (skills.length === 0) return <div className="inv-empty">尚未習得任何技能</div>;
-  return (
-    <ul className="body-skills">
-      {skills.map(sk => {
-        const maxed = sk.level >= sk.max_level;
-        return (
-          <li key={sk.magic_id} className="body-skill" title={`${sk.name} #${sk.magic_id}`}>
-            <span className="body-skill-name">{sk.name}</span>
-            <span className="body-skill-lv" data-maxed={maxed || undefined}>
-              {maxed ? `${sk.level} 滿` : `${sk.level}/${sk.max_level}`}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 

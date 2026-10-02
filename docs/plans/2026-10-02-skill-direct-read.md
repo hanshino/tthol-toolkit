@@ -2,7 +2,7 @@
 
 2026-10-02。推算屬性公式時，需要把「加體力 / 真氣上限」的被動技能（養精蓄銳、強筋健骨、經脈點……）從上限扣掉，所以要知道角色學了哪些技能、各幾級。技能清單跟背包一樣，是角色物件（`CCharObject`）裡的「數量 + 指標陣列」，不用掃描。遊戲執行中實測過，跟遊戲畫面一致。
 
-已實作：`reader.read_skills(pm, hp_addr)` → `[(magic_id, level)]`，測試在 `tests/test_direct_skills.py`。worker 每次 poll 讀一次，用 `reader.load_magic_db()` 補上名稱和最高等級，經 `CharacterDetail.skills` 送到前端，顯示在「根脈」分頁的「武學」區塊（等級 / 最高等級，滿級標金色）。另一台 Lv200 角色實測 107 個技能，名稱全部對得上、沒有等級超過上限的。
+已實作：`reader.read_skills(pm, hp_addr)` → `[(magic_id, level)]`，測試在 `tests/test_direct_skills.py`。worker 每次 poll 讀一次，`services/skill_catalog.py` 從 `magic` 系列表補上名稱、分類（門派 / 屬性增加 / 經脈 / 通用）、主被動、真氣、目前等級說明、圖示，並從說明文字加總「常駐上限加成」（體力上限、真氣上限…），經 `CharacterDetail.skills` / `skill_caps` 送到前端的「武學」分頁。最高等級取 `magic_learn` 的 MAX(level)：`magic` 表本身有超過可學上限的列（黯影 Lv51 怪物專用、瞬獄烈斬 Lv80），直接取 MAX 會算錯。另一台 Lv200 角色實測 107 個技能，名稱全部對得上。
 
 ## 欄位（相對 HP 位址）
 

@@ -28,7 +28,6 @@ from reader import (
     is_char_object,
     load_item_db,
     load_knowledge,
-    load_magic_db,
     load_status_db,
     locate_character,
     locate_map_name,
@@ -127,7 +126,7 @@ class ReaderWorker(threading.Thread):
         on_appearance: Callable[[dict], None] | None = None,
         on_equipment: Callable[[list[EquipSlot]], None] | None = None,
         on_position: Callable[[int | None, str, int, int], None] | None = None,
-        on_skills: Callable[[list[tuple[int, int, str, int]]], None] | None = None,
+        on_skills: Callable[[list[tuple[int, int]]], None] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self._pid = pid
@@ -175,7 +174,6 @@ class ReaderWorker(threading.Thread):
         self._live: tuple[object, int] | None = None
         self._item_db = load_item_db()
         self._status_db = load_status_db()
-        self._magic_db = load_magic_db()
         try:
             self._stage_names = all_stage_names()
             self._stage_by_id = stage_names_by_id()
@@ -754,7 +752,7 @@ class ReaderWorker(threading.Thread):
         try:
             skills = read_skills(pm, hp_addr)
             if skills is not None:
-                self._cb_skills(self._name_skills(skills))
+                self._cb_skills(skills)
         except Exception as exc:
             self._log.debug("skill read failed: %s", exc, extra={"cat": "inventory"})
         try:
@@ -768,12 +766,3 @@ class ReaderWorker(threading.Thread):
 
     def _name_items(self, items):
         return [(item_id, qty, self._item_db.get(item_id, "???")) for item_id, qty in items]
-
-    def _name_skills(self, skills):
-        """[(magic_id, level, name, max_level)]; an id missing from the DB keeps
-        its own level as the max."""
-        out = []
-        for magic_id, level in skills:
-            name, max_level = self._magic_db.get(magic_id, ("???", level))
-            out.append((magic_id, level, name, max_level))
-        return out

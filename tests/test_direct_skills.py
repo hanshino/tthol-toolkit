@@ -74,7 +74,7 @@ def test_null_array_pointer_raises():
 def _worker(got):
     from services.worker import ReaderWorker
 
-    w = ReaderWorker(
+    return ReaderWorker(
         pid=1,
         on_state=lambda _s: None,
         on_stats=lambda _s: None,
@@ -83,16 +83,14 @@ def _worker(got):
         on_error=lambda _m, **_kw: None,
         on_skills=got.append,
     )
-    w._magic_db = {24: ("養精蓄銳", 10), 186: ("回春", 12)}
-    return w
 
 
-def test_auto_read_pushes_named_skills():
+def test_auto_read_pushes_skills():
     pm = FakePm()
-    _char(pm, [(24, 6), (186, 11), (9999, 3)])
+    _char(pm, [(24, 6), (186, 11)])
     got = []
     _worker(got)._auto_read_items(pm, HP)
-    assert got == [[(24, 6, "養精蓄銳", 10), (186, 11, "回春", 12), (9999, 3, "???", 3)]]
+    assert got == [[(24, 6), (186, 11)]]
 
 
 def test_auto_read_skips_unreadable_skills():
@@ -104,11 +102,34 @@ def test_auto_read_skips_unreadable_skills():
     assert got == []
 
 
-def test_session_exposes_skills_in_detail():
-    from services.char_session import CharSession
+def test_session_describes_skills_once_per_change(monkeypatch):
+    from services import char_session
+    from services.api_types import SkillInfo
 
-    s = CharSession(pid=1)
+    calls = []
+
+    def describe(skills):
+        calls.append(skills)
+        return [
+            SkillInfo(
+                magic_id=mid,
+                level=lv,
+                name="養精蓄銳",
+                max_level=10,
+                group="general",
+                group_label="通用 · 生活",
+                passive=True,
+                description="將提昇真氣的上限值105點。",
+            )
+            for mid, lv in skills
+        ]
+
+    monkeypatch.setattr(char_session.skill_catalog, "describe", describe)
+    s = char_session.CharSession(pid=1)
     assert s.detail().skills is None
-    s._on_skills([(24, 6, "養精蓄銳", 10)])
-    (skill,) = s.detail().skills
-    assert (skill.magic_id, skill.level, skill.name, skill.max_level) == (24, 6, "養精蓄銳", 10)
+    s._on_skills([(24, 6)])
+    s._on_skills([(24, 6)])
+    assert calls == [[(24, 6)]]
+    detail = s.detail()
+    assert [(k.magic_id, k.level) for k in detail.skills] == [(24, 6)]
+    assert [(c.label, c.value) for c in detail.skill_caps] == [("真氣上限", 105)]
