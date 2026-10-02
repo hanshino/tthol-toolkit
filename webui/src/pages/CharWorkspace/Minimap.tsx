@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { get } from '../../api/client';
-import type { Minimap as MinimapData, MinimapExit, MinimapRegion, Position } from '../../api/types';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import { get, post } from '../../api/client';
+import type { Minimap as MinimapData, MinimapExit, MinimapRegion, Position, WalkPlan, WalkStatus } from '../../api/types';
 import './minimap.css';
 
 const MAX_HEIGHT = 420; // px default; CSS can lower it via --mm-max-h
@@ -11,6 +11,38 @@ const JUMP_TILES = 3;
 
 const inside = (r: MinimapRegion, x: number, y: number) =>
   x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
+
+// Planner reasons (services/walk_path.py) in the UI's words.
+const WALK_REASONS: Record<string, string> = {
+  'no walk mask for this map': '此地圖沒有可行走資料',
+  'target is not walkable': '那裡走不到（不是可行走的地面）',
+  'player is not on a walkable tile': '角色不在可行走的格子上',
+  'target is not reachable on foot': '走路到不了（要經過傳點）',
+  'no clickable step from here': '路線中途找不到能點的位置',
+  'too many steps': '路線太長',
+};
+
+// Runner messages (services/walker.py) in the UI's words.
+const WALK_FAILURES: Record<string, string> = {
+  'character position is not readable': '讀不到角色位置',
+  'map changed': '地圖換了，已停止',
+  'stuck: not getting closer': '卡住了，走不過去',
+  'game window not found': '找不到遊戲視窗',
+  'clicked an NPC or player instead of the ground': '點到 NPC 或玩家了，已停止（可能開了對話框）',
+  'the game went somewhere else (camera offset?)': '遊戲走去別的地方了，已停止',
+  'click was not taken (UI in the way?)': '點擊沒生效，可能被介面擋住',
+  'teleported to another map': '被傳送到別張地圖，已停止',
+  'teleported': '被傳送了，已停止',
+  'the player clicked somewhere else': '偵測到手動操作，已停止',
+  'too many steps': '路線太長，已停止',
+  stopped: '已停止',
+  'lost contact': '和程式失去連線，請確認遊戲中的角色',
+  'could not end the drag: follow-the-cursor mode may still be on': '拖曳模式可能還開著：請在遊戲裡點一下角色取消',
+};
+const WALK_POLL_MS = 400;
+
+/** A previewed click-to-walk route: the clicked tile and the planner's answer. */
+type Route = { tx: number; ty: number; plan: WalkPlan | null; failed: boolean };
 
 type Layer = 'warps' | 'npcs' | 'spawns';
 const LAYERS: { k: Layer; n: string }[] = [
@@ -49,8 +81,8 @@ export function useMinimapData(stageId: number | null) {
   return { data, failed };
 }
 
-export function Minimap({ position, charLevel, data, failed, highlight = null }: {
-  position: Position; charLevel: number; data: MinimapData | null; failed: boolean;
+export function Minimap({ pid, position, charLevel, data, failed, highlight = null }: {
+  pid: number; position: Position; charLevel: number; data: MinimapData | null; failed: boolean;
   highlight?: MinimapHighlight;
 }) {
   const stageId = position.stage_id ?? null;
@@ -58,13 +90,41 @@ export function Minimap({ position, charLevel, data, failed, highlight = null }:
   const [shown, setShown] = useState<Record<Layer, boolean>>({ warps: true, npcs: true, spawns: true });
   const [region, setRegion] = useState<MinimapRegion | null>(null);
   const [fullMap, setFullMap] = useState(false);
+  const [route, setRoute] = useState<Route | null>(null);
+  const routeReq = useRef(0);
+  const [walk, setWalk] = useState<WalkStatus | null>(null);
+  const walking = walk?.state === 'walking';
+  // A walk may already be running (started before this tab was opened).
+  useEffect(() => {
+    setWalk(null);
+    let cancelled = false;
+    get<WalkStatus>(`/api/characters/${pid}/walk`)
+      .then((w) => { if (!cancelled && w.state === 'walking') setWalk(w); })
+      .catch(() => { /* no walk */ });
+    return () => { cancelled = true; };
+  }, [pid]);
+  // Poll the runner while it walks; the final state stays shown until the next action.
+  useEffect(() => {
+    if (!walking) return;
+    let misses = 0;
+    const t = window.setInterval(() => {
+      get<WalkStatus>(`/api/characters/${pid}/walk`)
+        .then((w) => { misses = 0; setWalk(w); })
+        .catch(() => {
+          misses += 1;
+          if (misses >= 5) setWalk((w) => ({ ...(w ?? { legs: 0 }), state: 'failed', message: 'lost contact' }));
+        });
+    }, WALK_POLL_MS);
+    return () => window.clearInterval(t);
+  }, [walking, pid]);
+  useEffect(() => { if (walk?.state === 'done') setRoute(null); }, [walk?.state]);
   const placed = position.px != null && position.py != null;
 
   useEffect(() => { setImgBroken(false); }, [stageId]);
 
   // The space the player stands in (city vs. one of the interiors packed into
   // the same map). Only re-asked once the player leaves the current box.
-  useEffect(() => { setRegion(null); }, [stageId]);
+  useEffect(() => { setRegion(null); setRoute(null); routeReq.current++; }, [stageId]);
   const px = position.px ?? null;
   const py = position.py ?? null;
   const needRegion = stageId !== null && placed
@@ -124,6 +184,60 @@ export function Minimap({ position, charLevel, data, failed, highlight = null }:
   const hlWarp = (w: MinimapExit) => litExit !== null && w.key === litExit.key;
   const hlSpawn = (sp: (typeof spawns)[number]) =>
     highlight !== null && 'npcId' in highlight && sp.npc_id === highlight.npcId;
+  // Click the map: plan a walk from the player's tile to the clicked tile.
+  // Preview only; nothing is sent to the game.
+  const pickTarget = (e: MouseEvent<HTMLDivElement>) => {
+    if (!placed || stageId === null || walking) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const gx = v.x0 + ((e.clientX - box.left) / box.width) * vw;
+    const gy = v.y1 - ((e.clientY - box.top) / box.height) * vh;
+    const tx = Math.floor(gx / data.tile_px);
+    const ty = Math.floor(gy / data.tile_px);
+    if (tx === position.x && ty === position.y) return; // clicked the player itself
+    const req = ++routeReq.current;
+    setWalk(null);
+    setRoute({ tx, ty, plan: null, failed: false });
+    get<WalkPlan>(`/api/maps/${stageId}/walk?x=${position.x}&y=${position.y}&tx=${tx}&ty=${ty}`)
+      .then((plan) => { if (routeReq.current === req) setRoute({ tx, ty, plan, failed: false }); })
+      .catch(() => { if (routeReq.current === req) setRoute({ tx, ty, plan: null, failed: true }); });
+  };
+  const plan = route?.plan ?? null;
+  const clearRoute = () => { routeReq.current++; setRoute(null); setWalk(null); };
+  const startWalk = () => {
+    if (!plan?.goal) return;
+    post<WalkStatus>(`/api/characters/${pid}/walk`, { x: plan.goal.x, y: plan.goal.y })
+      .then(setWalk)
+      .catch(() => setWalk({ state: 'failed', legs: 0, message: '無法開始走路' }));
+  };
+  const stopWalk = () => {
+    post<WalkStatus>(`/api/characters/${pid}/walk/stop`).then(setWalk).catch(() => { /* poll will tell */ });
+  };
+  const canWalk = plan !== null && plan.reason == null && plan.hops.length > 0 && !walking;
+  const walkNote = walk === null || walk.state === 'idle' ? null
+    : walk.state === 'walking' ? `走路中… 第 ${walk.legs} 段`
+      : walk.state === 'done' ? '已抵達'
+        : walk.message?.includes('could not end the drag')
+          ? WALK_FAILURES['could not end the drag: follow-the-cursor mode may still be on']
+          : WALK_FAILURES[walk.message ?? ''] ?? walk.message ?? '已停止';
+  const walkBad = walk?.state === 'failed';
+  const routeNote = route === null ? null
+    : route.failed ? '路線規劃失敗'
+      : plan === null ? '規劃中…'
+        : plan.reason !== null && plan.reason !== undefined
+          ? `${plan.hops.length > 0 ? '只能走到一半：' : ''}${WALK_REASONS[plan.reason] ?? plan.reason}`
+          : `${plan.hops.length} 段點擊`;
+  const routeBad = route !== null && (route.failed || (plan !== null && plan.reason != null));
+  const tileCentre = (p: { x: number; y: number }) => ({
+    x: p.x * data.tile_px + data.tile_px / 2, y: p.y * data.tile_px + data.tile_px / 2,
+  });
+  const svgPt = (t: { x: number; y: number }) => {
+    const c = tileCentre(t);
+    return `${c.x - v.x0},${v.y1 - c.y}`;
+  };
+  // The planner snaps the target to walkable ground; mark where it really ends.
+  const goalTile = plan?.goal ?? (route ? { x: route.tx, y: route.ty } : null);
+  const isGoal = (h: { x: number; y: number }) => goalTile !== null && h.x === goalTile.x && h.y === goalTile.y;
+
   const counts: Record<Layer, number> = {
     warps: warps.length, npcs: npcs.length, spawns: spawns.length,
   };
@@ -150,13 +264,28 @@ export function Minimap({ position, charLevel, data, failed, highlight = null }:
             全圖
           </button>
         )}
+        {(route !== null || walkNote !== null) && (
+          <span className="mm-route" data-bad={(walkNote !== null ? walkBad : routeBad) || undefined} role="status">
+            {walkNote ?? routeNote}
+            {canWalk && (
+              <button type="button" className="mm-layer mm-go" onClick={startWalk}>走過去</button>
+            )}
+            {walking ? (
+              <button type="button" className="mm-layer mm-clear" onClick={stopWalk}>停止</button>
+            ) : (
+              <button type="button" className="mm-layer mm-clear" onClick={clearRoute}>清除路線</button>
+            )}
+          </span>
+        )}
         <span className="mm-coord">
           {placed ? `${position.x} , ${position.y}` : '走一步後顯示位置'}
         </span>
       </div>
 
       <div
-        className="mm-map" data-hl={highlight !== null || undefined}
+        className="mm-map" data-hl={highlight !== null || undefined} data-pick={(placed && !walking) || undefined}
+        title={placed ? '點地圖預覽走路路線' : undefined}
+        onClick={pickTarget}
         style={{ aspectRatio: `${vw} / ${vh}`, maxWidth: `calc(var(--mm-max-h, ${MAX_HEIGHT}px) * ${vw / vh})` }}
       >
         {data.image_url && !imgBroken ? (
@@ -202,6 +331,24 @@ export function Minimap({ position, charLevel, data, failed, highlight = null }:
             </span>
           );
         })())}
+        {plan?.start && plan.hops.length > 0 && (
+          <svg className="mm-route-line" viewBox={`0 0 ${vw} ${vh}`} preserveAspectRatio="none" aria-hidden>
+            <polyline points={[plan.start, ...plan.hops].map(svgPt).join(' ')} />
+          </svg>
+        )}
+        {plan !== null && plan.hops.filter((h) => !isGoal(h)).map((h, i) => {
+          const c = tileCentre(h);
+          return <span key={`h${i}`} className="mm-pt mm-hop" style={at(c.x, c.y)} aria-hidden />;
+        })}
+        {goalTile !== null && (() => {
+          const c = tileCentre(goalTile);
+          return inView(c) && (
+            <span
+              className="mm-pt mm-goal" data-bad={routeBad || undefined} style={at(c.x, c.y)}
+              role="img" aria-label={`目標 ${goalTile.x} , ${goalTile.y}`}
+            />
+          );
+        })()}
         {placed && (
           <PlayerDot
             fx={(position.px! - v.x0) / vw} fy={(v.y1 - position.py!) / vh}
