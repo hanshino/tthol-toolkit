@@ -1,3 +1,4 @@
+export { BrandMark } from './BrandMark';
 export { Bar } from './Bar';
 export { BuffChips } from './BuffChips';
 export { LinkDot, type LinkStatus } from './LinkDot';
