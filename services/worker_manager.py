@@ -104,6 +104,14 @@ class WorkerManager:
         sess = self._sessions.get(pid)
         return sess.walk_sample() if sess is not None else None
 
+    def live_handle(self, pid: int):
+        """(pm, hp_addr) of a located character for background readers, or None."""
+        sess = self._sessions.get(pid)
+        return sess.live_handle() if sess is not None else None
+
+    def live_pids(self) -> list[int]:
+        return list(self._sessions)
+
     def request_inventory_scan(self, pid: int) -> bool:
         sess = self._sessions.get(pid)
         if sess is None:

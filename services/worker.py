@@ -224,6 +224,13 @@ class ReaderWorker(threading.Thread):
         self._wake_event.set()
         self._live = None
 
+    def live_handle(self):
+        """(pm, hp_addr) of the current lock for other readers (market survey), or None."""
+        live = self._live
+        if live is None or not self.is_alive():
+            return None
+        return live
+
     def walk_sample(self) -> tuple[int, int, int, int, int] | None:
         """(stage_id, x, y, target_px, target_py) read now, for the click-to-walk runner.
 

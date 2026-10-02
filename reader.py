@@ -11,6 +11,7 @@ import json
 import sqlite3
 import sys
 import time
+from dataclasses import dataclass
 
 from services._paths import bundled
 
@@ -1176,6 +1177,180 @@ def read_warehouse(pm):
     if data is None:
         return None
     return read_item_container(pm, data + WAREHOUSE_COUNT_OFFSET)
+
+
+# ============================================================
+# Player stalls (擺攤)
+# ============================================================
+# Other players on screen are CCharObjects too (their HP / level fields are
+# defaults). A stalling player has action state 0x12 and a sign text. A stall's
+# items are fetched only when its window is opened, and land in the *self*
+# CCharObject's last-viewed buffer, which is not cleared on close. The open
+# window is a CWndShopList (NPC shops use it too); the seller is named by a
+# CWndStatic label under the same parent window. Verified live 2026-10-02 in
+# 成都市集; see docs/plans/2026-10-02-market-survey.md.
+CHAR_STATE_OFFSET = 0x138  # int32 action state, relative to CCharObject
+CHAR_STATE_STALLING = 0x12
+CHAR_NAME_OFFSET = 0x1E4  # Big5 name, relative to CCharObject
+STALL_SIGN_OFFSET = 0x3E4  # Big5 stall sign, relative to CCharObject
+VIEWED_STALL_COUNT_OFFSET = 0x3D0  # self CCharObject: last viewed stall item count
+VIEWED_STALL_ARRAY_OFFSET = 0x3D4  # self CCharObject: ptr -> item ptr[count]
+STALL_PRICE_OFFSET = 0x114  # int32 unit price in the item instance; +0x118 is items.weight
+MAX_STALL_ITEMS = 100
+
+SHOP_WND_VTABLE = 0x005FF524  # CWndShopList
+STATIC_WND_VTABLE = 0x005FEEDC  # CWndStatic
+STATIC_TEXT_OFFSET = 0x124  # CWndStatic: ptr -> Big5 text
+WND_HANDLE_OFFSET = 0x0C  # every CWnd*: own handle
+WND_PARENT_OFFSET = 0x10  # every CWnd*: parent's handle
+MAX_WND_DEPTH = 5
+
+
+@dataclass(frozen=True)
+class StallItem:
+    item_id: int
+    price: int
+    qty: int
+    plus: int
+    stats: tuple[tuple[str, int], ...]  # sorted (items column, value)
+    inlays: tuple[int, ...]
+
+
+def _read_big5(pm, addr, size=64):
+    # cp950 rather than strict big5: player names use the Microsoft/ETEN
+    # extension characters (裏, 恒) that the big5 codec rejects.
+    raw = pm.read_bytes(addr, size)
+    end = raw.find(b"\x00")
+    raw = raw if end < 0 else raw[:end]
+    try:
+        return raw.decode("cp950")
+    except UnicodeDecodeError:
+        return None
+
+
+def normalize_player_name(name):
+    """Strip a leading /c#rrggbb colour code, so labels and object names compare equal."""
+    if name and name[:3].lower() == "/c#" and len(name) > 9:
+        return name[9:]
+    return name
+
+
+def scan_stallers(pm):
+    """{normalized name: sign} of every stalling player held in memory (~1 s heap scan)."""
+    pattern = struct.pack("<I", CHAR_OBJ_VTABLE)
+    stallers = {}
+    for base, size in get_memory_regions(pm.process_handle):
+        if base < HEAP_MIN_PTR:
+            continue
+        try:
+            buf = pm.read_bytes(base, size)
+        except Exception:
+            continue
+        i = buf.find(pattern)
+        while i != -1:
+            if i % 4 == 0 and i + STALL_SIGN_OFFSET + 64 <= size:
+                state = struct.unpack_from("<i", buf, i + CHAR_STATE_OFFSET)[0]
+                if state == CHAR_STATE_STALLING:
+                    obj = base + i
+                    try:
+                        name = _read_big5(pm, obj + CHAR_NAME_OFFSET, 32)
+                        sign = _read_big5(pm, obj + STALL_SIGN_OFFSET)
+                    except Exception:
+                        name = None
+                    if name:
+                        stallers[normalize_player_name(name)] = sign or ""
+            i = buf.find(pattern, i + 1)
+    return stallers
+
+
+def find_shop_window(pm, windows):
+    """Address of the open CWndShopList (stall or NPC shop), or None."""
+    for wnd in windows:
+        if HEAP_MIN_PTR <= wnd <= 0x7FFFFFFF:
+            try:
+                if _read_u32(pm, wnd) == SHOP_WND_VTABLE:
+                    return wnd
+            except Exception:
+                continue
+    return None
+
+
+def read_shop_labels(pm, windows, shop_wnd):
+    """Texts of the CWndStatic labels inside the shop dialog (sharing the shop list's parent).
+
+    Name tags and signs over players' heads are CWndStatic too, under their own
+    parents, so ancestry decides which labels belong to the dialog."""
+    tree = {}
+    statics = []
+    for wnd in windows:
+        if not HEAP_MIN_PTR <= wnd <= 0x7FFFFFFF:
+            continue
+        try:
+            head = pm.read_bytes(wnd, WND_PARENT_OFFSET + 4)
+        except Exception:
+            continue
+        vtable, handle, parent = struct.unpack_from("<I8xII", head)
+        tree[handle] = parent
+        if vtable == STATIC_WND_VTABLE:
+            statics.append((wnd, parent))
+    try:
+        dialog = _read_u32(pm, shop_wnd + WND_PARENT_OFFSET)
+    except Exception:
+        return []
+    texts = []
+    for wnd, parent in statics:
+        h = parent
+        for _ in range(MAX_WND_DEPTH):
+            if h == dialog or h not in tree:
+                break
+            h = tree[h]
+        if h != dialog:
+            continue
+        try:
+            ptr = _read_u32(pm, wnd + STATIC_TEXT_OFFSET)
+            text = _read_big5(pm, ptr, 32) if HEAP_MIN_PTR <= ptr <= 0x7FFFFFFF else None
+        except Exception:
+            text = None
+        if text:
+            texts.append(normalize_player_name(text))
+    return texts
+
+
+def read_viewed_stall(pm, hp_addr):
+    """Items of the last stall viewed, as a tuple of StallItem; None mid-update or off-object."""
+    if not is_char_object(pm, hp_addr):
+        return None
+    obj = hp_addr - CHAR_OBJ_HP_OFFSET
+    try:
+        count = pm.read_int(obj + VIEWED_STALL_COUNT_OFFSET)
+        arr = _read_u32(pm, obj + VIEWED_STALL_ARRAY_OFFSET)
+        if not 0 <= count <= MAX_STALL_ITEMS:
+            return None
+        if count == 0:
+            return ()
+        if not HEAP_MIN_PTR <= arr <= 0x7FFFFFFF:
+            return None
+        items = []
+        for ptr in struct.unpack(f"<{count}I", pm.read_bytes(arr, 4 * count)):
+            item_id = pm.read_int(ptr + ITEM_ID_OFFSET)
+            if not 0 < item_id <= MAX_ITEM_ID:
+                return None
+            raw = pm.read_bytes(ptr + ENHANCE_OFFSET, 1)[0]
+            items.append(
+                StallItem(
+                    item_id=item_id,
+                    price=pm.read_int(ptr + STALL_PRICE_OFFSET),
+                    qty=pm.read_int(ptr + ITEM_QTY_OFFSET),
+                    plus=raw - ENHANCE_BIAS
+                    if ENHANCE_BIAS < raw <= ENHANCE_BIAS + MAX_ENHANCE
+                    else 0,
+                    stats=tuple(sorted(read_item_stats(pm, ptr).items())),
+                    inlays=tuple(read_item_inlays(pm, ptr)),
+                )
+            )
+    except Exception:
+        return None
+    return tuple(items)
 
 
 def format_inventory(items, item_db):
