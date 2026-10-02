@@ -6,6 +6,7 @@ import { BodyTab } from './BodyTab';
 import { CharHeader } from './CharHeader';
 import { ItemsTab } from './ItemsTab';
 import { MapAnalysis } from './MapAnalysis';
+import { MarketTab } from './MarketTab';
 import { SkillsTab } from './SkillsTab';
 import { useCharacterDetail } from './useCharacterDetail';
 import './workspace.css';
@@ -15,6 +16,7 @@ const TABS: { k: CharTab; n: string; s: string }[] = [
   { k: 'body', n: '根脈', s: '屬性 · 裝備' },
   { k: 'skills', n: '武學', s: '技能 · 經脈' },
   { k: 'maps', n: '行止', s: '地圖' },
+  { k: 'market', n: '市集', s: '攤位調查' },
   { k: 'assist', n: '輔助', s: '英雄培養' },
 ];
 
@@ -63,6 +65,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
               {t.k === 'body' && <BodyTab detail={detail} error={error} />}
               {t.k === 'skills' && <SkillsTab detail={detail} error={error} />}
               {t.k === 'maps' && <MapAnalysis char={char} />}
+              {t.k === 'market' && <MarketTab pid={char.pid} onOpenPrices={() => onNav('market')} />}
               {t.k === 'assist' && <AutoClickTab pid={char.pid} />}
             </div>
           ))}
