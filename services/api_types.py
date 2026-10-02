@@ -580,3 +580,160 @@ class Minimap(_Base):
 class OkResponse(_Base):
     ok: bool
     error: str | None = None
+
+
+# ---- Market survey (市集調查) ----------------------------------------------
+
+MarketMode = Literal["auto", "on", "off"]
+PriceKind = Literal["silver", "coin", "negotiate"]
+
+
+class MarketPrice(_Base):
+    price: int  # raw stall price
+    price_kind: PriceKind
+    coins: int = 0  # 百萬官幣 count when price_kind == "coin"
+    silver: int | None = None  # ask in silver; None for a haggle-only listing
+
+
+class MarketStallRow(MarketPrice):
+    """One listing in the stall being viewed: identical lots summed."""
+
+    item_id: int
+    count: int
+    plus: int
+    stats: list[ItemStat]  # the instance's own stats (inlays applied), labelled
+    inlays: list[Inlay]
+    status: Literal["new", "unchanged", "changed"]
+    old_count: int | None = None
+    suspect: bool = False  # bait price: under 1/10 of the item's value
+
+
+class MarketGoneRow(MarketPrice):
+    item_id: int
+
+
+class MarketCurrentStall(_Base):
+    seller: str
+    sign: str
+    # Game tiles: where the stall sits (None when its sprite was not found)
+    # and where the character stood reading it.
+    x: int | None = None
+    y: int | None = None
+    viewer_x: int | None = None
+    viewer_y: int | None = None
+    open: bool
+    opened_at: float
+    recorded_at: float
+    settle_s: float
+    rows: list[MarketStallRow]
+    gone: list[MarketGoneRow]
+    new: int
+    unchanged: int
+    changed: int
+
+
+class MarketStallInView(_Base):
+    seller: str
+    sign: str
+    x: int | None = None  # game tile the stall sits on
+    y: int | None = None
+    last_recorded: float | None = None
+
+
+class MarketLogEntry(_Base):
+    t: float
+    kind: str
+    seller: str | None = None
+    text: str
+    refresh: bool = False
+
+
+class MarketSession(_Base):
+    stalls: int
+    new: int
+    reads: int
+
+
+class MarketStatus(_Base):
+    mode: MarketMode
+    active: bool
+    # recording | not_market | off | no_character | waiting
+    reason: str
+    stage_id: int | None = None
+    map_name: str | None = None
+    stalls: list[MarketStallInView]
+    current: MarketCurrentStall | None = None
+    log: list[MarketLogEntry]
+    session: MarketSession
+
+
+class MarketModeRequest(_Base):
+    mode: MarketMode
+
+
+class MarketTotals(_Base):
+    listings: int
+    stalls: int
+    negotiate: int
+    visits: int
+    last_seen: float | None = None
+
+
+class MarketItemSummary(_Base):
+    item_id: int
+    name: str
+    listings: int
+    sellers: int
+    negotiate: int
+    flagged: int  # suspected bait or marked 不採計: left out of min / median / max
+    min: int | None = None  # silver-value stats over priced listings
+    median: int | None = None
+    max: int | None = None
+    last_seen: float
+
+
+class MarketListing(MarketPrice):
+    id: int
+    suspect: bool  # bait price: under 1/10 of the item's value
+    excluded: Literal["seller", "listing"] | None = None  # the player's 不採計 mark
+    seller: str
+    sign: str  # stall sign at the last read
+    item_id: int
+    count: int
+    plus: int
+    stats: list[ItemStat]  # the instance's own stats, inlays applied
+    enhance: list[ItemStat] = []  # bonus of the +N level, on top of stats
+    enhance_extra: list[ItemStat] = []  # milestone bonuses unlocked at or below +N
+    inlays: list[Inlay]
+    stage_id: int | None = None
+    map: str
+    # Game tiles at the last read: the stall (None when its sprite was not
+    # found) and where the character stood.
+    x: int | None = None
+    y: int | None = None
+    viewer_x: int | None = None
+    viewer_y: int | None = None
+    first_seen: float
+    last_seen: float
+    ended_at: float | None = None
+
+
+class MarketExcludeRequest(_Base):
+    excluded: bool
+
+
+class MarketSellerExcludeRequest(_Base):
+    seller: str
+    excluded: bool
+
+
+class MarketGotoRequest(_Base):
+    pid: int  # the character to walk; must be on the listing's map
+
+
+class MarketGotoResult(_Base):
+    goal: WalkPoint | None = None  # the tile beside the stall it walks to
+    walk: WalkStatus | None = None  # None when no walk was started
+    # 'already there' when it stands beside the stall; 'viewer position' when
+    # the stall's own tile is unknown and it walks to where it was seen from.
+    note: str | None = None

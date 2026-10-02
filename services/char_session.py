@@ -160,6 +160,9 @@ class CharSession:
     def walk_sample(self) -> tuple[int, int, int, int, int] | None:
         return self._worker.walk_sample()
 
+    def live_handle(self):
+        return self._worker.live_handle()
+
     def request_inventory(self) -> None:
         self._worker.request_inventory()
 

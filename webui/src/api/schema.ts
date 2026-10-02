@@ -533,6 +533,162 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/market/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Market Status */
+        get: operations["market_status_api_characters__pid__market_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/market/mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Market Mode */
+        put: operations["market_mode_api_characters__pid__market_mode_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/totals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Market Totals */
+        get: operations["market_totals_api_market_totals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Market Items */
+        get: operations["market_items_api_market_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/items/{item_id}/listings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Market Item Listings */
+        get: operations["market_item_listings_api_market_items__item_id__listings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/listings/{listing_id}/excluded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Market Exclude Listing */
+        put: operations["market_exclude_listing_api_market_listings__listing_id__excluded_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/sellers/excluded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Market Exclude Seller */
+        put: operations["market_exclude_seller_api_market_sellers_excluded_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/listings/{listing_id}/goto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Market Goto Listing
+         * @description 帶我去: walk a character on the listing's map to the tile beside its stall.
+         */
+        post: operations["market_goto_listing_api_market_listings__listing_id__goto_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Market Export */
+        get: operations["market_export_api_market_export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items": {
         parameters: {
             query?: never;
@@ -1338,6 +1494,293 @@ export interface components {
             dst_name?: string | null;
             /** Dst Tag */
             dst_tag?: number | null;
+        };
+        /** MarketCurrentStall */
+        MarketCurrentStall: {
+            /** Seller */
+            seller: string;
+            /** Sign */
+            sign: string;
+            /** X */
+            x?: number | null;
+            /** Y */
+            y?: number | null;
+            /** Viewer X */
+            viewer_x?: number | null;
+            /** Viewer Y */
+            viewer_y?: number | null;
+            /** Open */
+            open: boolean;
+            /** Opened At */
+            opened_at: number;
+            /** Recorded At */
+            recorded_at: number;
+            /** Settle S */
+            settle_s: number;
+            /** Rows */
+            rows: components["schemas"]["MarketStallRow"][];
+            /** Gone */
+            gone: components["schemas"]["MarketGoneRow"][];
+            /** New */
+            new: number;
+            /** Unchanged */
+            unchanged: number;
+            /** Changed */
+            changed: number;
+        };
+        /** MarketExcludeRequest */
+        MarketExcludeRequest: {
+            /** Excluded */
+            excluded: boolean;
+        };
+        /** MarketGoneRow */
+        MarketGoneRow: {
+            /** Price */
+            price: number;
+            /**
+             * Price Kind
+             * @enum {string}
+             */
+            price_kind: "silver" | "coin" | "negotiate";
+            /**
+             * Coins
+             * @default 0
+             */
+            coins: number;
+            /** Silver */
+            silver?: number | null;
+            /** Item Id */
+            item_id: number;
+        };
+        /** MarketGotoRequest */
+        MarketGotoRequest: {
+            /** Pid */
+            pid: number;
+        };
+        /** MarketGotoResult */
+        MarketGotoResult: {
+            goal?: components["schemas"]["WalkPoint"] | null;
+            walk?: components["schemas"]["WalkStatus"] | null;
+            /** Note */
+            note?: string | null;
+        };
+        /** MarketItemSummary */
+        MarketItemSummary: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Listings */
+            listings: number;
+            /** Sellers */
+            sellers: number;
+            /** Negotiate */
+            negotiate: number;
+            /** Flagged */
+            flagged: number;
+            /** Min */
+            min?: number | null;
+            /** Median */
+            median?: number | null;
+            /** Max */
+            max?: number | null;
+            /** Last Seen */
+            last_seen: number;
+        };
+        /** MarketListing */
+        MarketListing: {
+            /** Price */
+            price: number;
+            /**
+             * Price Kind
+             * @enum {string}
+             */
+            price_kind: "silver" | "coin" | "negotiate";
+            /**
+             * Coins
+             * @default 0
+             */
+            coins: number;
+            /** Silver */
+            silver?: number | null;
+            /** Id */
+            id: number;
+            /** Suspect */
+            suspect: boolean;
+            /** Excluded */
+            excluded?: ("seller" | "listing") | null;
+            /** Seller */
+            seller: string;
+            /** Sign */
+            sign: string;
+            /** Item Id */
+            item_id: number;
+            /** Count */
+            count: number;
+            /** Plus */
+            plus: number;
+            /** Stats */
+            stats: components["schemas"]["ItemStat"][];
+            /**
+             * Enhance
+             * @default []
+             */
+            enhance: components["schemas"]["ItemStat"][];
+            /**
+             * Enhance Extra
+             * @default []
+             */
+            enhance_extra: components["schemas"]["ItemStat"][];
+            /** Inlays */
+            inlays: components["schemas"]["Inlay"][];
+            /** Stage Id */
+            stage_id?: number | null;
+            /** Map */
+            map: string;
+            /** X */
+            x?: number | null;
+            /** Y */
+            y?: number | null;
+            /** Viewer X */
+            viewer_x?: number | null;
+            /** Viewer Y */
+            viewer_y?: number | null;
+            /** First Seen */
+            first_seen: number;
+            /** Last Seen */
+            last_seen: number;
+            /** Ended At */
+            ended_at?: number | null;
+        };
+        /** MarketLogEntry */
+        MarketLogEntry: {
+            /** T */
+            t: number;
+            /** Kind */
+            kind: string;
+            /** Seller */
+            seller?: string | null;
+            /** Text */
+            text: string;
+            /**
+             * Refresh
+             * @default false
+             */
+            refresh: boolean;
+        };
+        /** MarketModeRequest */
+        MarketModeRequest: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "auto" | "on" | "off";
+        };
+        /** MarketSellerExcludeRequest */
+        MarketSellerExcludeRequest: {
+            /** Seller */
+            seller: string;
+            /** Excluded */
+            excluded: boolean;
+        };
+        /** MarketSession */
+        MarketSession: {
+            /** Stalls */
+            stalls: number;
+            /** New */
+            new: number;
+            /** Reads */
+            reads: number;
+        };
+        /** MarketStallInView */
+        MarketStallInView: {
+            /** Seller */
+            seller: string;
+            /** Sign */
+            sign: string;
+            /** X */
+            x?: number | null;
+            /** Y */
+            y?: number | null;
+            /** Last Recorded */
+            last_recorded?: number | null;
+        };
+        /**
+         * MarketStallRow
+         * @description One listing in the stall being viewed: identical lots summed.
+         */
+        MarketStallRow: {
+            /** Price */
+            price: number;
+            /**
+             * Price Kind
+             * @enum {string}
+             */
+            price_kind: "silver" | "coin" | "negotiate";
+            /**
+             * Coins
+             * @default 0
+             */
+            coins: number;
+            /** Silver */
+            silver?: number | null;
+            /** Item Id */
+            item_id: number;
+            /** Count */
+            count: number;
+            /** Plus */
+            plus: number;
+            /** Stats */
+            stats: components["schemas"]["ItemStat"][];
+            /** Inlays */
+            inlays: components["schemas"]["Inlay"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "unchanged" | "changed";
+            /** Old Count */
+            old_count?: number | null;
+            /**
+             * Suspect
+             * @default false
+             */
+            suspect: boolean;
+        };
+        /** MarketStatus */
+        MarketStatus: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "auto" | "on" | "off";
+            /** Active */
+            active: boolean;
+            /** Reason */
+            reason: string;
+            /** Stage Id */
+            stage_id?: number | null;
+            /** Map Name */
+            map_name?: string | null;
+            /** Stalls */
+            stalls: components["schemas"]["MarketStallInView"][];
+            current?: components["schemas"]["MarketCurrentStall"] | null;
+            /** Log */
+            log: components["schemas"]["MarketLogEntry"][];
+            session: components["schemas"]["MarketSession"];
+        };
+        /** MarketTotals */
+        MarketTotals: {
+            /** Listings */
+            listings: number;
+            /** Stalls */
+            stalls: number;
+            /** Negotiate */
+            negotiate: number;
+            /** Visits */
+            visits: number;
+            /** Last Seen */
+            last_seen?: number | null;
         };
         /** Minimap */
         Minimap: {
@@ -2725,6 +3168,283 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_status_api_characters__pid__market_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_mode_api_characters__pid__market_mode_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarketModeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_totals_api_market_totals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketTotals"];
+                };
+            };
+        };
+    };
+    market_items_api_market_items_get: {
+        parameters: {
+            query?: {
+                /** @description Item name substring */
+                q?: string;
+                include_ended?: boolean;
+                include_negotiate?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketItemSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_item_listings_api_market_items__item_id__listings_get: {
+        parameters: {
+            query?: {
+                include_ended?: boolean;
+            };
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketListing"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_exclude_listing_api_market_listings__listing_id__excluded_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarketExcludeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_exclude_seller_api_market_sellers_excluded_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarketSellerExcludeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_goto_listing_api_market_listings__listing_id__goto_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarketGotoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketGotoResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_export_api_market_export_csv_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "text/csv": unknown;
                 };
             };
         };

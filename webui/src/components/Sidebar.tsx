@@ -8,6 +8,7 @@ import './sidebar.css';
 const GLOBAL_NAV: { k: GlobalView; n: string; s: string }[] = [
   { k: 'overview', n: '總覽', s: '全角色一覽' },
   { k: 'treasury', n: '帳房', s: '全角色道具' },
+  { k: 'market', n: '市價', s: '攤位行情' },
   { k: 'snapshots', n: '留影', s: '背包快照' },
 ];
 

@@ -27,6 +27,7 @@ export type ErrorInfo = S['ErrorInfo'];
 export type Item = S['Item'];
 export type ItemMeta = S['ItemMeta'];
 export type ItemStat = S['ItemStat'];
+export type Inlay = S['Inlay'];
 export type VerboseState = S['VerboseState'];
 export type MapInfo = S['MapInfo'];
 export type MapMonster = S['MapMonster'];
@@ -58,3 +59,13 @@ export type WorldSnapshot = S['WorldSnapshot'];
 
 // Pulled out of the link literal union for convenience
 export type LinkStatus = CharacterRow['link'];
+export type MarketMode = S['MarketStatus']['mode'];
+export type MarketStatus = S['MarketStatus'];
+export type MarketCurrentStall = S['MarketCurrentStall'];
+export type MarketStallRow = S['MarketStallRow'];
+export type MarketGoneRow = S['MarketGoneRow'];
+export type MarketStallInView = S['MarketStallInView'];
+export type MarketLogEntry = S['MarketLogEntry'];
+export type MarketTotals = S['MarketTotals'];
+export type MarketItemSummary = S['MarketItemSummary'];
+export type MarketListing = S['MarketListing'];

@@ -5,6 +5,7 @@ import { useLiveChars } from './hooks/useLiveChars';
 import type { CharTab, GlobalView, OpenChar, View } from './nav';
 import { Dashboard } from './pages/Dashboard';
 import { Treasury } from './pages/Treasury';
+import { Market } from './pages/Market';
 import { Snapshots } from './pages/Snapshots';
 import { Diagnostics } from './pages/Diagnostics';
 import { CharWorkspace } from './pages/CharWorkspace';
@@ -43,6 +44,7 @@ export function App() {
         <ErrorBoundary key={boundaryKey} component={boundaryKey}>
           {view.kind === 'overview' && <Dashboard chars={snap.chars} onOpenChar={openChar} />}
           {view.kind === 'treasury' && <Treasury chars={snap.chars} onOpenChar={openChar} />}
+          {view.kind === 'market' && <Market chars={snap.chars} />}
           {view.kind === 'snapshots' && <Snapshots chars={snap.chars} onOpenChar={openChar} />}
           {view.kind === 'diagnostics' && <Diagnostics />}
           {view.kind === 'char' && (workspace

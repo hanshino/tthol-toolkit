@@ -21,6 +21,8 @@ from services import window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.fake_active import KeepActiveManager
+from services.market_db import MarketDB
+from services.market_survey import MarketSurveyManager
 from services.snapshot_db import SnapshotDB
 from services.runtime_info import clear_runtime_json, write_runtime_json
 from services.walker import WalkManager
@@ -42,8 +44,13 @@ def _build_services(dev: bool) -> dict:
     autoclick = AutoClickManager()
     keep_active = KeepActiveManager()
     wm = WorkerManager(snapshot_db=db, autoclick_manager=autoclick)
+    market_db = MarketDB()
+    market = MarketSurveyManager(live=wm.live_handle, pids=wm.live_pids, db=market_db)
+    market.start()
     return {
         "worker_manager": wm,
+        "market_db": market_db,
+        "market_manager": market,
         "walk_manager": WalkManager(sample=wm.walk_sample),
         "snapshot_db": db,
         "autoclick_manager": autoclick,
@@ -183,6 +190,7 @@ def main() -> int:
         # Walk threads are daemons: end any drag cleanly before the process dies,
         # or the game is left in follow-the-cursor mode.
         services["walk_manager"].shutdown()
+        services["market_manager"].shutdown()
     return 0
 
 
