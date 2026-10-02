@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { get } from '../api/client';
 import type { CharacterRow, DiagSummary } from '../api/types';
 import { isStopped, isUnlocated, type GlobalView, type View } from '../nav';
-import { LinkDot, Seal } from '../primitives';
+import { BrandMark, LinkDot } from '../primitives';
 import './sidebar.css';
 
 const GLOBAL_NAV: { k: GlobalView; n: string; s: string }[] = [
@@ -40,7 +40,7 @@ export function Sidebar({
   return (
     <aside className="sb">
       <div className="sb-brand">
-        <Seal size={30}>御</Seal>
+        <BrandMark size={30} />
         <div>
           <div className="sb-title">御心鑒</div>
           <div className="sb-tag">tthol memory reader</div>
