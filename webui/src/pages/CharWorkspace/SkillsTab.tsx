@@ -4,8 +4,8 @@ import { StatNum } from '../../primitives';
 import '../../components/items/items.css';
 
 const ALL = 'all';
-// Fixed groups listed after the sects, in this order.
-const TAIL = ['bonus', 'meridian', 'general'];
+// Groups listed after the sects, in this order (couple / guild skill sets are not sects).
+const TAIL = ['CLASS_LOVE', 'CLASS_GUILD', 'bonus', 'meridian', 'general'];
 
 type Group = { key: string; label: string; skills: SkillInfo[]; maxed: number };
 

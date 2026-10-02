@@ -25,6 +25,7 @@ def _db(tmp_path):
         (180, 4, "嫁衣神功一重", None, "則將受其反噬，HP最大值增加12000。", None),
         (2, 1, "休息", "CLASS_CHILD", "可以坐下休息", None),
         (900, 1, "棍法修行", "CLASS_SHAULIN", "自動使用，裝備棍", None),
+        (901, 1, "未知技", "CLASS_NEW", "", None),
     ]
     con.executemany("INSERT INTO magic VALUES (?, ?, ?, ?, ?, ?)", rows)
     con.executemany("INSERT INTO magic_learn VALUES (?, ?)", [(752, 14), (752, 15)])
@@ -61,7 +62,8 @@ def test_groups(tmp_path):
     assert _one(cat, 860, 1).group == "meridian"
     assert _one(cat, 1151, 2).group == "bonus"
     assert _one(cat, 2, 1).group == "general"
-    assert _one(cat, 900, 1).group_label == "SHAULIN"  # unnamed clan shows its code
+    assert _one(cat, 900, 1).group_label == "少林"
+    assert _one(cat, 901, 1).group_label == "NEW"  # unnamed clan shows its code
     assert group_for("刀修練", "CLASS_BAD", False) == ("CLASS_BAD", "惡人谷")
 
 

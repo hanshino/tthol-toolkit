@@ -21,14 +21,22 @@ log = logging.getLogger("tthol.skill_catalog")
 
 DB_PATH = bundled("tthol.sqlite")
 
-# magic.clan -> sect name. Only the sects confirmed so far; any other clan code
-# is shown as the bare code (SHAULIN, FLOWER ...) until it is named.
+# magic.clan -> sect name. LOVE and GUILD are not sects but the couple and
+# guild skill sets. A code missing here shows as the bare code.
 CLAN_NAMES = {
     "CLASS_SKY": "天外天",
     "CLASS_BAD": "惡人谷",
     "CLASS_FOX": "火狐",
+    "CLASS_FOX_SNOW": "雪狼",
     "CLASS_GOD": "神武",
     "CLASS_ISLE": "無名島",
+    "CLASS_MONTO": "曼陀羅",
+    "CLASS_MONTO_KYLIN": "麒麟",
+    "CLASS_MAGIC": "天師",
+    "CLASS_SHAULIN": "少林",
+    "CLASS_FLOWER": "移花宮",
+    "CLASS_LOVE": "戀人技能",
+    "CLASS_GUILD": "公會技能",
 }
 # Novice / shared skills (好友, 休息, 群鴿飛書 ...) carry these or no clan at all.
 _GENERAL_CLANS = frozenset({None, "CLASS_CHILD", "CLASS_NONE"})
