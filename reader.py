@@ -722,6 +722,16 @@ MONEY_OFFSET = 0x90  # int32, relative to hp_addr
 INVENTORY_COUNT_OFFSET = 0x94  # int32 count, followed by ptr -> item ptr[count]
 PET_INVENTORY_COUNT_OFFSET = 0x9C
 
+# Learned skills: int32 count, then pointers to two parallel arrays -- u16
+# magic.id (ascending) and u8 magic.level. A third parallel pointer at +0x100
+# reads all zero (meaning unknown). Verified live 2026-10-02 on a Lv84 天外天
+# (41 skills, 養精蓄銳 Lv6 as shown in game); see
+# docs/plans/2026-10-02-skill-direct-read.md.
+SKILL_COUNT_OFFSET = 0xF4  # int32, relative to hp_addr
+SKILL_IDS_OFFSET = 0xF8  # ptr -> u16[count]
+SKILL_LEVELS_OFFSET = 0xFC  # ptr -> u8[count]
+MAX_SKILLS = 1000  # sanity bound; magic.id has ~500 distinct skills
+
 ITEM_ID_OFFSET = 0x05  # int32, unaligned, in the item instance
 ITEM_QTY_OFFSET = 0x10  # int32
 MAX_CONTAINER_ITEMS = 500  # sanity bound on a container count
@@ -925,6 +935,27 @@ def read_pet_inventory(pm, hp_addr):
     return read_item_container(pm, hp_addr + PET_INVENTORY_COUNT_OFFSET)
 
 
+def read_skills(pm, hp_addr):
+    """Learned skills as [(magic_id, level)] in the client's (ascending id)
+    order, or None if hp_addr is not in a CCharObject. Raises ValueError on an
+    implausible count or array pointer."""
+    if not is_char_object(pm, hp_addr):
+        return None
+    count = pm.read_int(hp_addr + SKILL_COUNT_OFFSET)
+    if not 0 <= count <= MAX_SKILLS:
+        raise ValueError(f"implausible skill count {count}")
+    if count == 0:
+        return []
+    ids_ptr = _read_u32(pm, hp_addr + SKILL_IDS_OFFSET)
+    levels_ptr = _read_u32(pm, hp_addr + SKILL_LEVELS_OFFSET)
+    for ptr in (ids_ptr, levels_ptr):
+        if not HEAP_MIN_PTR <= ptr <= 0x7FFFFFFF:
+            raise ValueError(f"implausible skill array pointer 0x{ptr:08X}")
+    ids = struct.unpack(f"<{count}H", pm.read_bytes(ids_ptr, 2 * count))
+    levels = pm.read_bytes(levels_ptr, count)
+    return list(zip(ids, levels))
+
+
 def read_money(pm, hp_addr):
     """Carried money (銀兩), or None if hp_addr is not in a CCharObject."""
     if not is_char_object(pm, hp_addr):
@@ -1031,7 +1062,15 @@ ITEM_STAT_FIELDS = (
     ("magic_def", 0x26),
     ("hit", 0x28),
     ("dodge", 0x2A),
+    ("attack_speed", 0x2C),
+    ("uncanny_dodge", 0x2E),
     ("critical_hit", 0x30),
+    # Weapon damage ranges. Verified 2026-10-02 on 龍躍鳳鳴法仗 (922-1029 in both
+    # pairs, as in the DB); which pair is 傷害 vs 內勁傷害 follows the DB order.
+    ("damage_min", 0x38),
+    ("damage_max", 0x3A),
+    ("pdamage_min", 0x3C),
+    ("pdamage_max", 0x3E),
     ("run_speed", 0x44),
 )
 ITEM_STATS_SIZE = 0x46

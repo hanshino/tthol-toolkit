@@ -32,7 +32,12 @@ LABELS: tuple[tuple[str, str], ...] = (
     ("hp", "體力"),
     ("mp", "真氣"),
     *STAT_COLUMNS,
-    ("uncanny_dodge", "拆招"),  # only ever an enhancement bonus
+    ("uncanny_dodge", "拆招"),  # instance stat on some caps, else an enhancement bonus
+    ("attack_speed", "攻速"),
+    ("damage_min", "傷害下限"),
+    ("damage_max", "傷害上限"),
+    ("pdamage_min", "內勁傷害下限"),
+    ("pdamage_max", "內勁傷害上限"),
 )
 
 # strong_formula.bonus_type -> items column
