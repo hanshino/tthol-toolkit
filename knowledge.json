@@ -93,6 +93,17 @@
       "note": "中毒生效時 HP+0x4C4 count=1、array=[19]；實時觀察到中毒過期瞬間 count 由 1->0（slot 殘留 19，被 count gate 濾掉），與 HP+0x288 同機制。DB 中『中毒』分屬 group 19/70/71。"
     }
   },
+  "skill_structure": {
+    "description": "角色已學技能：數量 + 兩個平行陣列（技能 ID / 等級），以 HP 位址為基準直接讀，不掃描",
+    "fields_relative_to_hp": {
+      "244": { "name": "技能數", "type": "int32" },
+      "248": { "name": "技能ID陣列", "type": "pointer", "note": "u16[技能數] = magic.id, ascending" },
+      "252": { "name": "技能等級陣列", "type": "pointer", "note": "u8[技能數] = magic.level, parallel to the id array" },
+      "256": { "name": "未知陣列", "type": "pointer", "note": "parallel array, all zero on the sample (cooldown / exp?)" }
+    },
+    "skill_db": { "file": "tthol.sqlite", "table": "magic", "key_columns": ["id", "level"], "name_column": "name" },
+    "verified": "2026-10-02 天外天 Lv84: 41 skills, includes 養精蓄銳 (24) Lv6 confirmed by the player and matching the +105 真氣上限 it grants"
+  },
   "inventory_structure": {
     "description": "背包 / 寵物背包：CCharObject 內的 (數量, 指標陣列) 配對，直接讀取，不掃描。HP 位址 = CCharObject + 0x2C8",
     "locate_method": "以 HP 位址為基準直接讀；驗證 [hp_addr - 0x2C8] == CCharObject vtable (reader.CHAR_OBJ_VTABLE)",
