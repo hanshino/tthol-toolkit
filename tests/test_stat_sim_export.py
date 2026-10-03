@@ -292,11 +292,12 @@ async def _get(manager):
         return await ac.get("/api/characters/1001/stat-sim-export")
 
 
-async def test_export_endpoint_returns_code_and_link():
+async def test_export_endpoint_returns_code_and_link(monkeypatch):
+    monkeypatch.delenv(ex.GENBU_URL_ENV, raising=False)
     resp = await _get(_FakeManager(_character(FakePm())))
     assert resp.status_code == 200
     body = resp.json()
-    assert body["url"] == ex.IMPORT_URL + body["code"]
+    assert body["url"] == "https://genbu.hanshino.dev/tools/stat-sim#import=" + body["code"]
     payload = ex.decode(body["code"])
     assert payload["name"] == "止戰詩園"
     from services.backup import APP_VERSION
@@ -351,3 +352,12 @@ def test_read_locked_drops_a_read_when_the_lock_moved():
 
     assert worker.read_locked(read) is None
     assert _worker(None).read_locked(lambda *a: "x") is None
+
+
+def test_import_url_honours_the_genbu_override(monkeypatch):
+    monkeypatch.delenv(ex.GENBU_URL_ENV, raising=False)
+    assert ex.import_url("C") == "https://genbu.hanshino.dev/tools/stat-sim#import=C"
+    monkeypatch.setenv(ex.GENBU_URL_ENV, " http://localhost:3000/ ")
+    assert ex.import_url("C") == "http://localhost:3000/tools/stat-sim#import=C"
+    monkeypatch.setenv(ex.GENBU_URL_ENV, "")
+    assert ex.import_url("C").startswith("https://genbu.hanshino.dev/")

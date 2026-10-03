@@ -17,6 +17,7 @@ import base64
 import datetime
 import functools
 import json
+import os
 import zlib
 from dataclasses import dataclass
 
@@ -24,7 +25,10 @@ import reader
 
 PREFIX = "TTHOL1"
 VERSION = 1
-IMPORT_URL = "https://genbu.hanshino.dev/tools/stat-sim#import="
+GENBU_URL = "https://genbu.hanshino.dev"
+# Point the import link at another genbu (e.g. a local dev server) for testing.
+GENBU_URL_ENV = "TTHOL_GENBU_URL"
+IMPORT_PATH = "/tools/stat-sim#import="
 
 # reader.EQUIP_SLOTS name -> genbu EquipSlot; genbu needs all ten keys.
 SLOT_KEYS = {
@@ -265,4 +269,5 @@ def decode(code: str) -> dict:
 
 
 def import_url(code: str) -> str:
-    return IMPORT_URL + code
+    base = os.environ.get(GENBU_URL_ENV, "").strip() or GENBU_URL
+    return base.rstrip("/") + IMPORT_PATH + code

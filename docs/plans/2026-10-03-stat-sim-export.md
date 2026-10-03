@@ -41,7 +41,7 @@
 2. **reader.py**：`read_bare_attrs`、`read_remaining_points`、保留位置的插槽讀取、`read_item_extras`（真解、剩餘煉化次數）。附測試。
 3. **`services/stat_sim_export.py`**：純函式 `build_payload(...)` + `encode()`（`zlib.compressobj(9, zlib.DEFLATED, -15)`、base64url 不補 `=`、前綴 `TTHOL1.`）。測試含 round-trip 與 fixture。
 4. **worker**：匯出需要的資料由 worker 讀好快取（equipment / skills / appearance 已有 callback，要補 bare / remaining / panel / statuses / 道具額外欄位），或在 worker 的 pm 下即時讀。先讀 `services/worker.py` 的 `_auto_read_items` 再決定。
-5. **API**：`GET /api/characters/{pid}/stat-sim-export` → `{ code, url }`，url = `https://genbu.hanshino.dev/tools/stat-sim#import=<code>`。角色還沒定位、或裝備 / 技能還沒讀到時回錯誤，不匯出殘缺資料。
+5. **API**：`GET /api/characters/{pid}/stat-sim-export` → `{ code, url }`，url = `https://genbu.hanshino.dev/tools/stat-sim#import=<code>`。測試時可設環境變數 `TTHOL_GENBU_URL`（例如 `http://localhost:3000`）改連別的 genbu。角色還沒定位、或裝備 / 技能還沒讀到時回錯誤，不匯出殘缺資料。
 6. **webui**：角色頁加「複製到配裝模擬器」（剪貼簿）和開啟連結按鈕（pywebview 要透過 API 呼叫 `webbrowser.open`）。資料還沒好時停用。UI 改動前先查 ui-ux-pro-max skill。
 7. **驗證**：從實際 app 產字串，丟進 genbu 解碼 / 匯入，跟遊戲面板對照。
 
