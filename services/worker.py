@@ -231,6 +231,20 @@ class ReaderWorker(threading.Thread):
             return None
         return live
 
+    def read_locked(self, read):
+        """read(pm, hp_addr, compat_mode) against the current lock, for one-off
+        readers (stat-sim export). None while there is no lock, or when the lock
+        moved during the read (the result may mix two structs)."""
+        live = self._live
+        if live is None or not self.is_alive():
+            return None
+        pm, hp_addr = live
+        result = read(pm, hp_addr, self._compat_mode)
+        # Compare by value: the position loop rebuilds the tuple every poll.
+        if self._live != live:
+            return None
+        return result
+
     def walk_sample(self) -> tuple[int, int, int, int, int] | None:
         """(stage_id, x, y, target_px, target_py) read now, for the click-to-walk runner.
 

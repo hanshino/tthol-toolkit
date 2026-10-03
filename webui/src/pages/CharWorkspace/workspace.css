@@ -17,6 +17,7 @@
 
 button.ws-btn, button.ws-toggle { font-size: 12px; letter-spacing: 1px; padding: 6px 12px; min-height: 32px; background: var(--tt-bg); color: var(--tt-dim); }
 button.ws-btn[data-attn] { color: var(--tt-gold); }
+.ws-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 button.ws-toggle { display: flex; align-items: center; gap: 8px; }
 button.ws-toggle[aria-pressed="true"] { color: var(--tt-ok); border-color: var(--tt-ok); }
 .ws-switch { width: 26px; height: 14px; border-radius: 7px; background: var(--tt-line-soft); display: flex; align-items: center; padding: 2px; box-sizing: border-box; transition: background 120ms ease; }

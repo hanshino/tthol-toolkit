@@ -164,6 +164,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/stat-sim-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Stat Sim
+         * @description The located character as a TTHOL1 string for genbu's stat simulator.
+         *
+         *     Read on demand from the worker's lock (sync handler: FastAPI runs it in its
+         *     thread pool). 409 while the character is not located or not fully loaded,
+         *     so a partial character is never exported.
+         */
+        get: operations["export_stat_sim_api_characters__pid__stat_sim_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/inventory/scan": {
         parameters: {
             query?: never;
@@ -663,7 +687,7 @@ export interface paths {
         put?: never;
         /**
          * Market Goto Listing
-         * @description 帶我去: walk a character on the listing's map to the tile beside its stall.
+         * @description 帶我去: walk a character on the listing's map to near its stall (services/market_goto.py).
          */
         post: operations["market_goto_listing_api_market_listings__listing_id__goto_post"];
         delete?: never;
@@ -2004,6 +2028,16 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * StatSimExport
+         * @description TTHOL1 string for genbu's stat simulator, and the link that imports it.
+         */
+        StatSimExport: {
+            /** Code */
+            code: string;
+            /** Url */
+            url: string;
+        };
         /** TreasuryHolder */
         TreasuryHolder: {
             /** Character */
@@ -2381,6 +2415,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_stat_sim_api_characters__pid__stat_sim_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatSimExport"];
                 };
             };
             /** @description Validation Error */

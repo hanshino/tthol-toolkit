@@ -341,6 +341,13 @@ class ConnectResult(_Base):
     hp_addr: int | None = None
 
 
+class StatSimExport(_Base):
+    """TTHOL1 string for genbu's stat simulator, and the link that imports it."""
+
+    code: str
+    url: str
+
+
 class RelocateRequest(_Base):
     hp: int | None = None
 

@@ -1,9 +1,12 @@
 import asyncio
+import datetime
 import time
 
 from fastapi import APIRouter, HTTPException, Request
 
+from services import stat_sim_export
 from services._mock import mock_chars, mock_world
+from services.backup import APP_VERSION
 from services.api_types import (
     Character,
     CharacterDetail,
@@ -12,6 +15,7 @@ from services.api_types import (
     Item,
     OkResponse,
     RelocateRequest,
+    StatSimExport,
     WorldSnapshot,
 )
 
@@ -119,6 +123,30 @@ async def focus_window(pid: int, request: Request) -> OkResponse:
         return OkResponse(ok=True)
     wm.focus(pid)
     return OkResponse(ok=True)
+
+
+@router.get("/characters/{pid}/stat-sim-export", response_model=StatSimExport)
+def export_stat_sim(pid: int, request: Request) -> StatSimExport:
+    """The located character as a TTHOL1 string for genbu's stat simulator.
+
+    Read on demand from the worker's lock (sync handler: FastAPI runs it in its
+    thread pool). 409 while the character is not located or not fully loaded,
+    so a partial character is never exported.
+    """
+    wm = request.app.state.services.get("worker_manager")
+    if wm is None:
+        raise HTTPException(status_code=503, detail="No game connection (mock mode)")
+    try:
+        raw = wm.read_locked(pid, stat_sim_export.read_character)
+    except stat_sim_export.NotReady as exc:
+        raise HTTPException(status_code=409, detail=f"Character not ready: {exc}") from exc
+    if raw is None:
+        raise HTTPException(status_code=409, detail="Character not located")
+    payload = stat_sim_export.build_payload(
+        raw, APP_VERSION, datetime.datetime.now(datetime.timezone.utc)
+    )
+    code = stat_sim_export.encode(payload)
+    return StatSimExport(code=code, url=stat_sim_export.import_url(code))
 
 
 async def _wait_for_seq(sess, attr: str, before: int, timeout: float) -> bool:

@@ -163,6 +163,9 @@ class CharSession:
     def live_handle(self):
         return self._worker.live_handle()
 
+    def read_locked(self, read):
+        return self._worker.read_locked(read)
+
     def request_inventory(self) -> None:
         self._worker.request_inventory()
 

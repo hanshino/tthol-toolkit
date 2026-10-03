@@ -69,3 +69,4 @@ export type MarketLogEntry = S['MarketLogEntry'];
 export type MarketTotals = S['MarketTotals'];
 export type MarketItemSummary = S['MarketItemSummary'];
 export type MarketListing = S['MarketListing'];
+export type StatSimExport = S['StatSimExport'];
