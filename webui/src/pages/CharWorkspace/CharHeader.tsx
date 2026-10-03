@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { post } from '../../api/client';
+import { useEffect, useState } from 'react';
+import { ApiError, get, post } from '../../api/client';
 import { describeError, reportClientError } from '../../diag/report';
-import type { CharacterRow, ConnectResult, OkResponse } from '../../api/types';
+import type { CharacterRow, ConnectResult, OkResponse, StatSimExport } from '../../api/types';
 import { friendlyError } from '../../components/friendlyError';
 import { isStopped, isUnlocated } from '../../nav';
 import { Bar, BuffChips, DollAvatar, LinkDot, Seal } from '../../primitives';
@@ -92,6 +92,9 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
             <span className="ws-switch" aria-hidden="true"><span /></span>
             保持渲染
           </button>
+          <StatSimActions
+            pid={char.pid} disabled={stale || unlocated} onError={setActionError}
+          />
           <button
             type="button" className="ws-btn" data-attn={stopped || unlocated || undefined}
             disabled={busy !== null || gone} onClick={rescan}
@@ -154,6 +157,87 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
 
       {actionError && <div className="ws-banner is-bad" role="status">{actionError}</div>}
     </section>
+  );
+}
+
+const COPIED_MS = 2500;
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Older WebView2 builds can refuse the async clipboard; fall back to a
+    // selected textarea and the legacy copy command.
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    if (!ok) throw new Error('剪貼簿無法使用');
+  }
+}
+
+// Export to genbu's stat simulator: copy the TTHOL1 string, or open the
+// import link (pywebview hands new windows to the system browser).
+function StatSimActions({ pid, disabled, onError }: {
+  pid: number; disabled: boolean; onError: (message: string | null) => void;
+}) {
+  const [busy, setBusy] = useState<'copy' | 'open' | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(false), COPIED_MS);
+    return () => window.clearTimeout(t);
+  }, [copied]);
+
+  const run = async (action: 'copy' | 'open') => {
+    setBusy(action);
+    setCopied(false);
+    onError(null);
+    try {
+      const out = await get<StatSimExport>(`/api/characters/${pid}/stat-sim-export`);
+      if (action === 'copy') {
+        await copyText(out.code);
+        setCopied(true);
+      } else {
+        window.open(out.url, '_blank', 'noopener');
+      }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        // Located but not fully read yet (just logged in / changing maps).
+        onError('角色資料還沒讀完，請稍候再試');
+      } else {
+        onError(`匯出失敗：${describeError(e)}`);
+        reportClientError(e, { component: 'CharHeader.statSimExport' });
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button" className="ws-btn" disabled={disabled || busy !== null}
+        onClick={() => run('copy')}
+        title="複製角色字串，貼到 genbu 配裝模擬器就能建立同樣的角色"
+      >
+        {busy === 'copy' ? '讀取中…' : copied ? '✓ 已複製' : '複製到配裝模擬器'}
+      </button>
+      <button
+        type="button" className="ws-btn" disabled={disabled || busy !== null}
+        onClick={() => run('open')}
+        title="在瀏覽器開啟 genbu 配裝模擬器並直接匯入"
+        aria-label="在瀏覽器開啟配裝模擬器"
+      >
+        {busy === 'open' ? '讀取中…' : '開啟 ↗'}
+      </button>
+      <span className="ws-sr" role="status">{copied ? '已複製到剪貼簿' : ''}</span>
+    </>
   );
 }
 

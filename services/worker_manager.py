@@ -109,6 +109,11 @@ class WorkerManager:
         sess = self._sessions.get(pid)
         return sess.live_handle() if sess is not None else None
 
+    def read_locked(self, pid: int, read):
+        """read(pm, hp_addr, compat_mode) on a located character, or None."""
+        sess = self._sessions.get(pid)
+        return sess.read_locked(read) if sess is not None else None
+
     def live_pids(self) -> list[int]:
         return list(self._sessions)
 

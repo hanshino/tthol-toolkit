@@ -10,6 +10,12 @@
     "note": "基準地址是動態的，需每次重新掃描血量值來定位",
     "fields": {
       "-228": { "name": "Name", "type": "string", "encoding": "big5", "max_bytes": 32, "note": "null-terminated Big5 character name" },
+      "-264": { "name": "外功(不含裝)", "type": "int32", "sample_value": 59, "note": "bare allocated attribute, no gear / pills / passives; panel (-96..-76) - bare - gear(instance + enhance) - passive magic_stats = 0 on 2 characters 2026-10-03; unchanged after a 賞善 pill" },
+      "-260": { "name": "內力(不含裝)", "type": "int32", "sample_value": 1, "note": "bare allocated attribute, no gear / pills / passives; panel (-96..-76) - bare - gear(instance + enhance) - passive magic_stats = 0 on 2 characters 2026-10-03; unchanged after a 賞善 pill" },
+      "-256": { "name": "根骨(不含裝)", "type": "int32", "sample_value": 1, "note": "bare allocated attribute, no gear / pills / passives; panel (-96..-76) - bare - gear(instance + enhance) - passive magic_stats = 0 on 2 characters 2026-10-03; unchanged after a 賞善 pill" },
+      "-252": { "name": "身法(不含裝)", "type": "int32", "sample_value": 144, "note": "bare allocated attribute, no gear / pills / passives; panel (-96..-76) - bare - gear(instance + enhance) - passive magic_stats = 0 on 2 characters 2026-10-03; unchanged after a 賞善 pill" },
+      "-248": { "name": "技巧(不含裝)", "type": "int32", "sample_value": 21, "note": "bare allocated attribute, no gear / pills / passives; panel (-96..-76) - bare - gear(instance + enhance) - passive magic_stats = 0 on 2 characters 2026-10-03; unchanged after a 賞善 pill" },
+      "-244": { "name": "玄學(不含裝)", "type": "int32", "sample_value": 40, "note": "bare allocated attribute, no gear / pills / passives; panel (-96..-76) - bare - gear(instance + enhance) - passive magic_stats = 0 on 2 characters 2026-10-03; unchanged after a 賞善 pill" },
       "-196": { "name": "門派", "type": "int32", "sample_value": 8, "note": "sect.ini [CLAN] ID (bit flag: 2 惡人谷, 8 天外天, ...); verified 2026-10-02 on a 惡人谷 and a 天外天 character. -172 held the same value on both (meaning unknown)" },
       "-96": { "name": "外功", "type": "int32", "sample_value": 190 },
       "-92": { "name": "內力", "type": "int32", "sample_value": 6 },
@@ -23,10 +29,11 @@
       "-60": { "name": "身法÷10", "type": "int32", "sample_value": 0, "note": "floor(身法/10); verified 2026-10-02 (equipped and naked, follows +10 stat pills). Purpose unknown" },
       "-56": { "name": "技巧÷10", "type": "int32", "sample_value": 8, "note": "floor(技巧/10); verified 2026-10-02 (equipped and naked, follows +10 stat pills). Purpose unknown" },
       "-52": { "name": "玄學÷10", "type": "int32", "sample_value": 0, "note": "floor(玄學/10) in 2026-10-02 live data (2->0, 12->1, 15->1), but this older sample (玄學 92 -> 0) contradicts it; recheck on a high-玄學 character. Purpose unknown" },
-      "-48": { "name": "未知", "type": "int32", "sample_value": 29007 },
-      "-44": { "name": "未知", "type": "int32", "sample_value": 10 },
+      "-48": { "name": "髮型", "type": "int32", "sample_value": 29007, "note": "base hairstyle item id (29001.. male, 29051.. female); reader.HAIR_ITEM_OFFSET" },
+      "-44": { "name": "髮色", "type": "int32", "sample_value": 10, "note": "hair dye 0..10 (doll_frame_images.color); reader.HAIR_COLOR_OFFSET" },
       "-40": { "name": "未知", "type": "int32", "sample_value": 0 },
       "-36": { "name": "等級", "type": "int32", "sample_value": 192 },
+      "-32": { "name": "剩餘屬性點", "type": "int32", "sample_value": 11, "note": "unallocated attribute points; with the bare attrs it gives the rebirth point total (0 / 140 on two characters, 2026-10-03)" },
       "0":   { "name": "血量", "type": "int32", "sample_value": 46277 },
       "4":   { "name": "最大血量", "type": "int32", "sample_value": 46277 },
       "8":   { "name": "真氣", "type": "int32", "sample_value": 5070 },
@@ -35,7 +42,7 @@
       "28": { "name": "最大負重", "type": "int32", "sample_value": 82498, "note": "max carry weight; 2026-10-02: +100 per 外功, and each active potion/talisman buff temporarily adds that item's own weight (+25 per 賞善X丹, +10 per 符) until it expires" },
       "32":  { "name": "未知", "type": "int32", "sample_value": 24600 },
       "44":  { "name": "魅力值", "type": "int32", "sample_value": 30454 },
-      "60": { "name": "移動速度?", "type": "int32", "sample_value": 5, "note": "likely a Move_Speed.ini level; unverified" },
+      "60": { "name": "移動速度", "type": "int32", "sample_value": 5, "note": "= 5 + run_speed of the mount / ornaments (items.run_speed); reviewed by tthol_data 2026-10-03" },
       "64": { "name": "攻速", "type": "int32", "sample_value": 7, "note": "matches the attribute window 2026-10-02" },
       "72":  { "name": "物攻", "type": "int32", "sample_value": 2204 },
       "76":  { "name": "物攻(基礎?)", "type": "int32", "sample_value": 2204 },
@@ -144,7 +151,50 @@
         "name": "物品名稱",
         "type": "big5",
         "note": "null 結尾，與 items.name 一致"
+      },
+      "432": {
+        "name": "數值區",
+        "type": "int16[]",
+        "note": "+0x1B0, items-table column order (reader.ITEM_STAT_FIELDS); DB stats + random rolls + every inlay, enhancement NOT included. +0x38..+0x3E weapon damage pairs, +0x44 run_speed"
+      },
+      "536": {
+        "name": "真解",
+        "type": "uint32",
+        "note": "+0x218 raw value, 0 when none; format in tthol_data scripts/zhenjie_investigation.md §2"
+      },
+      "540": {
+        "name": "未知",
+        "type": "uint32",
+        "note": "+0x21C, read next to 真解 for comparison; meaning unknown"
+      },
+      "544": {
+        "name": "剩餘煉化次數",
+        "type": "uint8",
+        "note": "+0x220"
+      },
+      "545": {
+        "name": "強化",
+        "type": "uint8",
+        "note": "+0x221, stored as N + 10 (<= 10 means not enhanced); reader.ENHANCE_OFFSET"
+      },
+      "550": {
+        "name": "插槽",
+        "type": "uint16[4] stride 4",
+        "note": "+0x226 / +0x22A / +0x22E / +0x232 compounds.id, 0 = empty; sockets fill from the last one backwards. Only the recipe id is stored, not the rolled value"
       }
+    },
+    "equipment_slots_relative_to_char_object": {
+      "note": "item-instance pointer per slot, 0 = empty; CCharObject = hp_addr - 0x2C8. +0x374 (HEAD) is always empty. See reader.EQUIP_SLOTS",
+      "888": "CAP",
+      "892": "BODY",
+      "896": "FOOT",
+      "900": "WING",
+      "904": "HORSE",
+      "908": "ORNAMENT_1",
+      "912": "ORNAMENT_2",
+      "916": "ORNAMENT_3",
+      "920": "HAND_L",
+      "924": "HAND_R (also two-handed)"
     },
     "item_db": {
       "file": "tthol.sqlite",
@@ -176,6 +226,7 @@
     "approach": "掃描血量值 + 知識庫結構驗證 (score >= 0.8)",
     "tool": "reader.py",
     "usage": "uv run reader.py <血量值> [--loop]",
-    "note": "無穩定靜態指針鏈，堆記憶體指針是短暫的，快速掃描是最可靠方案"
+    "hp_chain": "[[[0x00804B90]+0x128]+0x68] = engine char object; +0x140 current HP, +0x130 max HP (reader.PLAYER_HP_CHAIN_BASE / OFFSETS). Stable across restarts within one game build; a patch moves the root (re-derive with /tthol-update-scan)",
+    "note": "the chain object is not the character struct: its HP value is then used for the fast scan above"
   }
 }

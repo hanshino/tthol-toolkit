@@ -970,6 +970,24 @@ def read_money(pm, hp_addr):
 # equipped item), so the head / cap sequences are read straight from there.
 # Verified live 2026-10-01 across ~15 players; see
 # docs/plans/2026-10-01-equipment-reading-investigation.md.
+# Allocated attribute points without gear, pills or passives, in panel order
+# (外功 內力 根骨 身法 技巧 玄學, like -96..-76). Verified 2026-10-03: panel -
+# bare - gear - passives = 0 on two characters; a 賞善 pill leaves them unchanged.
+BARE_ATTRS_OFFSET = -264
+ATTR_COUNT = 6
+REMAINING_POINTS_OFFSET = -32  # int32 unallocated attribute points
+
+
+def read_bare_attrs(pm, hp_addr):
+    """The six bare attributes as a list in panel order."""
+    raw = pm.read_bytes(hp_addr + BARE_ATTRS_OFFSET, 4 * ATTR_COUNT)
+    return list(struct.unpack(f"<{ATTR_COUNT}i", raw))
+
+
+def read_remaining_points(pm, hp_addr):
+    return pm.read_int(hp_addr + REMAINING_POINTS_OFFSET)
+
+
 HAIR_ITEM_OFFSET = -0x30  # int32 base-head item id (29001.. male, 29051.. female)
 HAIR_COLOR_OFFSET = -0x2C  # int32 hair dye 0..10 (doll_frame_images.color)
 DOLL_HEAD_SEQ_OFFSET = 0x224  # int32 doll_frame_images.sequence of the head layer
@@ -1088,11 +1106,27 @@ FLAT_STAT_FLAGS = (0, 1)
 INLAY_OFFSETS = (0x226, 0x22A, 0x22E, 0x232)
 
 
+# 真解 raw value (format: tthol_data zhenjie_investigation.md section 2) and
+# the number of 煉化 left, both in the item instance.
+ZHENJIE_OFFSET = 0x218  # u32, 0 = none
+REFINE_LEFT_OFFSET = 0x220  # u8
+
+
+def read_item_inlay_slots(pm, ptr):
+    """compounds.id of all four sockets in memory order, 0 for an empty one."""
+    raw = pm.read_bytes(ptr + INLAY_OFFSETS[0], INLAY_OFFSETS[-1] - INLAY_OFFSETS[0] + 2)
+    return [struct.unpack_from("<H", raw, off - INLAY_OFFSETS[0])[0] for off in INLAY_OFFSETS]
+
+
 def read_item_inlays(pm, ptr):
     """compounds.id of each filled socket, in socket order."""
-    raw = pm.read_bytes(ptr + INLAY_OFFSETS[0], INLAY_OFFSETS[-1] - INLAY_OFFSETS[0] + 2)
-    ids = [struct.unpack_from("<H", raw, off - INLAY_OFFSETS[0])[0] for off in INLAY_OFFSETS]
-    return [i for i in ids if i]
+    return [i for i in read_item_inlay_slots(pm, ptr) if i]
+
+
+def read_item_extras(pm, ptr):
+    """(zhenjie, refine_left) of an item instance."""
+    zhenjie = _read_u32(pm, ptr + ZHENJIE_OFFSET)
+    return zhenjie, pm.read_bytes(ptr + REFINE_LEFT_OFFSET, 1)[0]
 
 
 def read_item_stats(pm, ptr):
@@ -1105,12 +1139,12 @@ def read_item_stats(pm, ptr):
     return {col: v for col, v in vals.items() if v}
 
 
-def read_equipment(pm, hp_addr):
-    """Equipped items as [(slot, item_id or None, plus, stats, inlays)] in
-    EQUIP_SLOTS order, or None if hp_addr is not in a CCharObject. plus is the
-    enhancement level (0 when none); stats / inlays are read_item_stats() /
-    read_item_inlays() of the instance. A slot whose pointer or id looks wrong
-    (being swapped mid-read) reads as empty."""
+def read_equipment_detail(pm, hp_addr):
+    """Equipped items as one dict per slot in EQUIP_SLOTS order, or None if
+    hp_addr is not in a CCharObject. Keys: slot, item_id (None when empty),
+    plus (0 when not enhanced), stats (read_item_stats), inlays (all four
+    sockets, read_item_inlay_slots), zhenjie, refine_left. A slot whose pointer
+    or id looks wrong (being swapped mid-read) reads as empty."""
     if not is_char_object(pm, hp_addr):
         return None
     obj = hp_addr - CHAR_OBJ_HP_OFFSET
@@ -1119,23 +1153,50 @@ def read_equipment(pm, hp_addr):
     )
     slots = []
     for (_off, slot), ptr in zip(EQUIP_SLOTS, ptrs):
-        item_id, plus, stats, inlays = None, 0, {}, []
+        entry = {
+            "slot": slot,
+            "item_id": None,
+            "plus": 0,
+            "stats": {},
+            "inlays": [0] * len(INLAY_OFFSETS),
+            "zhenjie": 0,
+            "refine_left": 0,
+        }
         if HEAP_MIN_PTR <= ptr <= 0x7FFFFFFF:
             try:
                 value = pm.read_int(ptr + ITEM_ID_OFFSET)
                 raw = pm.read_bytes(ptr + ENHANCE_OFFSET, 1)[0]
                 stats = read_item_stats(pm, ptr)
-                inlays = read_item_inlays(pm, ptr)
+                sockets = read_item_inlay_slots(pm, ptr)
+                zhenjie, refine_left = read_item_extras(pm, ptr)
             except Exception:
-                value, raw, stats, inlays = 0, 0, {}, []
+                value = 0
             if 0 < value <= MAX_ITEM_ID:
-                item_id = value
-                if ENHANCE_BIAS < raw <= ENHANCE_BIAS + MAX_ENHANCE:
-                    plus = raw - ENHANCE_BIAS
-            else:
-                stats, inlays = {}, []
-        slots.append((slot, item_id, plus, stats, inlays))
+                enhanced = ENHANCE_BIAS < raw <= ENHANCE_BIAS + MAX_ENHANCE
+                entry.update(
+                    item_id=value,
+                    plus=raw - ENHANCE_BIAS if enhanced else 0,
+                    stats=stats,
+                    inlays=sockets,
+                    zhenjie=zhenjie,
+                    refine_left=refine_left,
+                )
+        slots.append(entry)
     return slots
+
+
+def read_equipment(pm, hp_addr):
+    """Equipped items as [(slot, item_id or None, plus, stats, inlays)] in
+    EQUIP_SLOTS order, or None if hp_addr is not in a CCharObject. Same reads
+    as read_equipment_detail(), with inlays as read_item_inlays() (filled
+    sockets only)."""
+    detail = read_equipment_detail(pm, hp_addr)
+    if detail is None:
+        return None
+    return [
+        (e["slot"], e["item_id"], e["plus"], e["stats"], [i for i in e["inlays"] if i])
+        for e in detail
+    ]
 
 
 def _window_list(pm):
