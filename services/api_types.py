@@ -744,3 +744,111 @@ class MarketGotoResult(_Base):
     # 'already there' when it stands beside the stall; 'viewer position' when
     # the stall's own tile is unknown and it walks to where it was seen from.
     note: str | None = None
+
+
+# ---- Damage capture (/api/characters/{pid}/damage) ----
+
+
+class DamageTarget(_Base):
+    handle: int
+    npc_id: int
+    instance: int
+    hp_pct: int | None = None
+    debuffs: list[int] = []  # monster status groups (15 = 卸冑)
+    # Sampled just before the hit (the post-hit read is cleared on a kill).
+    debuffs_before: list[int] | None = None
+    hp_pct_before: int | None = None
+    before_age_ms: float | None = None
+    name: str | None = None
+    level: int | None = None
+    defense: int | None = None  # npc.extra_def
+    mdefense: int | None = None  # npc.magic_def
+    # 'packet' = named by the result itself. Skill results name no target:
+    # 'selected' = the selected target, 'recent_attack' = the latest normal
+    # attack's target when nothing is selected.
+    source: Literal["packet", "selected", "recent_attack"]
+
+
+class DamageSelected(_Base):
+    npc_id: int
+    instance: int
+
+
+class DamageSkill(_Base):
+    cast_effect: int
+    frame_key: list[int]
+    magic_id: int | None = None
+    level: int | None = None
+    name: str | None = None
+    method: Literal["learned", "ambiguous", "unique", "unknown"]
+    candidates: list[int] = []
+    candidate_names: list[str | None] = []
+
+
+class DamageWeapon(_Base):
+    slot: str
+    item_id: int
+    name: str | None = None
+    plus: int
+    zhenjie: int
+
+
+class DamageBuff(_Base):
+    group: int
+    name: str | None = None
+
+
+class DamageSnapshot(_Base):
+    level: int
+    sect: int
+    sect_masks: list[int] = []  # raw CCharObject +0x4C/+0x54/+0x5C
+    panel: dict[str, int]
+    attrs: list[int]
+    weapons: list[DamageWeapon]
+    buffs: list[DamageBuff]
+
+
+class DamageEvent(_Base):
+    seq: int
+    kind: Literal["hit", "snapshot"]
+    t: float  # seconds of recording time (pauses excluded)
+    poll_gap_ms: float | None = None  # the result arrived within this window before t
+    path: Literal["normal", "skill"] | None = None
+    rel: int | None = None
+    segments: list[list[int]] = []  # [type, value]; 0 hit, 1 crit, 4 heal, others no damage
+    damage: int | None = None
+    target: DamageTarget | None = None
+    selected: DamageSelected | None = None
+    skill: DamageSkill | None = None
+    # A skill result whose cast effect no learned skill has (likely a party
+    # member's); left out of the summary.
+    not_mine_suspect: bool = False
+    # Status-only skill result: its damage result was most likely overwritten
+    # before a poll could read it.
+    damage_lost_suspect: bool = False
+    snapshot: DamageSnapshot | None = None
+
+
+class DamageSummary(_Base):
+    total_damage: int
+    hits: int
+    segments: int
+    misses: int
+    miss_rate: float
+    crit_rate: float
+    debuffed_share: float
+    combat_seconds: float
+    elapsed_seconds: float
+    combat_dps: float
+    overall_dps: float
+    gap_seconds: float
+
+
+class DamageStatus(_Base):
+    status: Literal["idle", "recording", "paused", "waiting"]
+    note: str | None = None
+    elapsed: float
+    seq: int
+    events: list[DamageEvent]
+    summary: DamageSummary
+    snapshot: DamageSnapshot | None = None

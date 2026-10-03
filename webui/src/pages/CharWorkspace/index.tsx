@@ -4,6 +4,7 @@ import { isStopped, isUnlocated, type CharTab, type GlobalView } from '../../nav
 import { AutoClickTab } from './AutoClickTab';
 import { BodyTab } from './BodyTab';
 import { CharHeader } from './CharHeader';
+import { DamageTab } from './DamageTab';
 import { ItemsTab } from './ItemsTab';
 import { MapAnalysis } from './MapAnalysis';
 import { MarketTab } from './MarketTab';
@@ -17,6 +18,7 @@ const TABS: { k: CharTab; n: string; s: string }[] = [
   { k: 'skills', n: '武學', s: '技能 · 經脈' },
   { k: 'maps', n: '行止', s: '地圖' },
   { k: 'market', n: '市集', s: '攤位調查' },
+  { k: 'damage', n: '戰錄', s: '傷害 · DPS' },
   { k: 'assist', n: '輔助', s: '英雄培養' },
 ];
 
@@ -66,6 +68,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
               {t.k === 'skills' && <SkillsTab detail={detail} error={error} />}
               {t.k === 'maps' && <MapAnalysis char={char} />}
               {t.k === 'market' && <MarketTab pid={char.pid} onOpenPrices={() => onNav('market')} />}
+              {t.k === 'damage' && <DamageTab pid={char.pid} active={tab === 'damage'} />}
               {t.k === 'assist' && <AutoClickTab pid={char.pid} />}
             </div>
           ))}

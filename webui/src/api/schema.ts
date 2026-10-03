@@ -466,6 +466,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/damage/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_characters__pid__damage_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/damage/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__damage_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/damage/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear */
+        post: operations["clear_api_characters__pid__damage_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/damage/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_characters__pid__damage_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/damage/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export */
+        get: operations["export_api_characters__pid__damage_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/maps/by-name/{name}": {
         parameters: {
             query?: never;
@@ -1239,6 +1324,202 @@ export interface components {
         CreateAccountRequest: {
             /** Name */
             name: string;
+        };
+        /** DamageBuff */
+        DamageBuff: {
+            /** Group */
+            group: number;
+            /** Name */
+            name?: string | null;
+        };
+        /** DamageEvent */
+        DamageEvent: {
+            /** Seq */
+            seq: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "hit" | "snapshot";
+            /** T */
+            t: number;
+            /** Poll Gap Ms */
+            poll_gap_ms?: number | null;
+            /** Path */
+            path?: ("normal" | "skill") | null;
+            /** Rel */
+            rel?: number | null;
+            /**
+             * Segments
+             * @default []
+             */
+            segments: number[][];
+            /** Damage */
+            damage?: number | null;
+            target?: components["schemas"]["DamageTarget"] | null;
+            selected?: components["schemas"]["DamageSelected"] | null;
+            skill?: components["schemas"]["DamageSkill"] | null;
+            /**
+             * Not Mine Suspect
+             * @default false
+             */
+            not_mine_suspect: boolean;
+            /**
+             * Damage Lost Suspect
+             * @default false
+             */
+            damage_lost_suspect: boolean;
+            snapshot?: components["schemas"]["DamageSnapshot"] | null;
+        };
+        /** DamageSelected */
+        DamageSelected: {
+            /** Npc Id */
+            npc_id: number;
+            /** Instance */
+            instance: number;
+        };
+        /** DamageSkill */
+        DamageSkill: {
+            /** Cast Effect */
+            cast_effect: number;
+            /** Frame Key */
+            frame_key: number[];
+            /** Magic Id */
+            magic_id?: number | null;
+            /** Level */
+            level?: number | null;
+            /** Name */
+            name?: string | null;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "learned" | "ambiguous" | "unique" | "unknown";
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: number[];
+            /**
+             * Candidate Names
+             * @default []
+             */
+            candidate_names: (string | null)[];
+        };
+        /** DamageSnapshot */
+        DamageSnapshot: {
+            /** Level */
+            level: number;
+            /** Sect */
+            sect: number;
+            /**
+             * Sect Masks
+             * @default []
+             */
+            sect_masks: number[];
+            /** Panel */
+            panel: {
+                [key: string]: number;
+            };
+            /** Attrs */
+            attrs: number[];
+            /** Weapons */
+            weapons: components["schemas"]["DamageWeapon"][];
+            /** Buffs */
+            buffs: components["schemas"]["DamageBuff"][];
+        };
+        /** DamageStatus */
+        DamageStatus: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "recording" | "paused" | "waiting";
+            /** Note */
+            note?: string | null;
+            /** Elapsed */
+            elapsed: number;
+            /** Seq */
+            seq: number;
+            /** Events */
+            events: components["schemas"]["DamageEvent"][];
+            summary: components["schemas"]["DamageSummary"];
+            snapshot?: components["schemas"]["DamageSnapshot"] | null;
+        };
+        /** DamageSummary */
+        DamageSummary: {
+            /** Total Damage */
+            total_damage: number;
+            /** Hits */
+            hits: number;
+            /** Segments */
+            segments: number;
+            /** Misses */
+            misses: number;
+            /** Miss Rate */
+            miss_rate: number;
+            /** Crit Rate */
+            crit_rate: number;
+            /** Debuffed Share */
+            debuffed_share: number;
+            /** Combat Seconds */
+            combat_seconds: number;
+            /** Elapsed Seconds */
+            elapsed_seconds: number;
+            /** Combat Dps */
+            combat_dps: number;
+            /** Overall Dps */
+            overall_dps: number;
+            /** Gap Seconds */
+            gap_seconds: number;
+        };
+        /** DamageTarget */
+        DamageTarget: {
+            /** Handle */
+            handle: number;
+            /** Npc Id */
+            npc_id: number;
+            /** Instance */
+            instance: number;
+            /** Hp Pct */
+            hp_pct?: number | null;
+            /**
+             * Debuffs
+             * @default []
+             */
+            debuffs: number[];
+            /** Debuffs Before */
+            debuffs_before?: number[] | null;
+            /** Hp Pct Before */
+            hp_pct_before?: number | null;
+            /** Before Age Ms */
+            before_age_ms?: number | null;
+            /** Name */
+            name?: string | null;
+            /** Level */
+            level?: number | null;
+            /** Defense */
+            defense?: number | null;
+            /** Mdefense */
+            mdefense?: number | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "packet" | "selected" | "recent_attack";
+        };
+        /** DamageWeapon */
+        DamageWeapon: {
+            /** Slot */
+            slot: string;
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name?: string | null;
+            /** Plus */
+            plus: number;
+            /** Zhenjie */
+            zhenjie: number;
         };
         /**
          * DiagEventModel
@@ -3047,6 +3328,164 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KeepActiveStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_characters__pid__damage_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__damage_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_api_characters__pid__damage_clear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_characters__pid__damage_status_get: {
+        parameters: {
+            query?: {
+                since?: number;
+            };
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DamageStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_api_characters__pid__damage_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "application/x-ndjson": unknown;
                 };
             };
             /** @description Validation Error */
