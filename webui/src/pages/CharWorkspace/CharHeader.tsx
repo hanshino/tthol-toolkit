@@ -232,7 +232,6 @@ function StatSimActions({ pid, disabled, onError }: {
         type="button" className="ws-btn" disabled={disabled || busy !== null}
         onClick={() => run('open')}
         title="在瀏覽器開啟 genbu 配裝模擬器並直接匯入"
-        aria-label="在瀏覽器開啟配裝模擬器"
       >
         {busy === 'open' ? '讀取中…' : '開啟 ↗'}
       </button>
