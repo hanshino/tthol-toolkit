@@ -310,3 +310,44 @@ async def test_export_endpoint_refuses_a_character_that_is_not_ready():
     pm.u32(OBJ, 0)
     assert (await _get(_FakeManager(pm))).status_code == 409
     assert (await _get(None)).status_code == 503  # mock mode
+
+
+# ---------------------------------------------------------------- worker
+
+
+def _worker(live):
+    from services.worker import ReaderWorker
+
+    worker = ReaderWorker.__new__(ReaderWorker)
+    worker._live = live
+    worker._compat_mode = True
+    worker.is_alive = lambda: True
+    return worker
+
+
+def test_read_locked_passes_the_lock_and_layout():
+    pm = object()
+    assert _worker((pm, HP)).read_locked(lambda *args: args) == (pm, HP, True)
+
+
+def test_read_locked_survives_the_poll_rebuilding_the_same_lock():
+    pm = object()
+    worker = _worker((pm, HP))
+
+    def read(*_args):
+        worker._live = (pm, HP)  # what _track_position does every poll
+        return "ok"
+
+    assert worker.read_locked(read) == "ok"
+
+
+def test_read_locked_drops_a_read_when_the_lock_moved():
+    pm = object()
+    worker = _worker((pm, HP))
+
+    def read(*_args):
+        worker._live = (pm, HP + 0x1000)
+        return "stale"
+
+    assert worker.read_locked(read) is None
+    assert _worker(None).read_locked(lambda *a: "x") is None

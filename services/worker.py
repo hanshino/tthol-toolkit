@@ -240,7 +240,8 @@ class ReaderWorker(threading.Thread):
             return None
         pm, hp_addr = live
         result = read(pm, hp_addr, self._compat_mode)
-        if self._live is not live:
+        # Compare by value: the position loop rebuilds the tuple every poll.
+        if self._live != live:
             return None
         return result
 
