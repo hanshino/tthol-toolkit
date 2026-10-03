@@ -1,0 +1,104 @@
+/* 戰錄 tab (DamageTab). Series colours were checked with the dataviz palette
+   validator against --tt-panel (#141a20): lightness, chroma, CVD separation
+   and contrast all pass. */
+.dmg {
+  --dmg-atk: #3987e5;
+  --dmg-crit: #c98500;
+  --dmg-skill: #9085e9;
+  --dmg-grid: rgba(138, 154, 164, 0.12);
+  display: grid; gap: 14px;
+}
+.dmg-mono { font-family: var(--tt-font-mono); font-variant-numeric: tabular-nums; }
+.dmg-dim { color: var(--tt-mute); }
+.dmg-lbl { font-size: 11px; letter-spacing: 2px; color: var(--tt-mute); }
+.dmg-note { font-size: 11.5px; color: var(--tt-mute); line-height: 1.6; margin: 8px 0 0; }
+.dmg-error { color: var(--tt-bad); font-size: 13px; }
+
+.dmg-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dmg-spacer { flex: 1; }
+.dmg-status { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 10px; border: 1px solid var(--tt-line); color: var(--tt-dim); }
+.dmg-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tt-mute); }
+.dmg-status[data-state="recording"] { border-color: var(--tt-seal); color: var(--tt-text); }
+.dmg-status[data-state="recording"] .dmg-dot { background: var(--tt-bad); animation: dmg-pulse 1.2s infinite; }
+.dmg-status[data-state="waiting"] { border-color: var(--tt-warn); color: var(--tt-warn); }
+.dmg-status[data-state="waiting"] .dmg-dot { background: var(--tt-warn); }
+@keyframes dmg-pulse { 50% { opacity: 0.3; } }
+button.dmg-danger { border-color: var(--tt-seal); color: var(--tt-bad); }
+.dmg-empty { line-height: 1.8; }
+
+.dmg-panel { background: var(--tt-panel); border: 1px solid var(--tt-line); padding: 12px 14px; min-width: 0; }
+.dmg-panel h3 { font-family: var(--tt-font-serif); font-size: 13px; letter-spacing: 3px; font-weight: 600; color: var(--tt-dim); margin: 0; }
+.dmg-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+
+.dmg-top { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 14px; }
+.dmg-tname { font-family: var(--tt-font-serif); font-size: 19px; letter-spacing: 3px; margin: 4px 0 2px; }
+.dmg-tmeta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--tt-dim); }
+.dmg-hp { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--tt-dim); }
+.dmg-hpbar { flex: 1; height: 6px; background: var(--tt-line-soft); position: relative; }
+.dmg-hpbar i { position: absolute; inset: 0 auto 0 0; background: var(--tt-bad); }
+.dmg-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.dmg-chip, .dmg-tag { font-size: 11.5px; padding: 1px 8px; border: 1px solid var(--tt-line); color: var(--tt-dim); white-space: nowrap; }
+.dmg-chip.is-debuff, .dmg-tag.is-debuff { border-color: var(--tt-warn); color: var(--tt-warn); }
+.dmg-tag.is-guess { border-style: dashed; }
+
+.dmg-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--tt-line); border: 1px solid var(--tt-line); }
+.dmg-tile { background: var(--tt-panel); padding: 10px 14px; min-width: 0; }
+.dmg-v { font-family: var(--tt-font-mono); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 600; margin-top: 4px; }
+.dmg-v.is-hero { color: var(--tt-gold); }
+.dmg-sub { font-size: 11.5px; color: var(--tt-mute); margin-top: 2px; }
+
+.dmg-main { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 14px; align-items: start; }
+.dmg-charts { display: grid; gap: 14px; min-width: 0; }
+.dmg-seg { display: flex; }
+.dmg-seg button { padding: 3px 10px; font-size: 12px; letter-spacing: 1px; margin-left: -1px; }
+.dmg-seg button[aria-pressed="true"] { border-color: var(--tt-gold); color: var(--tt-gold); position: relative; }
+.dmg-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--tt-dim); }
+.dmg-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.dmg-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.dmg-legend i.is-miss { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--tt-mute); background: none; }
+
+.dmg-plot { position: relative; }
+.dmg-plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+.dmg-axis text { fill: var(--tt-mute); font-size: 11px; font-family: var(--tt-font-mono); }
+.dmg-grid { stroke: var(--dmg-grid); stroke-width: 1; }
+.dmg-base { stroke: var(--tt-line); stroke-width: 1; }
+.dmg-idle { fill: var(--tt-line-soft); opacity: 0.6; }
+.dmg-line { fill: none; stroke: var(--tt-gold); stroke-width: 2; stroke-linejoin: round; }
+.dmg-end { fill: var(--tt-gold); stroke: var(--tt-panel); stroke-width: 2; }
+.dmg-endlabel { fill: var(--tt-text); font-size: 12px; font-family: var(--tt-font-mono); }
+.dmg-cross { stroke: var(--tt-dim); stroke-width: 1; stroke-dasharray: 3 3; }
+.dmg-miss { fill: var(--tt-panel); stroke: var(--tt-mute); stroke-width: 1.5; }
+.dmg-tip {
+  position: absolute; pointer-events: none; z-index: 2; white-space: nowrap;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: var(--tt-raised); border: 1px solid var(--tt-line); padding: 6px 10px; font-size: 12px; line-height: 1.6;
+}
+.dmg-tip b { font-family: var(--tt-font-mono); }
+
+.dmg-share { display: flex; gap: 2px; height: 10px; margin: 2px 0 10px; }
+.dmg-share i { display: block; height: 100%; }
+.dmg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dmg-table th { font-weight: 400; color: var(--tt-mute); font-size: 12px; letter-spacing: 1px; text-align: right; padding: 6px 8px; }
+.dmg-table td { padding: 5px 8px; border-top: 1px solid var(--tt-line-soft); text-align: right; font-family: var(--tt-font-mono); font-variant-numeric: tabular-nums; }
+.dmg-table th:first-child, .dmg-table td:first-child { text-align: left; }
+.dmg-table td:first-child { font-family: var(--tt-font); }
+.dmg-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }
+
+.dmg-snap { display: grid; gap: 4px; }
+.dmg-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 8px 0 0; font-size: 13px; }
+.dmg-kv dt { color: var(--tt-mute); }
+.dmg-kv dd { margin: 0; text-align: right; font-family: var(--tt-font-mono); font-variant-numeric: tabular-nums; }
+.dmg-kv dd.dmg-text { font-family: var(--tt-font); overflow-wrap: anywhere; }
+
+.dmg-logwrap { max-height: 320px; overflow: auto; border: 1px solid var(--tt-line-soft); }
+.dmg-log { min-width: 680px; }
+.dmg-log th { position: sticky; top: 0; background: var(--tt-raised); text-align: left; }
+.dmg-log td { text-align: left; font-family: var(--tt-font); }
+.dmg-log td.dmg-num { text-align: right; font-family: var(--tt-font-mono); }
+.dmg-log tr[data-miss] td { color: var(--tt-mute); }
+
+.dmg button:focus-visible, .dmg a.tt-btn:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .dmg-status[data-state="recording"] .dmg-dot { animation: none; } }
+@media (max-width: 960px) {
+  .dmg-top, .dmg-main { grid-template-columns: 1fr; }
+}

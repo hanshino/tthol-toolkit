@@ -20,6 +20,7 @@ from services import diagnostics
 from services import window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
+from services.damage_capture import DamageRecorderManager
 from services.fake_active import KeepActiveManager
 from services.market_db import MarketDB
 from services.market_survey import MarketSurveyManager
@@ -51,6 +52,7 @@ def _build_services(dev: bool) -> dict:
         "worker_manager": wm,
         "market_db": market_db,
         "market_manager": market,
+        "damage_manager": DamageRecorderManager(live=wm.live_handle, read_locked=wm.read_locked),
         "walk_manager": WalkManager(sample=wm.walk_sample),
         "snapshot_db": db,
         "autoclick_manager": autoclick,
@@ -191,6 +193,8 @@ def main() -> int:
         # or the game is left in follow-the-cursor mode.
         services["walk_manager"].shutdown()
         services["market_manager"].shutdown()
+        # Recorder threads hold timeBeginPeriod(1); stop them so it is released.
+        services["damage_manager"].shutdown()
     return 0
 
 

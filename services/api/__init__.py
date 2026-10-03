@@ -12,6 +12,7 @@ from services.api import autoclick as autoclick_module
 from services.api import walk as walk_module
 from services.api import backup as backup_module
 from services.api import characters as characters_module
+from services.api import damage as damage_module
 from services.api import diagnostics as diagnostics_module
 from services.api import doll as doll_module
 from services.api import items as items_module
@@ -123,6 +124,7 @@ def build_app(services: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(autoclick_module.router)
     app.include_router(walk_module.router)
     app.include_router(keep_active_module.router)
+    app.include_router(damage_module.router)
     app.include_router(maps_module.router)
     app.include_router(market_module.router)
     app.include_router(items_module.router)
