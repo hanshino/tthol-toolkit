@@ -1,13 +1,13 @@
 # 配裝模擬器匯出（TTHOL1）：tthol-memory 實作計畫
 
-> 狀態：**已實作，待實機驗證**（`feat/stat-sim-export`，2026-10-03）。第 1–6 項完成；第 7 項只驗過 genbu `decodeImport` 會接受輸出，還沒用開著的遊戲 client 對照面板。
+> 狀態：**已實作**（`feat/stat-sim-export`，2026-10-03）。第 1–6 項完成，第 7 項的資料部分驗過了：天外天 Lv186「阿克婭」從 app API 和 CLI 匯出的內容一致，丟進 genbu `assembleImport` + `computePanel` 後，面板 19 項有 18 項完全一致，負重上限差 +157（在已知誤差 +0..+215 內），轉生點數 140，沒有診斷訊息。還沒驗證：「開啟 ↗」在 pywebview 是否交給系統瀏覽器，以及 compat 佈局的角色。
 >
 > 跟原計畫不同的地方：
 > - 第 4 項沒有在 worker 加快取，改成 API 請求時用 `ReaderWorker.read_locked()` 在目前的鎖定位址即時讀取；讀的過程中鎖定換了就作廢（回 409）。
 > - 第 6 項的「開啟」按鈕用 `window.open`，pywebview 的 `OPEN_EXTERNAL_LINKS_IN_BROWSER`（預設 True）會交給系統瀏覽器，不另做 `webbrowser.open` API。
 > 契約（以它為準）：genbu `feat/stat-sim-import` 分支的 `docs/plans/2026-10-03-stat-sim-import-format.md`。
 > genbu 匯入端：`src/lib/stat-sim-import-codec.ts`（validator）、`src/lib/types/stat-sim-import.ts`、`src/lib/stat-sim-import.ts`。
-> 原型：`scripts/stat_sim_export_proto.py`（只讀不寫；`uv run python scripts/stat_sim_export_proto.py <輸出目錄>`）。
+> CLI：`scripts/stat_sim_export.py`（不開 app，讀所有開著的 client，輸出 JSON 和 TTHOL1 字串；`uv run python scripts/stat_sim_export.py <輸出目錄>`）。原本的原型已由它取代。
 
 ## 目標
 
