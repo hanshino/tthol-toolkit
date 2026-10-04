@@ -14,6 +14,7 @@
   --tt-warn: #d4b072;
   --tt-bad: #c87878;
   --tt-seal: #a04848;
+  --tt-live-player: #9fd3e3; /* other players on the live map: lighter than every data marker */
   --tt-grid: rgba(90, 136, 152, 0.05);
   --tt-font: "Noto Sans TC", "Source Han Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
   --tt-font-serif: "Noto Serif TC", "Source Han Serif TC", "Songti TC", "PMingLiU", serif;

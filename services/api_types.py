@@ -341,6 +341,32 @@ class ConnectResult(_Base):
     hp_addr: int | None = None
 
 
+class NearbyEntity(_Base):
+    """A live character object the client holds near the player (not the player itself)."""
+
+    # follower: a player's hero / summon (npc row flagged is_monster, but it has an owner)
+    kind: Literal["player", "follower", "monster", "npc"]
+    handle: int  # client object handle; only meaningful inside this pid
+    npc_id: int
+    instance: int
+    name: str | None = None
+    level: int | None = None  # monsters / NPCs from the npc table
+    hp_pct: int | None = None  # monsters only, 0..100
+    stalling: bool = False  # players seated at a stall
+    family: str | None = None  # players
+    owner: str | None = None  # followers: the owning player's name
+    # Map pixels (bottom-left origin, Minimap space) and the tile they fall in.
+    px: int
+    py: int
+    x: int
+    y: int
+    distance: int | None = None  # tiles (Chebyshev) from the player; None before the first step
+
+
+class Nearby(_Base):
+    entities: list[NearbyEntity] = []
+
+
 class StatSimExport(_Base):
     """TTHOL1 string for genbu's stat simulator, and the link that imports it."""
 

@@ -188,6 +188,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/nearby": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Character Nearby
+         * @description Players, monsters and NPCs the client holds around the character.
+         *
+         *     Read on demand from the worker's lock (~25 ms, sync handler in the thread
+         *     pool); the UI polls it about once a second while the live view is open.
+         *     409 while the character is not located.
+         */
+        get: operations["character_nearby_api_characters__pid__nearby_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/inventory/scan": {
         parameters: {
             query?: never;
@@ -2189,6 +2213,56 @@ export interface components {
             /** Y */
             y: number;
         };
+        /** Nearby */
+        Nearby: {
+            /**
+             * Entities
+             * @default []
+             */
+            entities: components["schemas"]["NearbyEntity"][];
+        };
+        /**
+         * NearbyEntity
+         * @description A live character object the client holds near the player (not the player itself).
+         */
+        NearbyEntity: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "player" | "follower" | "monster" | "npc";
+            /** Handle */
+            handle: number;
+            /** Npc Id */
+            npc_id: number;
+            /** Instance */
+            instance: number;
+            /** Name */
+            name?: string | null;
+            /** Level */
+            level?: number | null;
+            /** Hp Pct */
+            hp_pct?: number | null;
+            /**
+             * Stalling
+             * @default false
+             */
+            stalling: boolean;
+            /** Family */
+            family?: string | null;
+            /** Owner */
+            owner?: string | null;
+            /** Px */
+            px: number;
+            /** Py */
+            py: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Distance */
+            distance?: number | null;
+        };
         /** OkResponse */
         OkResponse: {
             /** Ok */
@@ -2727,6 +2801,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatSimExport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    character_nearby_api_characters__pid__nearby_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Nearby"];
                 };
             };
             /** @description Validation Error */

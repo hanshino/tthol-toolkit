@@ -3,17 +3,31 @@ import { get } from '../../api/client';
 import { useLivePosition } from '../../api/positionStore';
 import { Panel, StatNum } from '../../primitives';
 import type { CharacterRow, MapInfo } from '../../api/types';
-import { exitNames, levelTone, Minimap, useMinimapData, type MinimapHighlight } from './Minimap';
+import { exitNames, levelTone, Minimap, useMinimapData, type MapMode, type MinimapHighlight } from './Minimap';
+import { useNearby } from './useNearby';
 
-type ListTab = 'warps' | 'monsters' | 'nearby';
+// 出口 / 怪物 / 刷新點 read the map's data; 周遭 is what the client holds right now.
+type ListTab = 'warps' | 'monsters' | 'spawns' | 'live';
 
 // Map on the left (fixed while the list scrolls), one list at a time on the
 // right. Hovering a row lights its points on the map.
-export function MapAnalysis({ char }: { char: CharacterRow }) {
+export function MapAnalysis({ char, active = true }: { char: CharacterRow; active?: boolean }) {
   const [info, setInfo] = useState<MapInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<ListTab>('warps');
   const [hl, setHl] = useState<MinimapHighlight>(null);
+  // The list tab and the map mode move together: 周遭 shows the live map,
+  // the data tabs the data map; the map's own switch moves the tab back.
+  const [mode, setMode] = useState<MapMode>('data');
+  // Polled only while the live view is open on a visible 行止 tab (hidden tabs stay mounted).
+  const nearby = useNearby(char.pid, mode === 'live' && active);
+  const pickTab = (k: ListTab) => { setTab(k); setHl(null); setMode(k === 'live' ? 'live' : 'data'); };
+  const pickMode = (m: MapMode) => {
+    setMode(m);
+    setHl(null);
+    if (m === 'live') setTab('live');
+    else if (tab === 'live') setTab('warps');
+  };
   // The fast stream moves the map and the dot; the lists below follow the
   // 3 s row, so a step does not refetch them.
   const pos = useLivePosition(char.pid) ?? char.position;
@@ -55,8 +69,13 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
   const tabs: { k: ListTab; n: string; count: number }[] = [
     { k: 'warps', n: '出口', count: exits.length },
     { k: 'monsters', n: '怪物', count: info.monsters.length },
-    { k: 'nearby', n: '刷新點', count: info.nearby.length },
+    { k: 'spawns', n: '刷新點', count: info.nearby.length },
   ];
+  // NPCs stand where the data layer already draws them, so 周遭 leaves them out.
+  const livePlayers = nearby.entities.filter((e) => e.kind === 'player');
+  const liveFollowers = nearby.entities.filter((e) => e.kind === 'follower');
+  const liveMonsters = nearby.entities.filter((e) => e.kind === 'monster');
+  const liveCount = livePlayers.length + liveFollowers.length + liveMonsters.length;
   // Spread onto a row: hover and keyboard focus both light the map.
   const lights = (h: MinimapHighlight) => ({
     tabIndex: 0,
@@ -72,6 +91,7 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
             pid={char.pid}
             position={pos} charLevel={charLevel} highlight={hl}
             data={minimap.data} failed={minimap.failed}
+            mode={mode} onMode={pickMode} nearby={nearby}
           />
         </Panel>
       </div>
@@ -81,11 +101,18 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
           {tabs.map((t) => (
             <button
               key={t.k} type="button" role="tab" className="ma-tab"
-              aria-selected={tab === t.k} onClick={() => { setTab(t.k); setHl(null); }}
+              aria-selected={tab === t.k} onClick={() => pickTab(t.k)}
             >
               {t.n}<span className="ma-count">{t.count}</span>
             </button>
           ))}
+          <span className="ma-tab-sep" aria-hidden />
+          <button
+            type="button" role="tab" className="ma-tab" aria-selected={tab === 'live'} onClick={() => pickTab('live')}
+          >
+            <i className="ma-live-dot" aria-hidden />周遭
+            {nearby.at !== null && <span className="ma-count">{liveCount}</span>}
+          </button>
         </div>
 
         <div role="tabpanel" className="ma-list">
@@ -130,7 +157,7 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
             </>
           ))}
 
-          {tab === 'nearby' && (info.nearby.length === 0 ? <Empty text="無資料" /> : (
+          {tab === 'spawns' && (info.nearby.length === 0 ? <Empty text="無資料" /> : (
             info.nearby.map((sp, i) => (
               <div
                 key={`${sp.npc_id}-${sp.x}-${sp.y}-${i}`} className="ma-row"
@@ -141,6 +168,64 @@ export function MapAnalysis({ char }: { char: CharacterRow }) {
               </div>
             ))
           ))}
+
+          {tab === 'live' && (
+            nearby.failed && nearby.at === null ? <Empty text="讀不到周遭：角色尚未定位" />
+              : nearby.at === null ? <Empty text="讀取中…" />
+                : liveCount === 0 ? <Empty text="附近沒有其他玩家或怪物" />
+                  : (
+                    <>
+                      <div className="ma-row ma-live ma-head">
+                        <span /><span>名</span><span>級</span><span>氣血</span>
+                        <span style={{ textAlign: 'right' }}>距離</span><span style={{ textAlign: 'right' }}>座標</span>
+                      </div>
+                      {livePlayers.length > 0 && <div className="ma-group" data-kind="player">玩家 <span className="ma-count">{livePlayers.length}</span></div>}
+                      {livePlayers.map((e) => (
+                        <div key={e.handle} className="ma-row ma-live" {...lights({ handle: e.handle })}>
+                          <i className="ma-mark" data-kind="player" aria-hidden />
+                          <span className="ma-name">
+                            {e.name ?? '玩家'}
+                            {e.family && <span className="ma-sub">{e.family}</span>}
+                            {e.stalling && <span className="ma-tag ma-stall">擺攤</span>}
+                          </span>
+                          <span className="ma-mono ma-dim">—</span>
+                          <span className="ma-mono ma-dim">—</span>
+                          <span className="ma-mono ma-dim" style={{ textAlign: 'right' }}>{e.distance ?? '—'} 格</span>
+                          <span className="ma-mono ma-dim" style={{ textAlign: 'right' }}>{e.x},{e.y}</span>
+                        </div>
+                      ))}
+                      {liveFollowers.length > 0 && <div className="ma-group" data-kind="follower">跟隨 <span className="ma-count">{liveFollowers.length}</span></div>}
+                      {liveFollowers.map((e) => (
+                        <div key={e.handle} className="ma-row ma-live" {...lights({ handle: e.handle })}>
+                          <i className="ma-mark" data-kind="follower" aria-hidden />
+                          <span className="ma-name">
+                            {e.name ?? `#${e.npc_id}`}
+                            {e.owner && <span className="ma-sub">{e.owner} 的跟隨</span>}
+                          </span>
+                          <span className="ma-mono ma-dim">Lv {e.level ?? '—'}</span>
+                          <span className="ma-mono ma-dim">—</span>
+                          <span className="ma-mono ma-dim" style={{ textAlign: 'right' }}>{e.distance ?? '—'} 格</span>
+                          <span className="ma-mono ma-dim" style={{ textAlign: 'right' }}>{e.x},{e.y}</span>
+                        </div>
+                      ))}
+                      {liveMonsters.length > 0 && <div className="ma-group" data-kind="monster">怪物 <span className="ma-count">{liveMonsters.length}</span></div>}
+                      {liveMonsters.map((e) => (
+                        <div key={e.handle} className="ma-row ma-live" {...lights({ handle: e.handle })}>
+                          <i className="ma-mark" data-kind="monster" data-tone={levelTone(e.level, charLevel)} aria-hidden />
+                          <span className="ma-name">{e.name ?? `#${e.npc_id}`}</span>
+                          <span className="ma-mono" data-tone={levelTone(e.level, charLevel)}>Lv {e.level ?? '—'}</span>
+                          <span className="ma-hp" title={`${e.hp_pct ?? 0}%`}>
+                            <span className="ma-hp-bar"><span style={{ width: `${e.hp_pct ?? 0}%` }} /></span>
+                            <span className="ma-mono ma-dim">{e.hp_pct ?? '—'}%</span>
+                          </span>
+                          <span className="ma-mono ma-dim" style={{ textAlign: 'right' }}>{e.distance ?? '—'} 格</span>
+                          <span className="ma-mono ma-dim" style={{ textAlign: 'right' }}>{e.x},{e.y}</span>
+                        </div>
+                      ))}
+                      <p className="ma-note">只列遊戲畫面附近載入的物件，離開視野就會消失。</p>
+                    </>
+                  )
+          )}
         </div>
       </Panel>
     </div>

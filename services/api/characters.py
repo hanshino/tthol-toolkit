@@ -4,7 +4,7 @@ import time
 
 from fastapi import APIRouter, HTTPException, Request
 
-from services import stat_sim_export
+from services import nearby, stat_sim_export
 from services._mock import mock_chars, mock_world
 from services.backup import APP_VERSION
 from services.api_types import (
@@ -13,6 +13,7 @@ from services.api_types import (
     ConnectRequest,
     ConnectResult,
     Item,
+    Nearby,
     OkResponse,
     RelocateRequest,
     StatSimExport,
@@ -147,6 +148,24 @@ def export_stat_sim(pid: int, request: Request) -> StatSimExport:
     )
     code = stat_sim_export.encode(payload)
     return StatSimExport(code=code, url=stat_sim_export.import_url(code))
+
+
+@router.get("/characters/{pid}/nearby", response_model=Nearby)
+def character_nearby(pid: int, request: Request) -> Nearby:
+    """Players, monsters and NPCs the client holds around the character.
+
+    Read on demand from the worker's lock (~25 ms, sync handler in the thread
+    pool); the UI polls it about once a second while the live view is open.
+    409 while the character is not located.
+    """
+    wm = request.app.state.services.get("worker_manager")
+    if wm is None:
+        raise HTTPException(status_code=503, detail="No game connection (mock mode)")
+    raw = wm.read_locked(pid, nearby.read_nearby)
+    if raw is None:
+        raise HTTPException(status_code=409, detail="Character not located")
+    objects, own_tile = raw
+    return nearby.build(objects, own_tile)
 
 
 async def _wait_for_seq(sess, attr: str, before: int, timeout: float) -> bool:
