@@ -13,6 +13,12 @@
 .ws-name { display: flex; align-items: center; gap: 8px; font-family: var(--tt-font-serif); font-size: 18px; letter-spacing: 3px; min-width: 0; }
 .ws-name > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-sub { font-size: 12px; color: var(--tt-dim); }
+/* The hook pipe is connected for this client (傳音 tab shows). */
+.ws-hook {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; padding: 0 8px;
+  font-size: 11px; letter-spacing: 1px; color: var(--tt-ok); border: 1px solid #3f6a5e;
+}
+.ws-hook-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tt-ok); box-shadow: 0 0 0 3px rgba(124, 168, 152, 0.18); }
 .ws-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex: none; }
 
 button.ws-btn, button.ws-toggle { font-size: 12px; letter-spacing: 1px; padding: 6px 12px; min-height: 32px; background: var(--tt-bg); color: var(--tt-dim); }

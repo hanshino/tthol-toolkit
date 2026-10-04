@@ -10,6 +10,7 @@ from services.backup import APP_VERSION
 from services.api_types import (
     Character,
     CharacterDetail,
+    ChatLog,
     ConnectRequest,
     ConnectResult,
     Item,
@@ -166,6 +167,18 @@ def character_nearby(pid: int, request: Request) -> Nearby:
         raise HTTPException(status_code=409, detail="Character not located")
     objects, own_tile = raw
     return nearby.build(objects, own_tile)
+
+
+@router.get("/characters/{pid}/chat", response_model=ChatLog)
+def character_chat(pid: int, request: Request, after: int = 0) -> ChatLog:
+    """Chat the hook pipe delivered for this client, newer than seq `after`.
+
+    Kept in memory only (last 500). 503 when the hook reader is not running.
+    """
+    hub = request.app.state.services.get("hook_hub")
+    if hub is None:
+        raise HTTPException(status_code=503, detail="Hook reader not running")
+    return hub.chat(pid, after)
 
 
 async def _wait_for_seq(sess, attr: str, before: int, timeout: float) -> bool:

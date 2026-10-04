@@ -1,0 +1,52 @@
+/* 傳音: chat from the hook pipe (ChatTab.tsx). */
+.chat {
+  --ch-normal: var(--tt-text);
+  --ch-whisper: #d6a0d0;
+  --ch-party: var(--tt-live-player);
+  --ch-family: var(--tt-ok);
+  --ch-area: var(--tt-warn);
+  --ch-shout: var(--tt-bad);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.chat-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.chat-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+button.chat-chip {
+  display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 10px;
+  font-size: 12px; letter-spacing: 1px; color: var(--tt-dim);
+  background: var(--tt-bg); border: 1px solid var(--tt-line); cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+button.chat-chip:hover { border-color: var(--tt-dim); }
+button.chat-chip[aria-pressed="true"] { color: var(--tt-text); border-color: var(--tt-gold); }
+button.chat-chip:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
+.chat-chip[data-ch] .chat-chip-n { color: var(--ch-normal); }
+.chat-chip[data-ch="all"] .chat-chip-n { color: var(--tt-text); }
+.chat-chip[data-ch="whisper"] .chat-chip-n, .chat-ch[data-ch="whisper"] { color: var(--ch-whisper); }
+.chat-chip[data-ch="party"] .chat-chip-n, .chat-ch[data-ch="party"] { color: var(--ch-party); }
+.chat-chip[data-ch="family"] .chat-chip-n, .chat-ch[data-ch="family"] { color: var(--ch-family); }
+.chat-chip[data-ch="area"] .chat-chip-n, .chat-ch[data-ch="area"] { color: var(--ch-area); }
+.chat-chip[data-ch="shout"] .chat-chip-n, .chat-ch[data-ch="shout"] { color: var(--ch-shout); }
+.chat-count { font-family: var(--tt-font-mono); font-size: 11px; color: var(--tt-mute); letter-spacing: 0; }
+.chat-follow { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-dim); cursor: pointer; }
+
+.chat-list {
+  background: var(--tt-panel); border: 1px solid var(--tt-line);
+  height: calc(100vh - 330px); min-height: 280px; overflow-y: auto;
+}
+.chat-msg {
+  display: grid; grid-template-columns: 64px 44px minmax(0, auto) minmax(0, 1fr); gap: 10px; align-items: baseline;
+  padding: 6px 10px; font-size: 13px; line-height: 1.6; border-bottom: 1px solid var(--tt-line-soft);
+}
+.chat-msg:hover { background: var(--tt-raised); }
+.chat-time { font-family: var(--tt-font-mono); font-size: 11px; color: var(--tt-dim); }
+.chat-ch { color: var(--ch-normal); font-size: 11px; letter-spacing: 1px; padding: 0 5px; border: 1px solid currentColor; text-align: center; white-space: nowrap; }
+.chat-name { font-family: var(--tt-font-serif); color: var(--tt-gold); white-space: nowrap; }
+.chat-name[data-echo] { color: var(--tt-dim); }
+.chat-msg[data-own] .chat-name { color: var(--tt-text); }
+.chat-text { min-width: 0; overflow-wrap: anywhere; }
+.chat-empty { padding: 40px; text-align: center; font-size: 12px; color: var(--tt-mute); }
+.chat-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--tt-mute); }
+.chat-mono { font-family: var(--tt-font-mono); }
+@media (prefers-reduced-motion: reduce) {
+  button.chat-chip { transition: none; }
+}

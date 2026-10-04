@@ -21,6 +21,7 @@ from services import window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.damage_capture import DamageRecorderManager
+from services.hook_hub import HookHub
 from services.fake_active import KeepActiveManager
 from services.market_db import MarketDB
 from services.market_survey import MarketSurveyManager
@@ -44,7 +45,9 @@ def _build_services(dev: bool) -> dict:
     db = SnapshotDB()
     autoclick = AutoClickManager()
     keep_active = KeepActiveManager()
-    wm = WorkerManager(snapshot_db=db, autoclick_manager=autoclick)
+    hook = HookHub()
+    hook.start()
+    wm = WorkerManager(snapshot_db=db, autoclick_manager=autoclick, hook_hub=hook)
     market_db = MarketDB()
     market = MarketSurveyManager(live=wm.live_handle, pids=wm.live_pids, db=market_db)
     market.start()
@@ -54,6 +57,7 @@ def _build_services(dev: bool) -> dict:
         "market_manager": market,
         "damage_manager": DamageRecorderManager(live=wm.live_handle, read_locked=wm.read_locked),
         "walk_manager": WalkManager(sample=wm.walk_sample),
+        "hook_hub": hook,
         "snapshot_db": db,
         "autoclick_manager": autoclick,
         "keep_active_manager": keep_active,
@@ -195,6 +199,7 @@ def main() -> int:
         services["market_manager"].shutdown()
         # Recorder threads hold timeBeginPeriod(1); stop them so it is released.
         services["damage_manager"].shutdown()
+        services["hook_hub"].shutdown()
     return 0
 
 
