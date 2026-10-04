@@ -107,7 +107,7 @@ export function ChatTab({ pid, active }: { pid: number; active: boolean }) {
       </div>
 
       <div className="chat-foot">
-        <span>只收不發 · 不存檔 · 保留最近 {KEEP} 則{!feed.connected && feed.messages.length > 0 ? ' · hook 已斷線' : ''}</span>
+        <span>只收不發 · 從 hook 連線後開始記錄 · 保留最近 {KEEP} 則{!feed.connected && feed.messages.length > 0 ? ' · hook 已斷線' : ''}</span>
         <span className="chat-mono">pipe tthol-hook-{pid}</span>
       </div>
     </div>
