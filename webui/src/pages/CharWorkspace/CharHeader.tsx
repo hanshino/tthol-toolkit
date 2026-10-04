@@ -81,6 +81,9 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
             {unlocated
               ? `pid ${char.pid} · 尚未定位`
               : `${char.sect ? `${char.sect} · ` : ''}Lv ${char.level} · pid ${char.pid}`}
+            {char.hook && !gone && (
+              <span className="ws-hook"><span className="ws-hook-dot" aria-hidden />Hook 已連線 · v{char.hook.proto}</span>
+            )}
           </div>
         </div>
         <div className="ws-actions">

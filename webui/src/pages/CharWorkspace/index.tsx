@@ -4,6 +4,7 @@ import { isStopped, isUnlocated, type CharTab, type GlobalView } from '../../nav
 import { AutoClickTab } from './AutoClickTab';
 import { BodyTab } from './BodyTab';
 import { CharHeader } from './CharHeader';
+import { ChatTab } from './ChatTab';
 import { DamageTab } from './DamageTab';
 import { ItemsTab } from './ItemsTab';
 import { MapAnalysis } from './MapAnalysis';
@@ -21,6 +22,8 @@ const TABS: { k: CharTab; n: string; s: string }[] = [
   { k: 'damage', n: '戰錄', s: '傷害 · DPS' },
   { k: 'assist', n: '輔助', s: '英雄培養' },
 ];
+// Only for a client whose hook pipe is connected.
+const CHAT_TAB = { k: 'chat' as const, n: '傳音', s: '聊天' };
 
 export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
   char: CharacterRow; goneSince: number | null; tab: CharTab;
@@ -36,13 +39,15 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
   // different character starts fresh.
   const visited = useRef(new Set<CharTab>());
   visited.current.add(tab);
+  // Once opened it stays even if the hook drops, so it does not vanish under the user.
+  const tabs = char.hook || visited.current.has('chat') ? [...TABS, CHAT_TAB] : TABS;
 
   return (
     <div className="ws">
       <div className="ws-sticky">
         <CharHeader char={char} goneSince={goneSince} onBackToOverview={() => onNav('overview')} />
         <nav className="ws-tabs" role="tablist" aria-label="角色分頁">
-          {TABS.map(t => (
+          {tabs.map(t => (
             <button
               key={t.k} type="button" role="tab" className="ws-tab"
               aria-selected={tab === t.k} onClick={() => onTab(t.k)}
@@ -59,7 +64,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
             on the last detail instead of wiping them. */}
         {unlocated && detail === null
           ? <div className="ws-empty">角色定位後，這裡會自動讀取行囊、屬性、武學與地圖</div>
-          : TABS.filter(t => visited.current.has(t.k)).map(t => (
+          : tabs.filter(t => visited.current.has(t.k)).map(t => (
             <div key={t.k} role="tabpanel" hidden={tab !== t.k}>
               {t.k === 'items' && (
                 <ItemsTab pid={char.pid} detail={detail} error={error} onOpenSnapshots={() => onNav('snapshots')} />
@@ -70,6 +75,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
               {t.k === 'market' && <MarketTab pid={char.pid} onOpenPrices={() => onNav('market')} />}
               {t.k === 'damage' && <DamageTab pid={char.pid} active={tab === 'damage'} />}
               {t.k === 'assist' && <AutoClickTab pid={char.pid} />}
+              {t.k === 'chat' && <ChatTab pid={char.pid} active={tab === 'chat'} />}
             </div>
           ))}
       </div>

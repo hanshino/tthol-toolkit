@@ -31,10 +31,12 @@ class WorkerManager:
         self,
         snapshot_db: SnapshotDB | None = None,
         autoclick_manager=None,
+        hook_hub=None,
     ) -> None:
         self._sessions: dict[int, CharSession] = {}
         self._db = snapshot_db
         self._autoclick = autoclick_manager
+        self._hook = hook_hub
 
     def set_autoclick_manager(self, mgr) -> None:
         self._autoclick = mgr
@@ -76,6 +78,8 @@ class WorkerManager:
             r = sess.row() or _placeholder_row(pid, sess.link, sess.last_error)
             if self._autoclick is not None:
                 r = r.model_copy(update={"autoclick": self._autoclick.status(pid)})
+            if self._hook is not None:
+                r = r.model_copy(update={"hook": self._hook.status(pid)})
             rows.append(r)
         return WorldSnapshot(chars=rows, server_ts=time.time())
 

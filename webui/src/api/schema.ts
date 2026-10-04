@@ -212,6 +212,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Character Chat
+         * @description Chat the hook pipe delivered for this client, newer than seq `after`.
+         *
+         *     Kept in memory only (last 500). 503 when the hook reader is not running.
+         */
+        get: operations["character_chat_api_characters__pid__chat_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/inventory/scan": {
         parameters: {
             query?: never;
@@ -1265,6 +1287,7 @@ export interface components {
             buffs: components["schemas"]["BuffInfo"][];
             avatar?: components["schemas"]["Avatar"] | null;
             last_error?: components["schemas"]["ErrorInfo"] | null;
+            hook?: components["schemas"]["HookInfo"] | null;
         };
         /** CharacterStats */
         CharacterStats: {
@@ -1296,6 +1319,37 @@ export interface components {
             mingzhong: number;
             /** Shanduo */
             shanduo: number;
+        };
+        /** ChatLog */
+        ChatLog: {
+            /** Connected */
+            connected: boolean;
+            /** Proto */
+            proto?: number | null;
+            /** Last Seq */
+            last_seq: number;
+            /**
+             * Messages
+             * @default []
+             */
+            messages: components["schemas"]["ChatMessage"][];
+        };
+        /** ChatMessage */
+        ChatMessage: {
+            /** Seq */
+            seq: number;
+            /** Ts */
+            ts: number;
+            /** Channel */
+            channel: string;
+            /** Echo */
+            echo: boolean;
+            /** Own */
+            own: boolean;
+            /** Name */
+            name: string;
+            /** Text */
+            text: string;
         };
         /** ClientErrorRequest */
         ClientErrorRequest: {
@@ -1669,6 +1723,14 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HookInfo
+         * @description A hook pipe this app is reading for the character (protocol from its hello).
+         */
+        HookInfo: {
+            /** Proto */
+            proto: number;
         };
         /**
          * Inlay
@@ -2832,6 +2894,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Nearby"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    character_chat_api_characters__pid__chat_get: {
+        parameters: {
+            query?: {
+                after?: number;
+            };
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatLog"];
                 };
             };
             /** @description Validation Error */

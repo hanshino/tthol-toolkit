@@ -235,6 +235,31 @@ class Character(_Base):
     link: Literal["ok", "weak", "lost"]
 
 
+class HookInfo(_Base):
+    """A hook pipe this app is reading for the character (protocol from its hello)."""
+
+    proto: int
+
+
+class ChatMessage(_Base):
+    seq: int
+    ts: float  # epoch seconds
+    # normal / whisper / party / family / area / shout, or the raw code as digits
+    channel: str
+    # The sender's own copy; for a whisper `name` is then the target.
+    echo: bool
+    own: bool  # sent by this character (family / shout carry no sender key: always False)
+    name: str
+    text: str
+
+
+class ChatLog(_Base):
+    connected: bool
+    proto: int | None = None
+    last_seq: int
+    messages: list[ChatMessage] = []
+
+
 class CharacterRow(_Base):
     """Used inside WorldSnapshot — stats summary per char."""
 
@@ -249,6 +274,7 @@ class CharacterRow(_Base):
     buffs: list[BuffInfo] = []
     avatar: Avatar | None = None  # None until read, or when the DB has no art for it
     last_error: ErrorInfo | None = None
+    hook: HookInfo | None = None  # set only while a hook pipe is connected for this pid
 
 
 class CharacterDetail(_Base):
