@@ -16,6 +16,7 @@ const CHANNELS: { k: string; n: string }[] = [
   { k: 'family', n: '家族' },
   { k: 'area', n: '區域' },
   { k: 'shout', n: '世界' },
+  { k: 'system', n: '系統' },
 ];
 const CHANNEL_NAME: Record<string, string> = Object.fromEntries(CHANNELS.map(c => [c.k, c.n]));
 

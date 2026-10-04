@@ -9,8 +9,12 @@ A hooked game client serves JSON lines on \\\\.\\pipe\\tthol-hook-<pid>:
 
 The pipe takes one reader at a time, so while the app runs it is that reader
 (set TTHOL_NO_HOOK=1 to leave the pipes alone). Only inbound chat (game packet
-sub-type 0x0E) is decoded and kept, in memory; every other message is dropped
-unread. Nothing here writes to the pipe or touches game memory.
+sub-type 0x0E) and system lines (0xFD) are decoded and kept, in memory; every
+other message is dropped unread. Nothing here writes to the pipe.
+
+World shouts and system lines carry an id into the client's template table
+(reader.read_string_table, read from game memory through the worker). They are
+filled in when the log is read, so a table that loads late still applies.
 """
 
 from __future__ import annotations
@@ -18,11 +22,15 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import struct
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Callable
 
+from reader import read_string_table
 from services.api_types import ChatLog, ChatMessage, HookInfo
 
 log = logging.getLogger("tthol.hook_hub")
@@ -31,9 +39,11 @@ PIPE_DIR = "\\\\.\\pipe\\"
 PIPE_PREFIX = "tthol-hook-"
 GAME_PACKET = 900
 CHAT = 0x0E
+SYSTEM = 0xFD
 CHAT_TEXT_OFFSET = 29
 KEEP = 500
 SCAN_INTERVAL = 1.0
+STRINGS_RETRY = 10.0  # seconds between template table reads while it is unavailable
 
 CHANNELS = {1: "normal", 2: "whisper", 3: "party", 4: "family", 5: "area", 200: "shout"}
 
@@ -63,6 +73,57 @@ def decode_chat(raw: bytes) -> ChatPacket | None:
     )
 
 
+def decode_system(raw: bytes) -> tuple[int, list[str]] | None:
+    """FD <u16 template id> <cp950 arg> 00, e.g. 60077 + a family member's name.
+
+    Only one-arg lines have been seen; several args are assumed NUL separated.
+    """
+    if len(raw) < 3 or raw[0] != SYSTEM:
+        return None
+    args = [a.decode("cp950", errors="replace") for a in raw[3:].split(b"\0")]
+    while args and not args[-1]:
+        args.pop()
+    return struct.unpack_from("<H", raw, 1)[0], args
+
+
+_SPEC = re.compile(r"%%|%[-+ 0#]*\d*(?:\.\d+)?[sdiuxXc]")
+_SAYS = "%s 說> "
+
+
+def fill(template: str, args: list[str]) -> str | None:
+    """printf-style template with args in order; None when the counts differ."""
+    if sum(1 for m in _SPEC.finditer(template) if m.group() != "%%") != len(args):
+        return None
+    it = iter(args)
+    return _SPEC.sub(lambda m: "%" if m.group() == "%%" else next(it), template)
+
+
+def render_shout(text: str, name: str, strings: dict[int, str]) -> str:
+    """'6035 天芯 聖龍靴毛胚 蔚藍聖龍鞋' -> its template, minus the 'name 說>' lead the row already shows."""
+    head, _, rest = text.partition(" ")
+    if not head.isdigit() or int(head) not in strings:
+        return text
+    template, args = strings[int(head)], rest.split(" ") if rest else []
+    # The last arg is free text (6014 "%s (%s) 大聲說> %s") and may hold spaces.
+    n = sum(1 for m in _SPEC.finditer(template) if m.group() != "%%")
+    if 0 < n < len(args):
+        args = args[: n - 1] + [" ".join(args[n - 1 :])]
+    if template.startswith(_SAYS) and args and args[0] == name:
+        template, args = template[len(_SAYS) :], args[1:]
+    return fill(template, args) or text
+
+
+def render_system(template_id: int, args: list[str], strings: dict[int, str]) -> str:
+    template = strings.get(template_id)
+    text = fill(template, args) if template is not None else None
+    return text if text is not None else " ".join([f"#{template_id}", *args])
+
+
+def read_templates(pm, _hp_addr, _compat_mode) -> dict[int, str]:
+    """WorkerManager.read_locked reader for the template table."""
+    return read_string_table(pm)
+
+
 def list_hook_pids() -> list[int]:
     try:
         names = os.listdir(PIPE_DIR)
@@ -75,18 +136,38 @@ def list_hook_pids() -> list[int]:
     ]
 
 
+@dataclass
+class _Line:
+    seq: int
+    ts: float
+    channel: str
+    echo: bool
+    own: bool
+    name: str
+    text: str
+    template: int | None = None  # system line: id into the template table
+    args: list[str] = field(default_factory=list)
+
+
 class _Feed:
     def __init__(self) -> None:
         self.lock = threading.Lock()
-        self.messages: deque[ChatMessage] = deque(maxlen=KEEP)
+        self.messages: deque[_Line] = deque(maxlen=KEEP)
         self.seq = 0
         self.proto: int | None = None  # set while a reader is connected
         self.reader: threading.Thread | None = None
 
 
 class HookHub:
-    def __init__(self, list_pids=list_hook_pids) -> None:
+    def __init__(
+        self,
+        list_pids=list_hook_pids,
+        strings: Callable[[int], dict[int, str] | None] | None = None,
+    ) -> None:
         self._list_pids = list_pids
+        self._load_strings = strings
+        self._strings: dict[int, dict[int, str]] = {}
+        self._strings_tried: dict[int, float] = {}
         self._feeds: dict[int, _Feed] = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -98,6 +179,10 @@ class HookHub:
             return
         self._scanner = threading.Thread(target=self._scan_loop, daemon=True, name="hook-scan")
         self._scanner.start()
+
+    def set_strings(self, strings: Callable[[int], dict[int, str] | None]) -> None:
+        """Where the template table comes from: pid -> {id: text}, or None while unavailable."""
+        self._load_strings = strings
 
     def shutdown(self) -> None:
         # Readers block in ReadFile; they are daemons and end with the process.
@@ -118,10 +203,34 @@ class HookHub:
             # old run: hand it everything.
             if after > feed.seq:
                 after = 0
-            msgs = [m for m in feed.messages if m.seq > after]
-            return ChatLog(
-                connected=feed.proto is not None, proto=feed.proto, last_seq=feed.seq, messages=msgs
-            )
+            lines = [m for m in feed.messages if m.seq > after]
+            connected, proto, last_seq = feed.proto is not None, feed.proto, feed.seq
+        templated = any(m.template is not None or m.channel == "shout" for m in lines)
+        strings = self._templates(pid) if templated else {}
+        return ChatLog(
+            connected=connected,
+            proto=proto,
+            last_seq=last_seq,
+            messages=[_render(m, strings) for m in lines],
+        )
+
+    def _templates(self, pid: int) -> dict[int, str]:
+        """The client's template table, read once per process (fixed for a game build)."""
+        if pid in self._strings or self._load_strings is None:
+            return self._strings.get(pid, {})
+        now = time.monotonic()
+        if now - self._strings_tried.get(pid, -STRINGS_RETRY) < STRINGS_RETRY:
+            return {}
+        self._strings_tried[pid] = now
+        try:
+            table = self._load_strings(pid)
+        except Exception:
+            log.exception("template table read failed pid=%d", pid, extra={"cat": "hook"})
+            table = None
+        if table:
+            self._strings[pid] = table
+            log.info("template table loaded pid=%d n=%d", pid, len(table), extra={"cat": "hook"})
+        return table or {}
 
     def _feed(self, pid: int) -> _Feed:
         with self._lock:
@@ -177,25 +286,39 @@ class HookHub:
         if t != "msg" or ev.get("type") != GAME_PACKET:
             return
         raw_hex = ev.get("raw") or ""
-        if raw_hex[:2].lower() != "0e":
-            return  # anything but chat is never decoded or kept
-        pkt = decode_chat(bytes.fromhex(raw_hex))
+        if raw_hex[:2].lower() not in ("0e", "fd"):
+            return  # anything but chat and system lines is never decoded or kept
+        raw = bytes.fromhex(raw_hex)
+        ts_us = ev.get("ts_us")
+        ts = ts_us / 1e6 if ts_us else time.time()
+        if raw[0] == SYSTEM:
+            system = decode_system(raw)
+            if system is not None:
+                template, args = system
+                self._append(pid, _Line(0, ts, "system", False, False, "", "", template, args))
+            return
+        pkt = decode_chat(raw)
         if pkt is None:
             return
         self_key = ev.get("self_key")
         own = bool(self_key) and any(pkt.key) and pkt.key == bytes.fromhex(self_key)
-        ts_us = ev.get("ts_us")
+        self._append(pid, _Line(0, ts, pkt.channel, pkt.echo, own, pkt.name, pkt.text))
+
+    def _append(self, pid: int, line: _Line) -> None:
         feed = self._feed(pid)
         with feed.lock:
             feed.seq += 1
-            feed.messages.append(
-                ChatMessage(
-                    seq=feed.seq,
-                    ts=ts_us / 1e6 if ts_us else time.time(),
-                    channel=pkt.channel,
-                    echo=pkt.echo,
-                    own=own,
-                    name=pkt.name,
-                    text=pkt.text,
-                )
-            )
+            line.seq = feed.seq
+            feed.messages.append(line)
+
+
+def _render(m: _Line, strings: dict[int, str]) -> ChatMessage:
+    if m.template is not None:
+        text = render_system(m.template, m.args, strings)
+    elif m.channel == "shout":
+        text = render_shout(m.text, m.name, strings)
+    else:
+        text = m.text
+    return ChatMessage(
+        seq=m.seq, ts=m.ts, channel=m.channel, echo=m.echo, own=m.own, name=m.name, text=text
+    )

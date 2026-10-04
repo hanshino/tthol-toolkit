@@ -6,6 +6,7 @@
   --ch-family: var(--tt-ok);
   --ch-area: var(--tt-warn);
   --ch-shout: var(--tt-bad);
+  --ch-system: var(--tt-accent);
   display: flex; flex-direction: column; gap: 10px;
 }
 .chat-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -26,6 +27,7 @@ button.chat-chip:focus-visible { outline: 1px solid var(--tt-gold); outline-offs
 .chat-chip[data-ch="family"] .chat-chip-n, .chat-ch[data-ch="family"] { color: var(--ch-family); }
 .chat-chip[data-ch="area"] .chat-chip-n, .chat-ch[data-ch="area"] { color: var(--ch-area); }
 .chat-chip[data-ch="shout"] .chat-chip-n, .chat-ch[data-ch="shout"] { color: var(--ch-shout); }
+.chat-chip[data-ch="system"] .chat-chip-n, .chat-ch[data-ch="system"] { color: var(--ch-system); }
 .chat-count { font-family: var(--tt-font-mono); font-size: 11px; color: var(--tt-mute); letter-spacing: 0; }
 .chat-follow { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-dim); cursor: pointer; }
 
