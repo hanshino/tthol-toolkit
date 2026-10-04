@@ -21,7 +21,7 @@ from services import window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.damage_capture import DamageRecorderManager
-from services.hook_hub import HookHub
+from services.hook_hub import HookHub, read_templates
 from services.fake_active import KeepActiveManager
 from services.market_db import MarketDB
 from services.market_survey import MarketSurveyManager
@@ -48,6 +48,8 @@ def _build_services(dev: bool) -> dict:
     hook = HookHub()
     hook.start()
     wm = WorkerManager(snapshot_db=db, autoclick_manager=autoclick, hook_hub=hook)
+    # Shout / system-line templates come from game memory, through the worker's lock.
+    hook.set_strings(lambda pid: wm.read_locked(pid, read_templates))
     market_db = MarketDB()
     market = MarketSurveyManager(live=wm.live_handle, pids=wm.live_pids, db=market_db)
     market.start()

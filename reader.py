@@ -1487,6 +1487,47 @@ def _obj_text(buf, offset, size):
         return None
 
 
+# The client's message templates (cp950, printf style): a std::map<int, char*>
+# at a static address, [+4] head node, [+8] size. MSVC tree node: +0 left,
+# +4 parent, +8 right, +0xC key, +0x10 text, +0x15 isnil. World shouts and
+# system lines (hook packet 0xFD) carry ids into it, e.g. 6033..6037
+# "%s 說> 好運到，歡喜開 %s 禮得 %s 好寶。", 60077 "家族成員%s上線了!".
+# Not in tthol.sqlite. 3,499 entries, verified 2026-10-05 on two clients.
+STRING_TABLE_PTR = 0x008094C4
+STRING_NODE_SIZE = 0x16
+STRING_MAX_LEN = 512
+
+
+def read_string_table(pm):
+    """{id: text} of every client message template (~7,000 small reads)."""
+    head = _read_u32(pm, STRING_TABLE_PTR + 4)
+    size = _read_u32(pm, STRING_TABLE_PTR + 8)
+    out = {}
+    stack = [_read_u32(pm, head + 4)]
+    # Bounded by the declared size, so a torn read cannot loop forever.
+    visits = 0
+    while stack and visits <= size * 2:
+        node = stack.pop()
+        visits += 1
+        # Small heap blocks can sit below HEAP_MIN_PTR; only rule out null-ish values.
+        if node == head or not 0x10000 <= node <= 0x7FFFFFFF:
+            continue
+        try:
+            buf = pm.read_bytes(node, STRING_NODE_SIZE)
+        except Exception:
+            continue
+        if buf[0x15]:
+            continue
+        left, _parent, right, key, text = struct.unpack_from("<IIIiI", buf)
+        stack += [left, right]
+        try:
+            raw = pm.read_bytes(text, STRING_MAX_LEN)
+        except Exception:
+            continue
+        out[key] = raw.split(b"\0", 1)[0].decode("cp950", errors="replace")
+    return out
+
+
 def find_shop_window(pm, windows):
     """Address of the open CWndShopList (stall or NPC shop), or None."""
     for wnd in windows:

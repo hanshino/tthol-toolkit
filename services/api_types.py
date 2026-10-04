@@ -244,7 +244,8 @@ class HookInfo(_Base):
 class ChatMessage(_Base):
     seq: int
     ts: float  # epoch seconds
-    # normal / whisper / party / family / area / shout, or the raw code as digits
+    # normal / whisper / party / family / area / shout, or the raw code as digits;
+    # system = a client system line (hook packet 0xFD), name empty
     channel: str
     # The sender's own copy; for a whisper `name` is then the target.
     echo: bool
