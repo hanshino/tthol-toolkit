@@ -66,7 +66,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
               )}
               {t.k === 'body' && <BodyTab detail={detail} error={error} />}
               {t.k === 'skills' && <SkillsTab detail={detail} error={error} />}
-              {t.k === 'maps' && <MapAnalysis char={char} />}
+              {t.k === 'maps' && <MapAnalysis char={char} active={tab === 'maps'} />}
               {t.k === 'market' && <MarketTab pid={char.pid} onOpenPrices={() => onNav('market')} />}
               {t.k === 'damage' && <DamageTab pid={char.pid} active={tab === 'damage'} />}
               {t.k === 'assist' && <AutoClickTab pid={char.pid} />}

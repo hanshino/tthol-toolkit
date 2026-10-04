@@ -1391,6 +1391,102 @@ def scan_stallers(pm, hp_addr=None):
     return stallers
 
 
+# Every character object the client holds (players, monsters, NPCs in or near
+# view) is in the sprite manager's handle table: obj = [[[0x787748]+8] +
+# (h & 0xFFFF)*4], valid while [obj+0x1C] == h. About 3,600 of the 8,192 slots
+# hold garbage pointers; from outside the process those reads just fail.
+# +0x26 / +0x2A are the object's map pixels (int16) in the minimap's space:
+# bottom-left origin, tile = px // 40 (own object: matches hp_addr+416/+420;
+# NPCs: within one tile of map_placements). Verified 2026-10-04 on two maps.
+SPRITE_MANAGER_PTR = 0x00787748
+SPRITE_TABLE_OFFSET = 0x8
+SPRITE_SLOTS = 0x2000
+OBJ_HANDLE_OFFSET = 0x1C
+OBJ_KEY_OFFSET = 0x12C  # packet key: u16 kind, u32 npc.id, u32 instance
+OBJ_PX_X_OFFSET = 0x26
+OBJ_PX_Y_OFFSET = 0x2A
+# Big5 label under the name: a player's family name, a follower's (hero /
+# summon) owner name, empty for NPCs. Followers are npc rows flagged
+# is_monster like wild ones; this is what tells them apart (2026-10-04: 8
+# followers of 6 players matched, NPCs read empty).
+OBJ_TAG_OFFSET = 0x221
+OBJ_TAG_SIZE = 32
+OBJ_READ_SIZE = CHAR_OBJ_HP_OFFSET + 4  # through the HP percent (covers name and tag)
+OBJ_HEAD_SIZE = 0x20
+
+
+@dataclass(frozen=True)
+class NearbyObject:
+    handle: int
+    npc_id: int  # npc.id; 60001..60010 are the player classes
+    instance: int
+    px: int  # map pixels, bottom-left origin
+    py: int
+    name: str | None
+    state: int  # CHAR_STATE_STALLING = seated at a stall
+    hp_pct: int  # other characters only carry 0..100; own object holds real HP
+    tag: str | None  # OBJ_TAG_OFFSET: family name (players) or owner name (followers)
+    is_self: bool
+
+
+def scan_nearby(pm, hp_addr=None):
+    """Every live character object in the sprite table (~25 ms, read-only).
+
+    hp_addr marks the viewer's own object (is_self). Empty slots, freed
+    objects and the npc.id 0 placeholders the client keeps are skipped.
+    """
+    mgr = struct.unpack("<I", pm.read_bytes(SPRITE_MANAGER_PTR, 4))[0]
+    table = struct.unpack("<I", pm.read_bytes(mgr + SPRITE_TABLE_OFFSET, 4))[0]
+    slots = struct.unpack(f"<{SPRITE_SLOTS}I", pm.read_bytes(table, SPRITE_SLOTS * 4))
+    own_obj = hp_addr - CHAR_OBJ_HP_OFFSET if hp_addr else None
+    found = []
+    for index, obj in enumerate(slots):
+        if obj < HEAP_MIN_PTR or obj > 0x7FFFFFFF:
+            continue
+        try:
+            head = pm.read_bytes(obj, OBJ_HEAD_SIZE)
+        except Exception:
+            continue
+        vtable, handle = (
+            struct.unpack_from("<I", head, 0)[0],
+            struct.unpack_from("<I", head, OBJ_HANDLE_OFFSET)[0],
+        )
+        if vtable != CHAR_OBJ_VTABLE or handle & 0xFFFF != index:
+            continue
+        try:
+            buf = pm.read_bytes(obj, OBJ_READ_SIZE)
+        except Exception:
+            continue
+        _kind, npc_id, instance = struct.unpack_from("<HII", buf, OBJ_KEY_OFFSET)
+        if npc_id == 0:
+            continue
+        found.append(
+            NearbyObject(
+                handle=handle,
+                npc_id=npc_id,
+                instance=instance,
+                px=struct.unpack_from("<h", buf, OBJ_PX_X_OFFSET)[0],
+                py=struct.unpack_from("<h", buf, OBJ_PX_Y_OFFSET)[0],
+                name=_obj_text(buf, CHAR_NAME_OFFSET, 32),
+                state=struct.unpack_from("<i", buf, CHAR_STATE_OFFSET)[0],
+                hp_pct=struct.unpack_from("<i", buf, CHAR_OBJ_HP_OFFSET)[0],
+                tag=_obj_text(buf, OBJ_TAG_OFFSET, OBJ_TAG_SIZE),
+                is_self=obj == own_obj,
+            )
+        )
+    return found
+
+
+def _obj_text(buf, offset, size):
+    """NUL-terminated cp950 text inside an object buffer, colour code stripped; None when empty."""
+    end = buf.find(b"\x00", offset, offset + size)
+    raw = buf[offset : end if end >= 0 else offset + size]
+    try:
+        return normalize_player_name(raw.decode("cp950")) or None
+    except UnicodeDecodeError:
+        return None
+
+
 def find_shop_window(pm, windows):
     """Address of the open CWndShopList (stall or NPC shop), or None."""
     for wnd in windows:
