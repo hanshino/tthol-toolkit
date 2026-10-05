@@ -22,6 +22,8 @@ from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.damage_capture import DamageRecorderManager
 from services.guard import GuardManager
+from services.buff_tracker import BUFF_PACKET, BuffTracker
+from services.hook_cmd import CommandChannel
 from services.hook_hub import HookHub, read_templates
 from services.fake_active import KeepActiveManager
 from services.market_db import MarketDB
@@ -48,12 +50,25 @@ def _build_services(dev: bool) -> dict:
     keep_active = KeepActiveManager()
     hook = HookHub()
     hook.start()
-    wm = WorkerManager(snapshot_db=db, autoclick_manager=autoclick, hook_hub=hook)
+    # One command channel: its per-pid lock keeps the guard and the buff
+    # tracker from racing for the single pipe instance.
+    channel = CommandChannel()
+    buffs = BuffTracker(
+        connected=lambda pid: hook.status(pid) is not None,
+        pids=hook.connected_pids,
+        channel=channel,
+    )
+    hook.add_packet_listener(BUFF_PACKET, buffs.on_packet)
+    buffs.start()
+    wm = WorkerManager(
+        snapshot_db=db, autoclick_manager=autoclick, hook_hub=hook, buff_tracker=buffs
+    )
     # Shout / system-line templates come from game memory, through the worker's lock.
     hook.set_strings(lambda pid: wm.read_locked(pid, read_templates))
     guard = GuardManager(
         read_locked=wm.read_locked,
         character_name=wm.character_name,
+        channel=channel,
         icon_url=lambda item_id: (
             item_catalog.icon_path(item_id) if item_catalog.icon_url(item_id) else None
         ),
@@ -74,6 +89,7 @@ def _build_services(dev: bool) -> dict:
         "autoclick_manager": autoclick,
         "keep_active_manager": keep_active,
         "guard_manager": guard,
+        "buff_tracker": buffs,
     }
 
 
@@ -214,6 +230,7 @@ def main() -> int:
         services["damage_manager"].shutdown()
         services["hook_hub"].shutdown()
         services["guard_manager"].shutdown()
+        services["buff_tracker"].shutdown()
     return 0
 
 

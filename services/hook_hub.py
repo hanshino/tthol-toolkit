@@ -11,7 +11,8 @@ The pipe takes one reader at a time, so while the app runs it is that reader
 (set TTHOL_NO_HOOK=1 to leave the pipes alone). Only inbound chat (game packet
 sub-type 0x0E) and system lines (0xFD) are decoded and kept, in memory; the own
 HP / MP packet (0x06) is decoded and handed to listeners (the guard), not kept;
-every other message is dropped unread. Nothing here writes to the pipe.
+sub-types a packet listener asked for (0x29 own buffs, services.buff_tracker)
+are handed over raw; every other message is dropped unread. Nothing here writes to the pipe.
 
 World shouts and system lines carry an id into the client's template table
 (reader.read_string_table, read from game memory through the worker). They are
@@ -183,6 +184,7 @@ class HookHub:
         self._stop = threading.Event()
         self._scanner: threading.Thread | None = None
         self._vitals_listeners: list[Callable[[int, int, int], None]] = []
+        self._packet_listeners: dict[int, list[Callable[[int, bytes, float], None]]] = {}
 
     def start(self) -> None:
         if os.environ.get("TTHOL_NO_HOOK") == "1":
@@ -195,6 +197,12 @@ class HookHub:
         """listener(pid, hp, mp) on every own 0x06, on the pipe reader thread: keep it quick."""
         self._vitals_listeners.append(listener)
 
+    def add_packet_listener(
+        self, sub_type: int, listener: Callable[[int, bytes, float], None]
+    ) -> None:
+        """listener(pid, raw, unix ts) for every inbound packet of this sub-type (reader thread)."""
+        self._packet_listeners.setdefault(sub_type, []).append(listener)
+
     def set_strings(self, strings: Callable[[int], dict[int, str] | None]) -> None:
         """Where the template table comes from: pid -> {id: text}, or None while unavailable."""
         self._load_strings = strings
@@ -202,6 +210,11 @@ class HookHub:
     def shutdown(self) -> None:
         # Readers block in ReadFile; they are daemons and end with the process.
         self._stop.set()
+
+    def connected_pids(self) -> list[int]:
+        """Pids whose event pipe this hub is reading now."""
+        with self._lock:
+            return [pid for pid, feed in self._feeds.items() if feed.proto is not None]
 
     def status(self, pid: int) -> HookInfo | None:
         feed = self._feeds.get(pid)
@@ -303,6 +316,17 @@ class HookHub:
         raw_hex = ev.get("raw") or ""
         if raw_hex[:2] == "06":
             self._vitals(pid, ev, raw_hex)
+            return
+        listeners = self._packet_listeners.get(int(raw_hex[:2] or "0", 16)) if raw_hex else None
+        if listeners:
+            raw = bytes.fromhex(raw_hex)
+            ts_us = ev.get("ts_us")
+            ts = ts_us / 1e6 if ts_us else time.time()
+            for listener in listeners:
+                try:
+                    listener(pid, raw, ts)
+                except Exception:
+                    log.exception("packet listener failed pid=%d", pid, extra={"cat": "hook"})
             return
         if raw_hex[:2].lower() not in ("0e", "fd"):
             return  # anything but chat and system lines is never decoded or kept

@@ -18,6 +18,7 @@ from services.api_types import (
     Vitals,
     WorldSnapshot,
 )
+from services.buff_tracker import merge_buffs
 from services.char_session import CharSession
 from services.events import PositionStream, WorldStream
 from services.process_detector import find_tthol_processes
@@ -32,11 +33,13 @@ class WorkerManager:
         snapshot_db: SnapshotDB | None = None,
         autoclick_manager=None,
         hook_hub=None,
+        buff_tracker=None,
     ) -> None:
         self._sessions: dict[int, CharSession] = {}
         self._db = snapshot_db
         self._autoclick = autoclick_manager
         self._hook = hook_hub
+        self._buffs = buff_tracker
 
     def set_autoclick_manager(self, mgr) -> None:
         self._autoclick = mgr
@@ -80,6 +83,7 @@ class WorkerManager:
                 r = r.model_copy(update={"autoclick": self._autoclick.status(pid)})
             if self._hook is not None:
                 r = r.model_copy(update={"hook": self._hook.status(pid)})
+            r = self._with_hook_buffs(pid, r)
             rows.append(r)
         return WorldSnapshot(chars=rows, server_ts=time.time())
 
@@ -88,7 +92,16 @@ class WorkerManager:
         if sess is None:
             sess = CharSession(pid)
             self._sessions[pid] = sess
-        return sess.detail()
+        return self._with_hook_buffs(pid, sess.detail())
+
+    def _with_hook_buffs(self, pid: int, model):
+        """Replace the memory-array buffs with the hook's list when it has one."""
+        if self._buffs is None:
+            return model
+        hooked = self._buffs.buffs(pid)
+        if hooked is None:
+            return model
+        return model.model_copy(update={"buffs": merge_buffs(hooked, model.buffs)})
 
     def connect(self, pid: int, body: ConnectRequest) -> ConnectResult:
         sess = self._sessions.get(pid)

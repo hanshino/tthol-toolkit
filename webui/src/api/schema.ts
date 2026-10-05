@@ -1275,10 +1275,14 @@ export interface components {
         };
         /**
          * BuffInfo
-         * @description One active status on a character. The game stores the status `group`
-         *     (not the exact status id), so `name` is the representative status name
-         *     for that group (e.g. 護體 / 血契 / 靈契 / 中毒). `kind` distinguishes the
-         *     source array: positive self-buffs (HP+0x288) vs debuffs (HP+0x4C4).
+         * @description One active status on a character.
+         *
+         *     source "hook" (services.buff_tracker): `code` is the skill code (magic.id
+         *     * 100 + level) or items.id that gave it, `name` / `level` come from that,
+         *     and `expires_at` is when it ends (None when only the hook's `buffs` list
+         *     showed it). source "memory": only the status `group` is known (HP+0x288
+         *     buffs, HP+0x4C4 debuffs), so `name` is the group's representative name.
+         *     kind "hero" is a hero transform (shown as transformed, not which hero).
          */
         BuffInfo: {
             /** Group */
@@ -1290,7 +1294,19 @@ export interface components {
              * @default buff
              * @enum {string}
              */
-            kind: "buff" | "debuff";
+            kind: "buff" | "debuff" | "hero";
+            /** Code */
+            code?: number | null;
+            /** Level */
+            level?: number | null;
+            /** Expires At */
+            expires_at?: number | null;
+            /**
+             * Source
+             * @default memory
+             * @enum {string}
+             */
+            source: "hook" | "memory";
         };
         /**
          * Character
