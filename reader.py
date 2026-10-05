@@ -318,7 +318,14 @@ def locate_character(pm, hp_value, knowledge, offset_filters=None, compat_mode=F
                     # hp_value is at addr = struct_base + 4 (shifted by 4 bytes)
                     if pos % 4 == 0 and pos >= 4 and base + pos - 4 >= HEAP_MIN_ADDR:
                         struct_base = base + pos - 4
-                        score = verify_structure_shifted(pm, struct_base, fields)
+                        # The value at +4 is either a current HP stored shifted,
+                        # or the max HP of a normal struct whose current HP is
+                        # above it: the HP chain reads the UI bar, which shows
+                        # the max then. The worker tells the two apart.
+                        score = max(
+                            verify_structure_shifted(pm, struct_base, fields),
+                            verify_structure(pm, struct_base, fields),
+                        )
                         if score >= 0.8:
                             try:
                                 passes = all(
@@ -343,6 +350,10 @@ def locate_character(pm, hp_value, knowledge, offset_filters=None, compat_mode=F
     return candidates[0][0]
 
 
+# How far current HP / MP may sit above its max (see verify_structure).
+OVERFLOW_RATIO = 2
+
+
 def verify_structure(pm, hp_addr, fields, skip_seq_check=False):
     """Validate if address matches character struct with strict checks.
 
@@ -358,10 +369,12 @@ def verify_structure(pm, hp_addr, fields, skip_seq_check=False):
         weight_max = pm.read_int(hp_addr + 28)
         level = pm.read_int(hp_addr - 36)
 
-        # Hard constraints (must pass)
-        if not (1 <= hp <= hp_max <= 999999):
+        # Hard constraints (must pass). Current may exceed max: a buff or gear
+        # that raised the max goes away (map change, unequip) and the current
+        # value stays above the new max for a while.
+        if not (1 <= hp <= 999999 and 1 <= hp_max <= 999999 and hp <= hp_max * OVERFLOW_RATIO):
             return 0.0
-        if not (0 <= mp <= mp_max <= 999999):
+        if not (0 <= mp <= 999999 and 0 <= mp_max <= 999999 and mp <= mp_max * OVERFLOW_RATIO):
             return 0.0
         if not (0 <= weight <= weight_max <= 999999):
             return 0.0

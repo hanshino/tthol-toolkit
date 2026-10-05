@@ -6,7 +6,7 @@ to produce webui/src/api/types.ts. Do not hand-edit the TS file.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class _Base(BaseModel):
@@ -116,14 +116,23 @@ class ItemMeta(_Base):
 
 
 class BuffInfo(_Base):
-    """One active status on a character. The game stores the status `group`
-    (not the exact status id), so `name` is the representative status name
-    for that group (e.g. 護體 / 血契 / 靈契 / 中毒). `kind` distinguishes the
-    source array: positive self-buffs (HP+0x288) vs debuffs (HP+0x4C4)."""
+    """One active status on a character.
+
+    source "hook" (services.buff_tracker): `code` is the skill code (magic.id
+    * 100 + level) or items.id that gave it, `name` / `level` come from that,
+    and `expires_at` is when it ends (None when only the hook's `buffs` list
+    showed it). source "memory": only the status `group` is known (HP+0x288
+    buffs, HP+0x4C4 debuffs), so `name` is the group's representative name.
+    kind "hero" is a hero transform (shown as transformed, not which hero).
+    """
 
     group: int
     name: str
-    kind: Literal["buff", "debuff"] = "buff"
+    kind: Literal["buff", "debuff", "hero"] = "buff"
+    code: int | None = None
+    level: int | None = None
+    expires_at: float | None = None  # unix seconds
+    source: Literal["hook", "memory"] = "memory"
 
 
 class SkillInfo(_Base):
@@ -457,6 +466,8 @@ class BackupImportResult(_Base):
     accounts_added: int
     characters_assigned: int
     account_conflicts: int
+    settings_added: int = 0
+    settings_conflicts: int = 0
 
 
 # ---- Auto-click ----------------------------------------------------------
@@ -905,3 +916,278 @@ class DamageStatus(_Base):
     events: list[DamageEvent]
     summary: DamageSummary
     snapshot: DamageSnapshot | None = None
+
+
+# ---- Guard / 常駐守護 ----------------------------------------------------
+
+
+class GuardPotionRule(_Base):
+    """Drink from a whitelist when HP / MP drops below a share of its max.
+
+    Each whitelist is ordered: the first item the bag holds is used. An empty
+    whitelist never drinks.
+    """
+
+    hp_pct: int = 70  # the 2026-10-04 tower runs used 0.70 / 0.30
+    mp_pct: int = 30
+    hp_items: list[int] = []
+    mp_items: list[int] = []
+    # 寵物取水: a whitelisted potion the bag holds fewer than `refill_below` of
+    # is topped up with one stack from the pet bag (the pet must be summoned).
+    pet_refill: bool = False
+    refill_below: int = Field(20, ge=1, le=10000)
+    # How many to take each time (lower it when the bag weight is tight); one
+    # stack at most.
+    refill_qty: int = Field(200, ge=1, le=200)
+    # With no pet out, summon the first pet in the bag for the take and put it
+    # back right after; a pet the user had out is left out.
+    refill_summon: bool = True
+
+
+class CombatRule(_Base):
+    """How a module fights, laid out like the battle puppet's 戰鬥 page.
+
+    A new target gets the opener once, then the rotation skills take turns
+    (1 -> 2 -> 3 -> 1); a slot that cannot be used now (not learned, short of
+    MP) is skipped. The basic attack runs alongside the skills, not as a
+    fallback. Skills are magic ids; the learned level is cast.
+    """
+
+    basic: bool = True
+    opener: int | None = None
+    rotation: list[int] = Field(default_factory=list, max_length=3)
+    # Picking a new target (the current one stays until it dies):
+    # nearest, or the weak ones first: the pack before the elite (the one monster
+    # of its kind in a room; npc.hp alone is unreliable, the tower elites read
+    # lower than their pack).
+    target: Literal["nearest", "weakest"] = "nearest"
+    # Prefer monsters with few others around them, instead of running into a pack.
+    avoid_packs: bool = False
+
+
+class AttackSkillCandidate(_Base):
+    """A learned skill that hits an enemy, for the combat pickers."""
+
+    magic_id: int
+    level: int
+    name: str
+    mp: int
+    area: bool  # TARGET_ENEMYEX: hits around the target
+    gap_ms: int  # recharge_time + stun: how soon the next skill can follow
+
+
+class TowerConfig(_Base):
+    """神武玄天塔 module settings, per character name."""
+
+    # Leave the tower after clearing this floor (global floor number, 辰星關
+    # 1-10, 太白關 11-20, ...); None = climb until the game sends you out.
+    stop_floor: int | None = Field(None, ge=1, le=100)
+    # Potion floors, counting the 補水 whitelists in the bag and the pet bag.
+    # Below a leave floor at a floor's exit: pick "leave" instead of continuing.
+    leave_hp_below: int | None = Field(None, ge=1, le=100000)
+    leave_mp_below: int | None = Field(None, ge=1, le=100000)
+    # Mid-floor at or under a logout floor (0 = used up): log out of the game
+    # rather than die in the tower (Esc menu -> 登出遊戲, background clicks).
+    logout: bool = False
+    logout_hp_at: int = Field(0, ge=0, le=100000)
+    logout_mp_at: int | None = Field(None, ge=0, le=100000)
+
+
+class TowerRecord(_Base):
+    """The last run the toolkit saw, per character: the game's daily flag
+    cannot be read, so "done today" comes from here."""
+
+    date: str | None = None  # local YYYY-MM-DD the run started
+    top_floor: int = 0  # highest floor cleared that day
+    ended: str | None = None  # why it stopped
+
+
+class TowerFloor(_Base):
+    floor: int
+    secs: float
+
+
+class TowerLogEntry(_Base):
+    id: int
+    ts: float
+    phase: Literal["sent", "confirmed", "unconfirmed", "error", "info"]
+    text: str
+
+
+class TowerStatus(_Base):
+    running: bool
+    character: str | None = None
+    step: str | None = None  # what the module is doing, in user words
+    problem: str | None = None
+    stage_id: int | None = None
+    stage_name: str | None = None
+    floor: int | None = None  # current floor (global)
+    room: int | None = None  # 1-10 inside the 關
+    kills: int = 0
+    expect: int = 0
+    room_started: float | None = None  # unix s
+    run_started: float | None = None
+    floors: list[TowerFloor] = []  # cleared this run, in order
+    log: list[TowerLogEntry] = []
+
+
+class TowerEstimate(_Base):
+    """How far the character is expected to climb with its current hit."""
+
+    ok: bool
+    reason: str | None = None  # why there is no estimate
+    hit: int = 0
+    level: int = 0
+    max_floor: int = 0
+    blocker: str | None = None
+    missing_buffs: list[str] | None = None  # ticked buffs not on now (None: unknown)
+    applied: bool = False  # written into stop_floor
+
+
+class TowerView(_Base):
+    status: TowerStatus
+    combat: CombatRule = CombatRule()
+    config: TowerConfig = TowerConfig()
+    record: TowerRecord = TowerRecord()
+    skills: list[AttackSkillCandidate] = []
+    hook_ready: bool = False  # the hook lists every command the module needs
+
+
+class TowerSettings(_Base):
+    combat: CombatRule
+    config: TowerConfig
+
+
+class GuardBuffRule(_Base):
+    """Self buffs to keep up: recast a ticked skill when its buff is gone or
+    about to end. Skills are magic ids; the learned level is cast."""
+
+    skills: list[int] = []
+    # 自動變身: press the hero transform whenever 英雄無雙 is not on the character.
+    hero: bool = False
+
+
+class GuardConfig(_Base):
+    """Saved per character name (pid changes on every game restart)."""
+
+    potion: GuardPotionRule = GuardPotionRule()
+    buff: GuardBuffRule = GuardBuffRule()
+
+
+class GuardLogEntry(_Base):
+    id: int  # stable while the line is updated in place (bag confirmation)
+    ts: float
+    rule: Literal["potion", "cure", "buff", "item", "hero", "pet", "guard"]
+    text: str
+    # sent: the hook accepted the command; confirmed: the bag count dropped for
+    # every drink in the line (cure: the debuff went away); unconfirmed: some
+    # never showed up in time (cure: still there after every try);
+    # error / info: no command effect.
+    phase: Literal["sent", "confirmed", "unconfirmed", "error", "info"]
+
+
+class GuardVitals(_Base):
+    hp: int
+    hp_max: int
+    mp: int
+    mp_max: int
+
+
+class GuardStatus(_Base):
+    running: bool
+    hook_cmd: bool  # a command pipe exists and its manifest (if read yet) has `use`
+    character: str | None = None
+    problem: str | None = None  # why the guard is idle or backing off, in user words
+    drinks: int = 0
+    cures: int = 0
+    casts: int = 0
+    uses: int = 0  # 定期使用 item uses
+    transforms: int = 0  # 自動變身 presses
+    refills: int = 0  # 寵物取水 takes
+    debuffs: list[str] = []  # debuffs on the character now, by name
+    log: list[GuardLogEntry] = []
+    config: GuardConfig = GuardConfig()
+    vitals: GuardVitals | None = None  # current HP / MP, for the threshold sliders
+
+
+class GuardStartResult(_Base):
+    ok: bool
+    reason: str | None = None
+
+
+class PotionCandidate(_Base):
+    """A potion the character holds, for the whitelist picker."""
+
+    item_id: int
+    name: str
+    restores: Literal["hp", "mp", "both"]
+    bag: int
+    pet: int
+    icon_url: str | None = None
+
+
+class BuffSkillCandidate(_Base):
+    """A learned skill that buffs the character, for the buff 維持 picker."""
+
+    magic_id: int
+    level: int
+    name: str
+    status: str  # the status it gives, e.g. 冰心
+    group: int
+    mp: int  # 真氣 per cast
+    duration_s: int
+    target: Literal["self", "ally", "group"]
+    active: bool  # the buff is on the character now (from the hook)
+    expires_at: float | None = None  # unix seconds, when known
+    icon_url: str | None = None
+
+
+ItemAction = Literal["keep", "use_periodic", "use_on_status", "sell", "store"]
+
+
+class ItemRule(_Base):
+    """What to do with one item (道具處置). `keep` is how many sell / store leave."""
+
+    action: ItemAction = "keep"
+    keep: int = 0
+
+
+class ItemRules(_Base):
+    """Per character; an item with no rule is left alone."""
+
+    items: dict[int, ItemRule] = {}
+
+
+class ItemRuleCandidate(_Base):
+    """An item the character holds (or has a rule for), for the 道具處置 table."""
+
+    item_id: int
+    name: str
+    bag: int
+    pet: int
+    actions: list[ItemAction]  # the ones the DB allows for this item
+    effect: str | None = None  # e.g. 解中毒 / 效果 10 分鐘
+    active: bool | None = None  # its buff is on now (use_periodic items, with a hook)
+    expires_at: float | None = None
+    icon_url: str | None = None
+
+
+class ItemRulesView(_Base):
+    character: str | None
+    rules: ItemRules
+    candidates: list[ItemRuleCandidate]
+
+
+class SettingsCharacter(_Base):
+    character: str
+    sections: list[str]
+
+
+class CopySettingsRequest(_Base):
+    source: str
+    target: str
+    sections: list[str]
+
+
+class CopySettingsResult(_Base):
+    copied: int

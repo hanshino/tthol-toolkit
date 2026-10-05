@@ -204,3 +204,24 @@ button.tr-holder-link:hover:not(:disabled) { background: transparent; text-decor
 .body-inlay { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; }
 .body-inlay .inv-row-icon { width: 36px; height: 36px; }
 .body-count { margin-left: 6px; font-family: var(--tt-font-mono); font-size: 12px; color: var(--tt-dim); }
+
+/* ---- 道具處置 (ItemRuleEditor, rule badges) ---- */
+.inv-rule-badge {
+  position: absolute; left: 2px; bottom: 2px; min-width: 14px; height: 14px; padding: 0 2px;
+  font-size: 10px; line-height: 14px; text-align: center; font-family: var(--tt-font-serif);
+  background: var(--tt-bg); border: 1px solid currentColor;
+}
+.inv-rule-badge.is-use, .inv-rule-pill.is-use { color: var(--tt-ok); }
+.inv-rule-badge.is-later, .inv-rule-pill.is-later { color: var(--tt-warn); }
+.inv-rule-pill { margin-left: 8px; padding: 0 6px; font-size: 11px; border: 1px solid currentColor; vertical-align: 1px; }
+.inv-rule-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.inv-rule-row select { min-height: 32px; min-width: 140px; font-size: 13px; }
+.inv-rule-keep { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-dim); }
+.inv-rule-keep input { width: 72px; min-height: 32px; padding: 2px 8px; font-family: var(--tt-font-mono); }
+.inv-rule-note { font-size: 12px; line-height: 1.6; color: var(--tt-mute); }
+.inv-rule-note.is-bad { color: var(--tt-bad); }
+.inv-rule-on { font-weight: 600; color: var(--tt-ok); }
+.inv-copy { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--tt-dim); }
+.inv-copy select { min-height: 28px; font-size: 12px; }
+.inv-copy label { display: inline-flex; align-items: center; gap: 4px; }
+

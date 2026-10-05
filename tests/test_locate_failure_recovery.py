@@ -217,3 +217,34 @@ def test_placeholder_row_still_carries_the_last_error(monkeypatch):
     row = wm.world_snapshot().chars[0]
     assert row.last_error is not None, "the placeholder must carry the error"
     assert row.last_error.code == ErrorCode.E_LOCATE_EXHAUSTED
+
+
+# --------------------------------------------------------------------------
+# 2026-10-05: a normal struct locked as compat after a map change.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "normal, shifted, start_compat, want",
+    [
+        (0.9, 0.0, True, False),  # the bug: compat stuck although the struct is normal
+        (0.9, 0.0, False, False),
+        (0.0, 0.9, False, True),  # a genuinely shifted character
+    ],
+)
+def test_layout_comes_from_the_struct_not_the_scan_mode(
+    monkeypatch, normal, shifted, start_compat, want
+):
+    """locate_character(compat_mode=True) returns a normal match first, so the
+    mode passed in is no evidence of the layout. Taking it as such made the
+    shifted verifier fail a good lock on every poll, relocating every ~10 s."""
+    import services.worker as W
+
+    monkeypatch.setattr(W, "read_hp_from_player_chain", lambda pm: 53764)
+    monkeypatch.setattr(W, "locate_character", lambda *a, **kw: 0x262F6700)
+    monkeypatch.setattr(W, "verify_structure", lambda pm, addr, fields: normal)
+    monkeypatch.setattr(W, "verify_structure_shifted", lambda pm, addr, fields: shifted)
+    w = _worker([])
+    w._compat_mode = start_compat
+    assert w._locate(object(), silent=True) == 0x262F6700
+    assert w._compat_mode is want

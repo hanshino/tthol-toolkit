@@ -84,6 +84,8 @@ async def test_import_happy_path(seeded, tmp_path):
         "accounts_added",
         "characters_assigned",
         "account_conflicts",
+        "settings_added",
+        "settings_conflicts",
     }
     assert summary["snapshots_added"] == 1
     assert summary["characters_assigned"] == 1

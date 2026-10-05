@@ -25,16 +25,19 @@ function qtyText(n: number) {
   return n >= 100000 ? `${Math.floor(n / 10000)}萬` : String(n);
 }
 
+/** 道具處置 badge text, e.g. 定 / 解 / 賣 / 存; absent for no rule. */
+export type RuleBadge = { short: string; label: string; tone: 'use' | 'later' };
+
 export function Slot({
-  entry, selected, showSources, onSelect,
-}: { entry: Entry; selected: boolean; showSources: boolean; onSelect: () => void }) {
+  entry, selected, showSources, onSelect, rule,
+}: { entry: Entry; selected: boolean; showSources: boolean; onSelect: () => void; rule?: RuleBadge }) {
   return (
     <button
       type="button"
       className="inv-slot"
       aria-pressed={selected}
-      aria-label={`${entry.name} ×${entry.qty}`}
-      title={`${entry.name} ×${entry.qty.toLocaleString()}`}
+      aria-label={`${entry.name} ×${entry.qty}${rule ? `，處置：${rule.label}` : ''}`}
+      title={`${entry.name} ×${entry.qty.toLocaleString()}${rule ? `（${rule.label}）` : ''}`}
       style={{ '--inv-c': categoryColor(entry.category) } as React.CSSProperties}
       onClick={onSelect}
     >
@@ -44,13 +47,14 @@ export function Slot({
         ? <span className="inv-corner">{entry.sources.map(s => SOURCE_SHORT[s]).join('')}</span>
         : entry.stacks > 1 && <span className="inv-corner">{entry.stacks}格</span>}
       {entry.qty > 1 && <span className="inv-qty">{qtyText(entry.qty)}</span>}
+      {rule && <span className={`inv-rule-badge is-${rule.tone}`} aria-hidden="true">{rule.short}</span>}
     </button>
   );
 }
 
 export function Row({
-  entry, selected, showSources, onSelect,
-}: { entry: Entry; selected: boolean; showSources: boolean; onSelect: () => void }) {
+  entry, selected, showSources, onSelect, rule,
+}: { entry: Entry; selected: boolean; showSources: boolean; onSelect: () => void; rule?: RuleBadge }) {
   const m = entry.meta;
   const sub = [
     m?.type_label,
@@ -68,7 +72,10 @@ export function Row({
         {m?.no_trade && <span className="inv-bound" />}
       </span>
       <span className="inv-row-name">
-        <span>{entry.name}</span>
+        <span>
+          {entry.name}
+          {rule && <span className={`inv-rule-pill is-${rule.tone}`}>{rule.label}</span>}
+        </span>
         {sub && <span className="inv-row-sub">{sub}</span>}
       </span>
       <span className="inv-row-qty">
