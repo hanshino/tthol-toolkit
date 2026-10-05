@@ -598,6 +598,24 @@ class ReaderWorker(threading.Thread):
         bounds = self._stage_bounds[stage_id]
         return bounds is None or (x < bounds[0] and y < bounds[1])
 
+    def _layout_at(self, pm, addr: int) -> bool:
+        """Whether the struct at `addr` is in the compat (shifted) layout.
+
+        locate_character(compat_mode=True) scans the normal layout first and
+        returns a normal match when it has one, so the mode it was called with
+        does not tell which layout matched. Taking it as the answer locked a
+        normal struct as compat after a map change (the first, normal-mode call
+        ran before the new struct existed), and the shifted verifier then
+        failed it on every poll: a relocate loop every ~10 s.
+        """
+        fields = self._knowledge["character_structure"]["fields"]
+        try:
+            if verify_structure(pm, addr, fields) >= 0.8:
+                return False
+            return verify_structure_shifted(pm, addr, fields) >= 0.8
+        except Exception:
+            return self._compat_mode
+
     def _locate(self, pm, silent: bool = False):
         # Try both the normal and the 4-byte-shifted (compat) layout, preferring
         # whichever is currently selected. Some characters only match in compat
@@ -620,7 +638,7 @@ class ReaderWorker(threading.Thread):
                         compat_mode=compat,
                     )
                     if addr is not None:
-                        self._compat_mode = compat
+                        self._compat_mode = self._layout_at(pm, addr)
                         return addr
         except Exception as exc:
             # Debug, not warning: this fires on every retry and is expected
@@ -651,7 +669,7 @@ class ReaderWorker(threading.Thread):
                     compat_mode=compat,
                 )
                 if addr is not None:
-                    self._compat_mode = compat
+                    self._compat_mode = self._layout_at(pm, addr)
                     return addr
             return None
         except Exception as e:

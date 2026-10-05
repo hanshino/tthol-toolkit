@@ -128,3 +128,19 @@ def test_verify_structure_accepts_name_with_printable_punctuation():
 def test_verify_structure_shifted_accepts_pure_numeric_name():
     pm = FakePm(_SHIFTED_INTS, name=b"7788")
     assert verify_structure_shifted(pm, 0, _FIELDS) >= 0.8
+
+
+# 2026-10-05: a map change dropped 八卦 / 冰霜 (they raise max HP); the struct
+# read (53764, 48877, 6124, 6170), current above max. That is a normal struct,
+# not the shifted layout, and must still verify, or the character is "lost"
+# until the current value falls back under the max.
+def test_verify_structure_accepts_current_above_max():
+    ints = {**_NORMAL_INTS, 0: 53764, 4: 48877, 8: 6124, 12: 6170}
+    pm = FakePm(ints, name="晨曦破空".encode("big5"))
+    assert verify_structure(pm, 0, _FIELDS) >= 0.8
+
+
+def test_verify_structure_rejects_current_far_above_max():
+    ints = {**_NORMAL_INTS, 0: 9000, 4: 1000}
+    pm = FakePm(ints, name="晨曦破空".encode("big5"))
+    assert verify_structure(pm, 0, _FIELDS) == 0.0
