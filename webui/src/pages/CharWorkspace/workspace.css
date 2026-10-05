@@ -19,6 +19,11 @@
   font-size: 11px; letter-spacing: 1px; color: var(--tt-ok); border: 1px solid #3f6a5e;
 }
 .ws-hook-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tt-ok); box-shadow: 0 0 0 3px rgba(124, 168, 152, 0.18); }
+/* Family summary from the last 0x31 (family window opened in game). */
+.ws-family { display: flex; flex-wrap: wrap; gap: 0 10px; margin-top: 2px; font-size: 12px; color: var(--tt-dim); }
+.ws-family-name { color: var(--tt-text); }
+.ws-family-seen { font-size: 11px; opacity: 0.75; }
+.ws-family.is-empty { font-style: italic; }
 .ws-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex: none; }
 
 button.ws-btn, button.ws-toggle { font-size: 12px; letter-spacing: 1px; padding: 6px 12px; min-height: 32px; background: var(--tt-bg); color: var(--tt-dim); }

@@ -21,6 +21,7 @@ export type ConnectResult = S['ConnectResult'];
 export type ChatLog = S['ChatLog'];
 export type ChatMessage = S['ChatMessage'];
 export type HookInfo = S['HookInfo'];
+export type FamilyInfo = S['FamilyInfo'];
 export type ClientErrorRequest = S['ClientErrorRequest'];
 export type CreateAccountRequest = S['CreateAccountRequest'];
 export type DamageEvent = S['DamageEvent'];

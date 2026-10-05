@@ -250,6 +250,18 @@ class HookInfo(_Base):
     proto: int
 
 
+class FamilyInfo(_Base):
+    """The character's family, from the hook's 0x31 (sent when the family window opens)."""
+
+    name: str
+    level: int
+    manor_id: int  # sestage id of the family manor (1001 人和莊 ... 1151 天劍莊)
+    manor_name: str | None = None  # None when the DB has no such sestage
+    members: int
+    member_cap: int
+    received_at: float  # epoch seconds of the packet
+
+
 class ChatMessage(_Base):
     seq: int
     ts: float  # epoch seconds
@@ -285,6 +297,7 @@ class CharacterRow(_Base):
     avatar: Avatar | None = None  # None until read, or when the DB has no art for it
     last_error: ErrorInfo | None = None
     hook: HookInfo | None = None  # set only while a hook pipe is connected for this pid
+    family: FamilyInfo | None = None  # last 0x31 seen for this character, kept across restarts
 
 
 class CharacterDetail(_Base):

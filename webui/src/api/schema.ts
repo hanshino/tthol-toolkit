@@ -1608,6 +1608,7 @@ export interface components {
             avatar?: components["schemas"]["Avatar"] | null;
             last_error?: components["schemas"]["ErrorInfo"] | null;
             hook?: components["schemas"]["HookInfo"] | null;
+            family?: components["schemas"]["FamilyInfo"] | null;
         };
         /** CharacterStats */
         CharacterStats: {
@@ -2083,6 +2084,26 @@ export interface components {
             cat: string;
             /** Code */
             code?: string | null;
+        };
+        /**
+         * FamilyInfo
+         * @description The character's family, from the hook's 0x31 (sent when the family window opens).
+         */
+        FamilyInfo: {
+            /** Name */
+            name: string;
+            /** Level */
+            level: number;
+            /** Manor Id */
+            manor_id: number;
+            /** Manor Name */
+            manor_name?: string | null;
+            /** Members */
+            members: number;
+            /** Member Cap */
+            member_cap: number;
+            /** Received At */
+            received_at: number;
         };
         /**
          * GuardBuffRule
