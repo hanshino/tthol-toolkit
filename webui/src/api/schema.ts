@@ -508,6 +508,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/guard/cures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cures */
+        get: operations["cures_api_characters__pid__guard_cures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/walk": {
         parameters: {
             query?: never;
@@ -1488,6 +1505,26 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * CureCandidate
+         * @description A cure item the character holds, for the 解狀態 picker.
+         */
+        CureCandidate: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Group */
+            group: number;
+            /** Status */
+            status: string;
+            /** Bag */
+            bag: number;
+            /** Pet */
+            pet: number;
+            /** Icon Url */
+            icon_url?: string | null;
+        };
         /** DamageBuff */
         DamageBuff: {
             /** Group */
@@ -1818,6 +1855,26 @@ export interface components {
              *     }
              */
             potion: components["schemas"]["GuardPotionRule"];
+            /**
+             * @default {
+             *       "items": []
+             *     }
+             */
+            cure: components["schemas"]["GuardCureRule"];
+        };
+        /**
+         * GuardCureRule
+         * @description Cure items to use as soon as the debuff they clear shows up.
+         *
+         *     Each item clears exactly one status group (its extra_status). No order: a
+         *     debuff is cured with whichever ticked item for it the bag holds.
+         */
+        GuardCureRule: {
+            /**
+             * Items
+             * @default []
+             */
+            items: number[];
         };
         /** GuardLogEntry */
         GuardLogEntry: {
@@ -1829,7 +1886,7 @@ export interface components {
              * Rule
              * @enum {string}
              */
-            rule: "potion" | "guard";
+            rule: "potion" | "cure" | "guard";
             /** Text */
             text: string;
             /**
@@ -1890,6 +1947,16 @@ export interface components {
              */
             drinks: number;
             /**
+             * Cures
+             * @default 0
+             */
+            cures: number;
+            /**
+             * Debuffs
+             * @default []
+             */
+            debuffs: string[];
+            /**
              * Log
              * @default []
              */
@@ -1901,6 +1968,9 @@ export interface components {
              *         "hp_pct": 70,
              *         "mp_items": [],
              *         "mp_pct": 30
+             *       },
+             *       "cure": {
+             *         "items": []
              *       }
              *     }
              */
@@ -3717,6 +3787,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PotionCandidate"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cures_api_characters__pid__guard_cures_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CureCandidate"][];
                 };
             };
             /** @description Validation Error */

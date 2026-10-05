@@ -923,19 +923,31 @@ class GuardPotionRule(_Base):
     mp_items: list[int] = []
 
 
+class GuardCureRule(_Base):
+    """Cure items to use as soon as the debuff they clear shows up.
+
+    Each item clears exactly one status group (its extra_status). No order: a
+    debuff is cured with whichever ticked item for it the bag holds.
+    """
+
+    items: list[int] = []
+
+
 class GuardConfig(_Base):
     """Saved per character name (pid changes on every game restart)."""
 
     potion: GuardPotionRule = GuardPotionRule()
+    cure: GuardCureRule = GuardCureRule()
 
 
 class GuardLogEntry(_Base):
     id: int  # stable while the line is updated in place (bag confirmation)
     ts: float
-    rule: Literal["potion", "guard"]
+    rule: Literal["potion", "cure", "guard"]
     text: str
     # sent: the hook accepted the command; confirmed: the bag count dropped for
-    # every drink in the line; unconfirmed: some never showed up in time;
+    # every drink in the line (cure: the debuff went away); unconfirmed: some
+    # never showed up in time (cure: still there after every try);
     # error / info: no command effect.
     phase: Literal["sent", "confirmed", "unconfirmed", "error", "info"]
 
@@ -949,10 +961,12 @@ class GuardVitals(_Base):
 
 class GuardStatus(_Base):
     running: bool
-    hook_cmd: bool  # a command pipe exists for this pid
+    hook_cmd: bool  # a command pipe exists and its manifest (if read yet) has `use`
     character: str | None = None
     problem: str | None = None  # why the guard is idle or backing off, in user words
     drinks: int = 0
+    cures: int = 0
+    debuffs: list[str] = []  # debuffs on the character now, by name
     log: list[GuardLogEntry] = []
     config: GuardConfig = GuardConfig()
     vitals: GuardVitals | None = None  # current HP / MP, for the threshold sliders
@@ -969,6 +983,18 @@ class PotionCandidate(_Base):
     item_id: int
     name: str
     restores: Literal["hp", "mp", "both"]
+    bag: int
+    pet: int
+    icon_url: str | None = None
+
+
+class CureCandidate(_Base):
+    """A cure item the character holds, for the 解狀態 picker."""
+
+    item_id: int
+    name: str
+    group: int  # the status group it clears
+    status: str  # that group's name, e.g. 中毒
     bag: int
     pet: int
     icon_url: str | None = None

@@ -69,6 +69,18 @@ button.gd-add:hover { border-color: var(--tt-accent); color: var(--tt-text); }
 .gd-picker li:last-child button { border-bottom: 0; }
 .gd-picker li button:hover { background: var(--tt-panel); }
 
+/* 解狀態 */
+.gd-cure-now { font-size: 12px; color: var(--tt-dim); display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
+.gd-cure-now b { font-weight: 600; color: var(--tt-warn); padding: 0 6px; border: 1px solid var(--tt-warn); font-size: 11.5px; }
+.gd-cures { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--tt-line-soft); }
+.gd-cures li { display: flex; align-items: center; gap: 8px; padding: 0 8px; min-height: 36px; border-bottom: 1px solid var(--tt-line-soft); font-size: 12.5px; }
+.gd-cures li:nth-child(odd) { border-right: 1px solid var(--tt-line-soft); }
+.gd-cures input { margin: 0; accent-color: var(--tt-accent); width: 15px; height: 15px; cursor: pointer; flex: none; }
+.gd-cures label { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: baseline; padding: 9px 0; cursor: pointer; }
+.gd-cure-st { font-size: 11.5px; color: var(--tt-dim); white-space: nowrap; }
+.gd-cures li.is-out .gd-name, .gd-cures li.is-out .gd-cnt { color: var(--tt-mute); }
+.gd-cures input:focus-visible { outline: 1px solid var(--tt-accent); outline-offset: 2px; }
+
 .gd-fixed { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .gd-fixed span { font-size: 11.5px; padding: 1px 8px; border: 1px dotted var(--tt-line); color: var(--tt-mute); }
 
@@ -88,4 +100,6 @@ button.gd-switch:focus-visible, .gd-ops button:focus-visible, button.gd-add:focu
 
 @media (max-width: 720px) {
   .gd-wl-grid { grid-template-columns: 1fr; }
+  .gd-cures { grid-template-columns: 1fr; }
+  .gd-cures li:nth-child(odd) { border-right: 0; }
 }

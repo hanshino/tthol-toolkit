@@ -1,11 +1,15 @@
 import pytest
 
-from services.api_types import GuardConfig, GuardPotionRule
+from services.api_types import GuardConfig, GuardCureRule, GuardPotionRule
 from services.guard import (
     CONFIRM_WINDOW,
+    CURE_HOLD,
+    CURE_TRIES,
     EMPTY_SKIP,
     MAX_PER_PASS,
     PENDING_WINDOW,
+    Cure,
+    CureState,
     DrinkState,
     GuardManager,
     GuardStore,
@@ -13,10 +17,14 @@ from services.guard import (
     Sample,
     _Run,
     expected,
+    next_cure,
     next_potion,
+    read_debuffs,
     read_sample,
+    record_cure,
     record_drink,
     settle_bag,
+    settle_cures,
     wants_drink,
 )
 from services.hook_cmd import NoReply, PipeGone
@@ -29,10 +37,20 @@ CATALOG = {
     YIQI: Potion("大益氣丹", hp=120, mp=50),
 }
 MAXES = {"hp": 1000, "mp": 500}
+POISON, SLOW = 19, 20
+JIEDU, JIANBU = 24206, 24207
+CURES = {JIEDU: Cure("解毒劑", POISON, "中毒"), JIANBU: Cure("健步散", SLOW, "緩速")}
 
 
-def sample(hp=1000, mp=500, bag=None, hp_max=1000, mp_max=500):
-    return Sample(hp, hp_max, mp, mp_max, bag if bag is not None else {JIN: 50, ZHONG: 50})
+def sample(hp=1000, mp=500, bag=None, hp_max=1000, mp_max=500, debuffs=()):
+    return Sample(
+        hp,
+        hp_max,
+        mp,
+        mp_max,
+        bag if bag is not None else {JIN: 50, ZHONG: 50, JIEDU: 9},
+        tuple(debuffs),
+    )
 
 
 def rule(**kw):
@@ -198,17 +216,19 @@ class FakeChannel:
         return r
 
 
-def make_manager(tmp_path, samples, replies=(), cfg=None, name="寒江孤影"):
+def make_manager(tmp_path, samples, replies=(), cfg=None, name="寒江孤影", cure_items=()):
     clock = {"t": 0.0}
     seq = list(samples)
     store = GuardStore(tmp_path / "guard.json")
-    store.save(name, GuardConfig(potion=cfg or rule()))
+    store.save(name, GuardConfig(potion=cfg or rule(), cure=GuardCureRule(items=list(cure_items))))
     mgr = GuardManager(
         read_locked=lambda pid, fn: seq.pop(0) if len(seq) > 1 else seq[0],
         character_name=lambda pid: name,
         channel=FakeChannel(replies),
         store=store,
         potions=lambda: CATALOG,
+        cures=lambda: CURES,
+        status_names=lambda: {POISON: "中毒", SLOW: "緩速"},
         pipe_present=lambda pid: True,
         clock=lambda: clock["t"],
         wall=lambda: 1000.0 + clock["t"],
@@ -387,3 +407,200 @@ def test_potions_lists_held_restoring_items(tmp_path):
     )
     got = {(p.item_id, p.restores, p.bag, p.pet) for p in mgr.potions(1)}
     assert got == {(JIN, "hp", 87, 300), (ZHONG, "mp", 0, 120)}
+
+
+# ---- debuff read -----------------------------------------------------------
+
+
+class MemPM:
+    """read_bytes over a sparse {address: int32} map; unknown words read as 0."""
+
+    def __init__(self, words):
+        self.words = words
+
+    def read_bytes(self, addr, n):
+        import struct
+
+        return b"".join(struct.pack("<i", self.words.get(addr + i, 0)) for i in range(0, n, 4))
+
+
+def test_read_debuffs_is_count_gated():
+    base = 0x1000
+    pm = MemPM({base + 0x4C4: 2, base + 0x4C8: POISON, base + 0x4CC: SLOW, base + 0x4D0: 23})
+    assert read_debuffs(pm, base) == (POISON, SLOW)  # the stale third slot is ignored
+    assert read_debuffs(MemPM({base + 0x4C4: 0}), base) == ()
+    assert read_debuffs(MemPM({base + 0x4C4: 999999}), base) == ()  # bad read
+
+
+def test_read_debuffs_swallows_read_errors():
+    class Broken:
+        def read_bytes(self, addr, n):
+            raise OSError("gone")
+
+    assert read_debuffs(Broken(), 0x1000) == ()
+
+
+# ---- cure catalog (real DB) --------------------------------------------------
+
+
+def test_load_cures_keeps_real_cures_only():
+    from services._paths import bundled
+    from services.guard import load_cures
+
+    if not bundled("tthol.sqlite").exists():
+        pytest.skip("tthol.sqlite not pulled")
+    cures = load_cures()
+    assert set(cures) == {24201, 24202, 24204, 24205, 24206, 24207, 24208, 24209, 24210}
+    assert cures[24206].group == 19 and cures[24206].status == "中毒"
+    # These point at a hostile group too, but inflict it or strip the user's own 隱形.
+    assert 28034 not in cures  # 謎之藥水
+    assert 24161 not in cures  # 烤壞的肉串
+    assert 24203 not in cures  # 現形丹
+
+
+# ---- rule: curing (pure) -------------------------------------------------------
+
+
+def test_next_cure_matches_the_exact_group_held_and_ticked():
+    st = CureState()
+    bag = {JIEDU: 1, JIANBU: 1}
+    assert next_cure((POISON,), [JIEDU], CURES, bag, st, {}, 0.0) == (POISON, JIEDU)
+    assert next_cure((70,), [JIEDU], CURES, bag, st, {}, 0.0) is None  # the other 中毒 group
+    assert next_cure((POISON,), [JIANBU], CURES, bag, st, {}, 0.0) is None  # not ticked for it
+    assert next_cure((POISON,), [JIEDU], CURES, {}, st, {}, 0.0) is None  # not held
+    assert next_cure((POISON,), [JIEDU], CURES, bag, st, {JIEDU: 5.0}, 1.0) is None  # resting
+    assert next_cure((POISON, SLOW), [JIEDU, JIANBU], CURES, bag, st, {}, 0.0) == (POISON, JIEDU)
+
+
+def test_cure_holds_then_retries_then_gives_up():
+    st = CureState()
+    bag = {JIEDU: 9}
+    assert record_cure(st, POISON, 0.0) == 1
+    assert next_cure((POISON,), [JIEDU], CURES, bag, st, {}, CURE_HOLD - 0.1) is None
+    assert next_cure((POISON,), [JIEDU], CURES, bag, st, {}, CURE_HOLD) == (POISON, JIEDU)
+    for i in range(2, CURE_TRIES + 1):
+        assert record_cure(st, POISON, CURE_HOLD * i) == i
+    end = CURE_HOLD * (CURE_TRIES + 1)
+    assert next_cure((POISON,), [JIEDU], CURES, bag, st, {}, end) is None
+    assert settle_cures(st, (POISON,), end) == [(POISON, False)]
+    assert settle_cures(st, (POISON,), end + 1) == []  # reported once
+    assert settle_cures(st, (), end + 2) == []  # gone after giving up: no "cleared"
+    assert st.groups == {}
+
+
+def test_settle_cures_reports_cleared():
+    st = CureState()
+    record_cure(st, POISON, 0.0)
+    assert settle_cures(st, (POISON,), 0.5) == []
+    assert settle_cures(st, (), 0.6) == [(POISON, True)]
+
+
+# ---- manager: curing -----------------------------------------------------------
+
+
+def test_tick_cures_once_and_confirms_when_the_debuff_leaves(tmp_path):
+    mgr, run, clock = make_manager(
+        tmp_path,
+        [sample(debuffs=[POISON]), sample(debuffs=[POISON]), sample()],
+        cure_items=[JIEDU],
+    )
+    mgr._tick(1, run)
+    assert mgr._channel.sent == [f"use {JIEDU}"]
+    clock["t"] = 0.5
+    mgr._tick(1, run)  # still poisoned, inside the hold: no second use
+    assert mgr._channel.sent == [f"use {JIEDU}"]
+    clock["t"] = 0.7
+    mgr._tick(1, run)
+    (line,) = [e for e in _entries(mgr, run) if e.rule == "cure"]
+    assert line.phase == "confirmed"
+    assert line.text == "中毒 → 用 解毒劑（已解除）"
+    assert run.cures == 1
+
+
+def test_tick_cure_gives_up_after_tries_in_one_line(tmp_path):
+    mgr, run, clock = make_manager(tmp_path, [sample(debuffs=[POISON])], cure_items=[JIEDU])
+    for i in range(CURE_TRIES + 1):
+        clock["t"] = CURE_HOLD * i
+        mgr._tick(1, run)
+    assert mgr._channel.sent == [f"use {JIEDU}"] * CURE_TRIES
+    (line,) = [e for e in _entries(mgr, run) if e.rule == "cure"]
+    assert line.phase == "unconfirmed"
+    assert line.text.startswith(f"中毒 → 用 解毒劑 ×{CURE_TRIES}")
+    assert "還在" in line.text
+
+
+def test_tick_unticked_cure_is_never_used(tmp_path):
+    mgr, run, _ = make_manager(tmp_path, [sample(debuffs=[POISON])])
+    mgr._tick(1, run)
+    assert mgr._channel.sent == []
+
+
+def test_tick_hp_comes_before_cure_and_mp(tmp_path):
+    mgr, run, _ = make_manager(
+        tmp_path, [sample(hp=650, mp=100, debuffs=[POISON])], cure_items=[JIEDU]
+    )
+    mgr._tick(1, run)
+    assert mgr._channel.sent == [f"use {JIN}", f"use {JIEDU}", f"use {ZHONG}"]
+
+
+def test_tick_dead_cures_nothing(tmp_path):
+    mgr, run, _ = make_manager(tmp_path, [sample(hp=0, debuffs=[POISON])], cure_items=[JIEDU])
+    mgr._tick(1, run)
+    assert mgr._channel.sent == []
+
+
+def test_status_lists_current_debuffs_while_running(tmp_path):
+    mgr, run, _ = make_manager(tmp_path, [sample(debuffs=[POISON, SLOW, POISON])])
+    mgr._tick(1, run)
+    run.thread = type("T", (), {"is_alive": lambda self: True})()
+    assert mgr.status(1).debuffs == ["中毒", "緩速"]
+
+
+# ---- caps ----------------------------------------------------------------------
+
+
+def caps_reply(*names):
+    return {"ok": True, "caps": 1, "commands": [{"cmd": n, "kind": "action"} for n in names]}
+
+
+def _caps_manager(tmp_path, reply):
+    return GuardManager(
+        read_locked=lambda pid, fn: None,
+        character_name=lambda pid: "a",
+        channel=FakeChannel([reply]),
+        store=GuardStore(tmp_path / "g.json"),
+        pipe_present=lambda pid: True,
+    )
+
+
+def test_start_needs_use_in_the_manifest(tmp_path, monkeypatch):
+    monkeypatch.delenv("TTHOL_NO_HOOK", raising=False)
+    mgr = _caps_manager(tmp_path, caps_reply("pos", "cast"))
+    r = mgr.start(1)
+    assert r.ok is False and "use" in r.reason
+    assert mgr._channel.sent == ["caps"]
+    assert mgr.status(1).hook_cmd is False
+
+
+def test_start_refuses_a_hook_without_manifest(tmp_path, monkeypatch):
+    monkeypatch.delenv("TTHOL_NO_HOOK", raising=False)
+    mgr = _caps_manager(tmp_path, {"ok": False, "error": "usage: ..."})
+    r = mgr.start(1)
+    assert r.ok is False and "caps" in r.reason
+
+
+def test_start_with_use_in_the_manifest(tmp_path, monkeypatch):
+    monkeypatch.delenv("TTHOL_NO_HOOK", raising=False)
+    mgr = _caps_manager(tmp_path, caps_reply("use", "cast"))
+    try:
+        assert mgr.start(1).ok is True
+        assert mgr.status(1).hook_cmd is True
+    finally:
+        mgr.shutdown()
+
+
+def test_pipe_gone_forgets_the_manifest(tmp_path):
+    mgr, run, _ = make_manager(tmp_path, [sample(hp=100)], replies=[PipeGone("x")])
+    mgr._caps[1] = frozenset({"pos"})
+    mgr._tick(1, run)
+    assert 1 not in mgr._caps
