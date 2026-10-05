@@ -341,25 +341,25 @@ class _Regions:
 
     def __init__(self, db_path: Path | None) -> None:
         self._db_path = db_path
-        self._cache: dict[int, map_regions.Regions | None] = {}
+        self._cache: dict[tuple[str, int], map_regions.Regions | None] = {}
 
-    def _get(self, stage: int) -> map_regions.Regions | None:
-        if stage not in self._cache:
+    def _get(self, stage: int, kind: str) -> map_regions.Regions | None:
+        if (kind, stage) not in self._cache:
             con = _connect(self._db_path)
             try:
                 row = con.execute(
                     "SELECT width, height, walk_mask FROM map_walkability"
-                    " WHERE stage_kind = 'stage' AND stage_id = ?",
-                    (stage,),
+                    " WHERE stage_kind = ? AND stage_id = ?",
+                    (kind, stage),
                 ).fetchone()
             finally:
                 con.close()
             ok = row is not None and row[2] and len(row[2]) == row[0] * row[1]
-            self._cache[stage] = map_regions._label(*row) if ok else None
-        return self._cache[stage]
+            self._cache[(kind, stage)] = map_regions._label(*row) if ok else None
+        return self._cache[(kind, stage)]
 
-    def __call__(self, stage: int, tile: Tile | None) -> int | None:
-        reg = self._get(stage)
+    def __call__(self, stage: int, tile: Tile | None, kind: str = "stage") -> int | None:
+        reg = self._get(stage, kind)
         if reg is None or tile is None:
             return None
         col, row = tile[0], reg.height - 1 - tile[1]
@@ -381,6 +381,65 @@ class _Regions:
 @lru_cache(maxsize=2)
 def _regions(db_path: Path | None = None) -> _Regions:
     return _Regions(db_path)
+
+
+def room_doors(
+    kind: str, stage: int, start: Tile, goal: Tile, db_path: Path | None = None
+) -> list[tuple[Tile, bool]] | None:
+    """Door zones to take, in order, to get from `start` to `goal`'s space on one
+    map: [(zone tile, needs a touch)], [] when already in it, None when no way.
+
+    For maps the graph does not cover, like the family manor (a sestage): its
+    家族馬夫 stand in a room reached from the grounds by an A9 door.
+    """
+    region = _regions(db_path)
+    src, dst = region(stage, start, kind), region(stage, goal, kind)
+    if src is None or dst is None or src == dst:
+        return [] if src == dst else None
+    con = _connect(db_path)
+    try:
+        events = con.execute(
+            "SELECT o.event_tag, o.a0, e.event_kind FROM map_event_ops o"
+            " JOIN map_events e ON e.id = o.event_id"
+            " WHERE o.stage_kind = ? AND o.stage_id = ? AND o.kind = 'A' AND o.op = ?",
+            (kind, stage, WARP_POINT),
+        ).fetchall()
+        cells: dict[tuple[str, int], list[Tile]] = {}
+        for cat, key, x, y in con.execute(
+            "SELECT category, CASE category WHEN 'arrival' THEN event_tag ELSE tag_id END,"
+            " tile_x, tile_y FROM map_placements WHERE stage_kind = ? AND stage_id = ?"
+            " AND category IN ('arrival', 'trigger')",
+            (kind, stage),
+        ):
+            cells.setdefault((cat, key), []).append((x, y))
+    finally:
+        con.close()
+
+    def middle(c: list[Tile]) -> Tile | None:
+        return min(c, key=lambda a: sum(math.dist(a, b) for b in c)) if c else None
+
+    edges: dict[int, list[tuple[Tile, bool, int]]] = {}
+    for tag, point, ekind in events:
+        a = middle(cells.get(("arrival", tag), []))
+        b = middle(cells.get(("trigger", point), []))
+        ra, rb = region(stage, a, kind), region(stage, b, kind)
+        if a and b and ra is not None and rb is not None and ra != rb:
+            edges.setdefault(ra, []).append((a, ekind != STEP_ON, rb))
+    prev: dict[int, tuple[int, Tile, bool] | None] = {src: None}
+    queue = [src]
+    for r in queue:
+        for a, touch, rb in edges.get(r, []):
+            if rb not in prev:
+                prev[rb] = (r, a, touch)
+                queue.append(rb)
+    if dst not in prev:
+        return None
+    hops: list[tuple[Tile, bool]] = []
+    r = dst
+    while prev[r] is not None:
+        r, a, touch = prev[r]
+        hops.append((a, touch))
+    return hops[::-1]
 
 
 def build_graph(level: int, manor: int | None, db_path: Path | None = None) -> _Graph:

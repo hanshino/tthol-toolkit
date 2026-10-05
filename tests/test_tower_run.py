@@ -1,6 +1,7 @@
 from services.api_types import CombatRule, GuardConfig, GuardPotionRule, TowerConfig
 from services.combat import AttackSkill, Rotation, cast_sent, next_skill, retarget
 from services.guard import GuardStore, read_holdings, read_learned, read_stage_id
+from services.navigator import NavResult
 from services.tower import LEAVE, LOBBY_STAGE, ROOMS, YAN, TowerStage
 from services.tower_run import COMBAT_SECTION, TOWER_SECTION, TowerManager, _Done, _Run
 
@@ -613,3 +614,56 @@ def test_estimate_sets_the_stop_floor():
     assert est.ok and est.hit == 2000 and est.max_floor == 70 and est.applied  # 7 關, no dodge
     assert est.missing_buffs == ["冰心靈訣"]
     assert mgr.view(1).config.stop_floor == 70
+
+
+def outside(mgr, game):
+    """Stand in 成都少城, which is not a tower map."""
+    game.stage = 53
+    load = mgr._load_tower
+    mgr._load_tower = lambda sid: None if sid == 53 else load(sid)
+    mgr._towers.clear()
+
+
+class FakeNavigator:
+    def __init__(self, game, ok=True, detail=""):
+        self.game, self.ok, self.detail = game, ok, detail
+        self.calls = []
+
+    def go(self, pid, dest, goal=None, stop=None, note=None):
+        self.calls.append(dest)
+        if note:
+            note("走出口到杭州城")
+        if self.ok:
+            self.game.stage = dest
+        return NavResult(self.ok, "arrived" if self.ok else "stuck", self.detail)
+
+
+def test_started_elsewhere_walks_to_the_lobby_first():
+    mgr, run, game, _ = make()
+    outside(mgr, game)
+    nav = FakeNavigator(game)
+    mgr._navigator = nav
+    mgr._tick(1, run)
+    assert nav.calls == [LOBBY_STAGE]
+    assert game.stage == LOBBY_STAGE
+    assert any("導航到玄天之境" in line.text for line in run.log)
+    with pytest.raises(_Done, match="不在玄天之境或玄天塔裡"):
+        mgr._go_to_lobby(1, run, "成都少城")  # once a run: thrown out later is not walked back
+    assert nav.calls == [LOBBY_STAGE]
+
+
+def test_navigation_that_fails_stops_with_its_reason():
+    mgr, run, game, _ = make()
+    outside(mgr, game)
+    mgr._navigator = FakeNavigator(game, ok=False, detail="傳點 (48, 98) 沒有傳送")
+    with pytest.raises(_Done, match="走不到玄天之境：傳點"):
+        mgr._tick(1, run)
+
+
+def test_outside_after_floors_is_not_walked_back():
+    mgr, run, game, _ = make()
+    run.floors.append(type("F", (), {"floor": 3})())
+    outside(mgr, game)
+    mgr._navigator = FakeNavigator(game)
+    with pytest.raises(_Done, match="不在玄天之境或玄天塔裡"):
+        mgr._tick(1, run)

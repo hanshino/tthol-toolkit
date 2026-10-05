@@ -170,6 +170,7 @@ class _Run:
         self.fox_at = -FOX_RETALK  # clock of the last fox talk
         self.potions_at = -POTION_EVERY  # clock of the last potion count
         self.start_since: float | None = None  # clock we got to the 關 start
+        self.navigated = False  # walked to 玄天之境 from elsewhere (once a run)
 
 
 class TowerManager:
@@ -186,8 +187,10 @@ class TowerManager:
         wall: Callable[[], float] = time.time,
         wait: Callable[[threading.Event, float], bool] = lambda ev, secs: ev.wait(secs),
         leave_game: Callable[[int], bool] = leave_game,
+        navigator=None,  # services.navigator.Navigator: walks to 玄天之境 from elsewhere
     ) -> None:
         self._leave_game = leave_game
+        self._navigator = navigator
         self._guard = guard
         self._sleep = wait
         self._read_locked = read_locked
@@ -514,7 +517,7 @@ class TowerManager:
             return self._enter_lobby(pid, run)
         tower = self._tower(stage_id)
         if tower is None:
-            raise _Done(f"不在玄天之境或玄天塔裡（{stage_name}）", "error")
+            return self._go_to_lobby(pid, run, stage_name)
         if run.stage is None or run.stage.stage_id != stage_id:
             with run.lock:
                 run.stage, run.stage_name, run.room = tower, stage_name, None
@@ -529,6 +532,23 @@ class TowerManager:
             return self._at_start(pid, run, tower)
         run.start_since = None
         return self._room_tick(pid, run, tower, st, tile, objs)
+
+    def _go_to_lobby(self, pid: int, run: _Run, stage_name: str) -> float:
+        """Started somewhere else: walk to 玄天之境 once, before any floor."""
+        if self._navigator is None or run.navigated or run.floors:
+            raise _Done(f"不在玄天之境或玄天塔裡（{stage_name}）", "error")
+        run.navigated = True
+        self._set_step(run, f"從{stage_name}前往玄天之境")
+        self._note(run, "info", f"從{stage_name}導航到玄天之境")
+        result = self._navigator.go(
+            pid, LOBBY_STAGE, stop=run.stop, note=lambda text: self._set_step(run, text)
+        )
+        if result.reason == "stopped":
+            raise _Done("已停止")
+        if not result.ok:
+            raise _Done(f"走不到玄天之境：{result.detail}", "error")
+        self._note(run, "info", "抵達玄天之境")
+        return WAIT_MAP
 
     def _at_start(self, pid: int, run: _Run, tower: TowerStage) -> float:
         """By 九尾狐仙: let the guard put its buffs up, then talk into room 1."""
