@@ -6,7 +6,7 @@ to produce webui/src/api/types.ts. Do not hand-edit the TS file.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class _Base(BaseModel):
@@ -932,6 +932,16 @@ class GuardPotionRule(_Base):
     mp_pct: int = 30
     hp_items: list[int] = []
     mp_items: list[int] = []
+    # 寵物取水: a whitelisted potion the bag holds fewer than `refill_below` of
+    # is topped up with one stack from the pet bag (the pet must be summoned).
+    pet_refill: bool = False
+    refill_below: int = Field(20, ge=1, le=10000)
+    # How many to take each time (lower it when the bag weight is tight); one
+    # stack at most.
+    refill_qty: int = Field(200, ge=1, le=200)
+    # With no pet out, summon the first pet in the bag for the take and put it
+    # back right after; a pet the user had out is left out.
+    refill_summon: bool = True
 
 
 class GuardBuffRule(_Base):
@@ -953,7 +963,7 @@ class GuardConfig(_Base):
 class GuardLogEntry(_Base):
     id: int  # stable while the line is updated in place (bag confirmation)
     ts: float
-    rule: Literal["potion", "cure", "buff", "item", "hero", "guard"]
+    rule: Literal["potion", "cure", "buff", "item", "hero", "pet", "guard"]
     text: str
     # sent: the hook accepted the command; confirmed: the bag count dropped for
     # every drink in the line (cure: the debuff went away); unconfirmed: some
@@ -979,6 +989,7 @@ class GuardStatus(_Base):
     casts: int = 0
     uses: int = 0  # 定期使用 item uses
     transforms: int = 0  # 自動變身 presses
+    refills: int = 0  # 寵物取水 takes
     debuffs: list[str] = []  # debuffs on the character now, by name
     log: list[GuardLogEntry] = []
     config: GuardConfig = GuardConfig()

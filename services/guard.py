@@ -92,6 +92,9 @@ GUARD_COMMANDS = ("use",)  # what the guard needs from the hook's `caps` manifes
 BUFF_COMMANDS = ("cast", "status")  # what keeping buffs up needs on top
 HERO_COMMANDS = ("hero",)  # what 自動變身 needs on top
 HERO_CODE = 30295  # 英雄無雙: the `buffs` code of a hero transform
+REFILL_COMMANDS = ("pettake",)  # what 寵物取水 needs on top
+REFILL_STACK = 200  # one stack of a potion (what the pet bag holds per slot)
+SUMMON_COMMANDS = ("pet", "petsummon", "petdismiss")  # auto summon for a take
 RESOURCE_LABEL = {"hp": "體力", "mp": "真氣"}
 CURE_HOLD = 2.0  # after a cure is sent, give the debuff this long to go away
 CURE_TRIES = 3  # cures per spell of a debuff before giving up on it
@@ -341,6 +344,19 @@ def load_town_stages(db_path: Path | None = None) -> frozenset[int]:
         if "STAGE_FLAG_NOFIGHT" in flags:
             out.add(stage_id)
     return frozenset(out)
+
+
+def load_pet_items(db_path: Path | None = None) -> frozenset[int]:
+    """items.id of every pet (ITEM_PET): what can be summoned from the bag."""
+    path = db_path or bundled("tthol.sqlite")
+    if not path.exists():
+        return frozenset()
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        rows = con.execute("SELECT id FROM items WHERE type_name = 'ITEM_PET'").fetchall()
+    finally:
+        con.close()
+    return frozenset(r[0] for r in rows)
 
 
 def read_stage_id(pm, _hp_addr, _compat_mode) -> tuple[int, str] | None:
@@ -633,6 +649,34 @@ def settle_casts(state: BuffState, active: dict[int, float | None], wall: float)
     return out
 
 
+# ---- rule: 寵物取水 (pure) --------------------------------------------------
+
+
+def refill_due(
+    items: list[int],
+    bag: dict[int, int],
+    pet: dict[int, int],
+    below: int,
+    state: BuffState,
+    now: float,
+    qty: int = REFILL_STACK,
+) -> tuple[int, int] | None:
+    """(items.id, qty) of the first whitelisted potion to take from the pet bag.
+
+    Due when the bag holds fewer than `below` and the pet bag has some; `qty`
+    each time, one stack at most. A take that never reached the bag holds and rests like a
+    cast (state keyed by items.id).
+    """
+    for item_id in dict.fromkeys(items):
+        if bag.get(item_id, 0) >= below or pet.get(item_id, 0) <= 0:
+            continue
+        t = state.skills.get(item_id)
+        if t is not None and (t.hold_until > now or t.paused_until > now):
+            continue
+        return item_id, min(qty, REFILL_STACK, pet[item_id])
+    return None
+
+
 # ---- settings --------------------------------------------------------------
 
 
@@ -811,6 +855,11 @@ class _Run:
         self.hero_line: _LogLine | None = None
         self.hero_unsupported = False
         self.transforms = 0
+        self.refill_state = BuffState()  # 寵物取水, items.id -> its take tries
+        self.refill_lines: dict[int, tuple[_LogLine, int]] = {}  # items.id -> (line, bag before)
+        self.refill_unsupported = False
+        self.summon_noted: str | None = None  # why auto summon is off, noted once
+        self.refills = 0
         self.cure_state = CureState()
         self.cure_lines: dict[int, _LogLine] = {}  # status group -> its open cure line
         self.debuffs: tuple[int, ...] = ()
@@ -839,6 +888,7 @@ class GuardManager:
         status_names: Callable[[], dict[int, str]] = load_status_names,
         self_buffs: Callable[[], dict[tuple[int, int], SelfBuff]] = load_self_buffs,
         towns: Callable[[], frozenset[int]] = load_town_stages,
+        pet_items: Callable[[], frozenset[int]] = load_pet_items,
         buffs: Callable[[int], list[BuffInfo] | None] = lambda _pid: None,
         skill_icon: Callable[[int, int], str | None] = lambda _m, _l: None,
         icon_url: Callable[[int], str | None] = lambda _id: None,
@@ -859,6 +909,8 @@ class GuardManager:
         self._self_buffs: dict[tuple[int, int], SelfBuff] | None = None
         self._load_towns = towns
         self._towns: frozenset[int] | None = None
+        self._load_pet_items = pet_items
+        self._pet_items: frozenset[int] | None = None
         self._buffs = buffs
         self._skill_icon = skill_icon
         # pid -> the hook's command names from `caps`; read on start
@@ -1056,6 +1108,7 @@ class GuardManager:
             entries = [line.entry(self._item_name) for line in run.log]
             problem, drinks, cures, debuffs = run.problem, run.drinks, run.cures, run.debuffs
             casts, uses, transforms = run.casts, run.uses, run.transforms
+            refills = run.refills
         return GuardStatus(
             running=running,
             hook_cmd=hook_cmd,
@@ -1066,6 +1119,7 @@ class GuardManager:
             casts=casts,
             uses=uses,
             transforms=transforms,
+            refills=refills,
             debuffs=[self._status_name(g) for g in dict.fromkeys(debuffs)] if running else [],
             log=entries[::-1],
             config=config,
@@ -1228,6 +1282,7 @@ class GuardManager:
             run.cure_state, run.cure_lines = CureState(), {}
             run.buff_state, run.buff_lines, run.learned_at = BuffState(), {}, -SKILLS_EVERY
             run.hero_state, run.hero_line = BuffState(), None
+            run.refill_state, run.refill_lines = BuffState(), {}
         try:
             sample = self._read_locked(pid, read_sample)
         except Exception:
@@ -1254,6 +1309,7 @@ class GuardManager:
                 self._drink_up(pid, run, "hp", hp, rule.hp_pct, rule.hp_items, maxes, bag, now)
                 self._cure(pid, run, sample.debuffs, bag, now)
                 self._drink_up(pid, run, "mp", mp, rule.mp_pct, rule.mp_items, maxes, bag, now)
+                self._refill(pid, run, bag, now)
                 self._keep_buffs(pid, run, mp, now)
                 self._keep_hero(pid, run, now)
                 self._keep_items(pid, run, bag, now)
@@ -1472,6 +1528,108 @@ class GuardManager:
                 line.text = f"{what}（放了 {CAST_TRIES + 1} 次都沒生效，{CAST_PAUSE:g} 秒後再試）"
             elif tries > 1:
                 line.text = f"{what} ×{tries}"
+
+    def _refill(self, pid: int, run: _Run, bag: dict[int, int], now: float) -> None:
+        """Top up a whitelisted potion running low from the pet bag."""
+        rule = run.config.potion
+        if not rule.pet_refill:
+            return
+        with run.lock:
+            for item_id, (line, before) in list(run.refill_lines.items()):
+                if bag.get(item_id, 0) > before:
+                    run.refill_lines.pop(item_id)
+                    run.refill_state.skills[item_id].tries = 0
+                    line.phase = "confirmed"
+                    line.text += "（已取到）"
+        items = rule.hp_items + rule.mp_items
+        if not any(bag.get(i, 0) < rule.refill_below for i in items):
+            return  # nothing low: skip the pet bag read
+        if not self._has_commands(pid, REFILL_COMMANDS):
+            if not run.refill_unsupported:
+                run.refill_unsupported = True
+                self._note(run, "error", "這個 hook 沒有寵物取水要用的指令：pettake", rule="pet")
+            return
+        try:
+            held = self._read_locked(pid, read_holdings)
+        except Exception:
+            held = None
+        if held is None:
+            return
+        pick = refill_due(
+            items, bag, held[1], rule.refill_below, run.refill_state, now, rule.refill_qty
+        )
+        if pick is None:
+            return
+        item_id, qty = pick
+        name = self._item_name(item_id)
+        what = f"從寵物背包取 {name} ×{qty}"
+        before = bag.get(item_id, 0)
+        rested: list[bool] = []
+
+        def sent() -> None:
+            rested.append(record_cast(run.refill_state, item_id, now))
+
+        summoned = self._summon_for_take(pid, run, bag) if rule.refill_summon else None
+        took = self._send_cast(pid, run, f"pettake {item_id} {qty}", what, sent, rule="pet")
+        if summoned is not None:
+            # The server takes commands in order: the take lands before the dismiss.
+            self._send_cast(pid, run, "petdismiss", "收回寵物", lambda: None, rule="pet")
+            what += f"（召喚 {self._item_name(summoned)}，取完收回）"
+        if not took:
+            return
+        with run.lock:
+            run.refills += 1
+            entry = run.refill_lines.get(item_id)
+            if entry is None:
+                run.next_id += 1
+                line = _LogLine(run.next_id, self._wall(), "pet", "sent", what)
+                run.log.append(line)
+            else:
+                line = entry[0]
+            run.refill_lines[item_id] = (line, before)
+            tries = run.refill_state.skills[item_id].tries
+            if rested and rested[0]:
+                run.refill_lines.pop(item_id, None)
+                line.phase = "unconfirmed"
+                line.text = (
+                    f"{what}（取了 {CAST_TRIES + 1} 次都沒拿到，寵物可能沒召喚；"
+                    f"{CAST_PAUSE:g} 秒後再試）"
+                )
+            elif tries > 1:
+                line.text = f"{what}（第 {tries} 次）"
+
+    def _summon_for_take(self, pid: int, run: _Run, bag: dict[int, int]) -> int | None:
+        """Summon a pet from the bag when none is out; its items.id, or None."""
+        if not self._has_commands(pid, SUMMON_COMMANDS):
+            self._summon_note(run, "這個 hook 沒有自動召喚要用的指令：pet、petsummon、petdismiss")
+            return None
+        try:
+            reply = self._channel.send(pid, "pet")
+        except PipeGone:
+            self._set_problem(run, "找不到 hook 指令通道（遊戲關了，或 hook 沒有注入）")
+            raise _Stop(WAIT_NO_PIPE)
+        except (PipeBusy, NoReply):
+            raise _Stop(WAIT_BUSY)
+        slots = reply.get("slots") if reply.get("ok") else None
+        if not isinstance(slots, list) or any(slots):
+            return None  # a pet is out already (the user's: left out), or unknown
+        if self._pet_items is None:
+            self._pet_items = self._load_pet_items()
+        pet = next((i for i, n in bag.items() if n > 0 and i in self._pet_items), None)
+        if pet is None:
+            self._summon_note(run, "背包裡沒有寵物可以召喚，寵物取水要先召喚寵物")
+            return None
+        run.summon_noted = None
+        if not self._send_cast(
+            pid, run, f"petsummon {pet}", f"召喚 {self._item_name(pet)}", lambda: None, rule="pet"
+        ):
+            return None
+        return pet
+
+    def _summon_note(self, run: _Run, text: str) -> None:
+        if run.summon_noted != text:
+            run.summon_noted = text
+            self._note(run, "error", text, rule="pet")
 
     def _keep_hero(self, pid: int, run: _Run, now: float) -> None:
         """Press the hero transform while 英雄無雙 is not on the character.

@@ -87,6 +87,14 @@ button.gd-add:hover { border-color: var(--tt-accent); color: var(--tt-text); }
 
 .gd-cure-now { padding: 0 2px; }
 
+/* 寵物取水 row under the whitelists */
+.gd-refill { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 12px; padding: 8px 10px; border: 1px solid var(--tt-line-soft); font-size: 12.5px; }
+.gd-refill > input[type=checkbox] { margin: 0; accent-color: var(--tt-accent); width: 15px; height: 15px; cursor: pointer; }
+.gd-refill > label[for] { cursor: pointer; color: var(--tt-text); font-weight: 600; }
+.gd-refill-n { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--tt-dim); }
+.gd-refill-n input[type=checkbox] { width: 15px; height: 15px; min-height: 0; margin: 0; accent-color: var(--tt-accent); cursor: pointer; }
+.gd-refill-n input[type=number] { width: 68px; min-height: 30px; padding: 2px 8px; font-family: var(--tt-font-mono); }
+.gd-refill-n input:disabled { opacity: .5; }
 .gd-fixed { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .gd-fixed span { font-size: 11.5px; padding: 1px 8px; border: 1px dotted var(--tt-line); color: var(--tt-mute); }
 

@@ -15,7 +15,10 @@ const PHASE_LABEL: Record<GuardLogEntry['phase'], string> = {
   sent: '送出', confirmed: '已確認', unconfirmed: '未確認', error: '錯誤', info: '',
 };
 
-type Rule = { hp_pct: number; mp_pct: number; hp_items: number[]; mp_items: number[] };
+type Rule = {
+  hp_pct: number; mp_pct: number; hp_items: number[]; mp_items: number[];
+  pet_refill: boolean; refill_below: number; refill_summon: boolean; refill_qty: number;
+};
 type Cfg = { potion: Rule; buff: { skills: number[]; hero: boolean } };
 
 const toCfg = (c?: GuardConfig): Cfg => ({
@@ -24,6 +27,10 @@ const toCfg = (c?: GuardConfig): Cfg => ({
     mp_pct: c?.potion.mp_pct ?? 30,
     hp_items: c?.potion.hp_items ?? [],
     mp_items: c?.potion.mp_items ?? [],
+    pet_refill: c?.potion.pet_refill ?? false,
+    refill_below: c?.potion.refill_below ?? 20,
+    refill_summon: c?.potion.refill_summon ?? true,
+    refill_qty: c?.potion.refill_qty ?? 200,
   },
   buff: { skills: c?.buff?.skills ?? [], hero: c?.buff?.hero ?? false },
 });
@@ -31,7 +38,7 @@ const toCfg = (c?: GuardConfig): Cfg => ({
 // This run's counts for the log header; only what happened, so it stays short.
 const tally = (s: GuardStatus) => {
   const parts = ([
-    ['喝水', s.drinks], ['解狀態', s.cures], ['補 buff', s.casts], ['用道具', s.uses], ['變身', s.transforms],
+    ['喝水', s.drinks], ['解狀態', s.cures], ['補 buff', s.casts], ['用道具', s.uses], ['變身', s.transforms], ['取水', s.refills],
   ] as const).filter(([, n]) => n > 0).map(([what, n]) => `${what} ${n}`);
   return parts.length ? `本次：${parts.join('・')}` : '本次還沒有動作';
 };
@@ -166,6 +173,27 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
               onItems={v => setRule(res === 'hp' ? { ...rule, hp_items: v } : { ...rule, mp_items: v })}
             />
           ))}
+        </div>
+        <div className="gd-refill">
+          <input id="gd-refill" type="checkbox" checked={rule.pet_refill}
+            onChange={e => setRule({ ...rule, pet_refill: e.target.checked })} />
+          <label htmlFor="gd-refill">寵物取水</label>
+          <label className="gd-refill-n">
+            白名單的藥背包剩不到
+            <input type="number" min={1} max={10000} value={rule.refill_below} disabled={!rule.pet_refill}
+              onChange={e => setRule({ ...rule, refill_below: Math.min(10000, Math.max(1, Math.floor(Number(e.target.value)) || 1)) })} />
+            個，就從寵物背包取
+            <input type="number" min={1} max={200} value={rule.refill_qty} disabled={!rule.pet_refill}
+              aria-label="每次取的數量"
+              onChange={e => setRule({ ...rule, refill_qty: Math.min(200, Math.max(1, Math.floor(Number(e.target.value)) || 1)) })} />
+            個（最多 200，負重吃緊就調低）
+          </label>
+          <label className="gd-refill-n">
+            <input type="checkbox" checked={rule.refill_summon} disabled={!rule.pet_refill}
+              onChange={e => setRule({ ...rule, refill_summon: e.target.checked })} />
+            沒召喚寵物時自動召喚背包裡的寵物，取完收回
+          </label>
+          <span className="gd-dim">寵物要在身邊才取得到；本來就在外面的寵物不會被收回</span>
         </div>
         <div className="gd-fixed">
           <span>血量一變動就判斷，不等上一口生效</span>

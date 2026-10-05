@@ -37,7 +37,16 @@ async def test_status_defaults(client):
 
 async def test_config_round_trip(client):
     cfg = {
-        "potion": {"hp_pct": 60, "mp_pct": 30, "hp_items": [24008], "mp_items": []},
+        "potion": {
+            "hp_pct": 60,
+            "mp_pct": 30,
+            "hp_items": [24008],
+            "mp_items": [],
+            "pet_refill": True,
+            "refill_below": 30,
+            "refill_summon": False,
+            "refill_qty": 50,
+        },
         "buff": {"skills": [713], "hero": True},
     }
     resp = await client.put("/api/characters/1/guard/config", json=cfg)

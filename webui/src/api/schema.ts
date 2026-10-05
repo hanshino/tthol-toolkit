@@ -1974,7 +1974,11 @@ export interface components {
              *       "hp_pct": 70,
              *       "mp_pct": 30,
              *       "hp_items": [],
-             *       "mp_items": []
+             *       "mp_items": [],
+             *       "pet_refill": false,
+             *       "refill_below": 20,
+             *       "refill_qty": 200,
+             *       "refill_summon": true
              *     }
              */
             potion: components["schemas"]["GuardPotionRule"];
@@ -1996,7 +2000,7 @@ export interface components {
              * Rule
              * @enum {string}
              */
-            rule: "potion" | "cure" | "buff" | "item" | "hero" | "guard";
+            rule: "potion" | "cure" | "buff" | "item" | "hero" | "pet" | "guard";
             /** Text */
             text: string;
             /**
@@ -2033,6 +2037,26 @@ export interface components {
              * @default []
              */
             mp_items: number[];
+            /**
+             * Pet Refill
+             * @default false
+             */
+            pet_refill: boolean;
+            /**
+             * Refill Below
+             * @default 20
+             */
+            refill_below: number;
+            /**
+             * Refill Qty
+             * @default 200
+             */
+            refill_qty: number;
+            /**
+             * Refill Summon
+             * @default true
+             */
+            refill_summon: boolean;
         };
         /** GuardStartResult */
         GuardStartResult: {
@@ -2077,6 +2101,11 @@ export interface components {
              */
             transforms: number;
             /**
+             * Refills
+             * @default 0
+             */
+            refills: number;
+            /**
              * Debuffs
              * @default []
              */
@@ -2092,7 +2121,11 @@ export interface components {
              *         "hp_items": [],
              *         "hp_pct": 70,
              *         "mp_items": [],
-             *         "mp_pct": 30
+             *         "mp_pct": 30,
+             *         "pet_refill": false,
+             *         "refill_below": 20,
+             *         "refill_qty": 200,
+             *         "refill_summon": true
              *       },
              *       "buff": {
              *         "hero": false,
