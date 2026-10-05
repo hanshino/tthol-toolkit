@@ -22,8 +22,14 @@ buff is missing from the hook's buff list (services.buff_tracker) or ends
 within BUFF_LEAD. One cast per pass, CAST_GAP apart; a cast whose buff never
 shows up is retried CAST_TRIES times, then the skill rests for CAST_PAUSE.
 
-Settings are saved per character name in %APPDATA%\\御心鑒\\guard.json. The
-on/off switch is not saved: the guard never starts by itself after a restart.
+Rule 4 keeps item buffs up (道具處置 "use_periodic"): every item whose buff is
+missing from the hook's list is used in the same pass, like the battle puppet;
+each item then holds and rests like a cast, with no gap between items.
+Cure items (rule 2) are the ones set to "use_on_status" in the same table.
+
+Settings are saved per character name in snapshots.db (character_settings:
+"guard.potion", "guard.buff", "items"). The on/off switch is not saved: the
+guard never starts by itself after a restart.
 """
 
 from __future__ import annotations
@@ -45,13 +51,25 @@ from services._paths import app_root, bundled
 from services.api_types import (
     BuffInfo,
     BuffSkillCandidate,
-    CureCandidate,
+    GuardBuffRule,
     GuardConfig,
     GuardLogEntry,
+    GuardPotionRule,
     GuardStartResult,
     GuardStatus,
     GuardVitals,
+    ItemRule,
+    ItemRuleCandidate,
+    ItemRules,
+    ItemRulesView,
     PotionCandidate,
+)
+from services.item_rules import (
+    ITEMS_SECTION,
+    USE_ON_STATUS,
+    USE_PERIODIC,
+    ItemFact,
+    load_item_facts,
 )
 from services.hook_cmd import (
     CommandChannel,
@@ -230,40 +248,11 @@ def load_potions(db_path: Path | None = None) -> dict[int, Potion]:
 # ---- cure items ------------------------------------------------------------
 
 
-# Status groups a cure item may clear: the hostile ones. A potion whose
-# extra_status is in one of these groups either clears it (summary 解除…) or
-# inflicts it (謎之藥水, 烤壞的肉串), so the summary is what tells them apart.
-# 現形 (16) is left out: its "cure" 現形丹 strips the user's own 隱形.
-CURABLE_GROUPS = frozenset({14, 15, 17, 18, 19, 20, 21, 22, 23})
-
-
 @dataclass(frozen=True)
 class Cure:
     name: str
     group: int  # the status group it clears
     status: str  # that group's name
-
-
-def load_cures(db_path: Path | None = None) -> dict[int, Cure]:
-    """items.id -> Cure for every potion that clears a hostile status group."""
-    path = db_path or bundled("tthol.sqlite")
-    if not path.exists():
-        return {}
-    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    con.text_factory = lambda b: b.decode("utf-8", errors="replace")
-    try:
-        rows = con.execute(
-            'SELECT i.id, i.name, s."group", s.name FROM items i'
-            " JOIN status s ON s.id = i.extra_status"
-            " WHERE i.type_name = 'POTION' AND i.summary LIKE '解除%'"
-        ).fetchall()
-    finally:
-        con.close()
-    return {
-        item_id: Cure(name, group, status)
-        for item_id, name, group, status in rows
-        if group in CURABLE_GROUPS
-    }
 
 
 def load_status_names(db_path: Path | None = None) -> dict[int, str]:
@@ -331,8 +320,8 @@ def load_self_buffs(db_path: Path | None = None) -> dict[tuple[int, int], SelfBu
 def load_town_stages(db_path: Path | None = None) -> frozenset[int]:
     """Stage ids where fighting is off (STAGE_FLAG_NOFIGHT): towns, markets, halls.
 
-    NOFIGHT together with PK marks a PvP field (成都城郊, 迷路草原, 平行空間),
-    where buffs are wanted, so those are not towns. Monster counts are no
+    Like the battle puppet, this includes NOFIGHT maps that allow PK (成都城郊,
+    迷路草原, 平行空間): the user chose to pause there too. Monster counts are no
     guide: about 125 fighting maps spawn theirs from map events only.
     """
     path = db_path or bundled("tthol.sqlite")
@@ -347,7 +336,7 @@ def load_town_stages(db_path: Path | None = None) -> frozenset[int]:
     out = set()
     for stage_id, flag in rows:
         flags = set((flag or "").split(","))
-        if "STAGE_FLAG_NOFIGHT" in flags and "STAGE_FLAG_PK" not in flags:
+        if "STAGE_FLAG_NOFIGHT" in flags:
             out.add(stage_id)
     return frozenset(out)
 
@@ -595,6 +584,41 @@ def record_cast(state: BuffState, mid: int, now: float) -> bool:
     return False
 
 
+def active_items(buffs: list[BuffInfo]) -> dict[int, float | None]:
+    """items.id -> expiry for the item buffs on the character (level None = an item code)."""
+    return {b.code: b.expires_at for b in buffs if b.code is not None and b.level is None}
+
+
+def due_items(
+    wanted: list[int],
+    bag: dict[int, int],
+    active: dict[int, float | None],
+    state: BuffState,
+    empty_until: dict[int, float],
+    now: float,
+    wall: float,
+) -> list[int]:
+    """Every use_periodic item to use now: held, not resting, its buff missing or ending.
+
+    All of them go in one pass, like the battle puppet (several 0x29 in the
+    same instant): an item has no cast animation, so there is no gap between
+    different items, only the per-item hold and rest.
+    """
+    out = []
+    for item_id in wanted:
+        if bag.get(item_id, 0) <= 0 or empty_until.get(item_id, 0.0) > now:
+            continue
+        t = state.skills.get(item_id)
+        if t is not None and (t.hold_until > now or t.paused_until > now):
+            continue
+        if item_id in active:
+            expires = active[item_id]
+            if expires is None or expires - wall > BUFF_LEAD:
+                continue
+        out.append(item_id)
+    return out
+
+
 def settle_casts(state: BuffState, active: dict[int, float | None], wall: float) -> list[int]:
     """Skills whose buff is on (and not about to end) again: reset their tries."""
     out = []
@@ -610,45 +634,100 @@ def settle_casts(state: BuffState, active: dict[int, float | None], wall: float)
 # ---- settings --------------------------------------------------------------
 
 
-def _default_store_path() -> Path:
+POTION_SECTION = "guard.potion"
+BUFF_SECTION = "guard.buff"
+
+
+def _legacy_store_path() -> Path:
     appdata = os.environ.get("APPDATA")
     base = Path(appdata) / "御心鑒" if appdata else app_root()
     return base / "guard.json"
 
 
+class MemorySettings:
+    """get_setting / set_setting in memory: GuardStore's default and the tests' store."""
+
+    def __init__(self) -> None:
+        self._data: dict[tuple[str, str], dict] = {}
+
+    def get_setting(self, character: str, section: str) -> dict | None:
+        data = self._data.get((character, section))
+        return json.loads(json.dumps(data)) if data is not None else None
+
+    def set_setting(self, character: str, section: str, data: dict) -> None:
+        self._data[(character, section)] = json.loads(json.dumps(data))
+
+
 class GuardStore:
-    """{character name: GuardConfig} in one JSON file. Best effort: a bad file reads as empty."""
+    """Guard settings and 道具處置 per character name, in the settings table.
 
-    def __init__(self, path: Path | None = None) -> None:
-        self._path = path or _default_store_path()
-        self._lock = threading.Lock()
+    `db` is anything with get_setting / set_setting (SnapshotDB). A section that
+    does not validate reads as its defaults.
+    """
 
-    def _read_all(self) -> dict:
+    def __init__(self, db=None) -> None:
+        self._db = db if db is not None else MemorySettings()
+
+    def _section(self, name: str, section: str, model):
+        raw = self._db.get_setting(name, section)
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
-        except (OSError, ValueError):
-            return {}
-
-    def load(self, name: str) -> GuardConfig:
-        with self._lock:
-            raw = self._read_all().get(name)
-        try:
-            return GuardConfig.model_validate(raw) if raw else GuardConfig()
+            return model.model_validate(raw) if raw else model()
         except ValueError:
             log.warning(
-                "guard settings for %s are invalid; using defaults", name, extra={"cat": "guard"}
+                "settings %s for %s are invalid; using defaults",
+                section,
+                name,
+                extra={"cat": "guard"},
             )
-            return GuardConfig()
+            return model()
+
+    def load(self, name: str) -> GuardConfig:
+        return GuardConfig(
+            potion=self._section(name, POTION_SECTION, GuardPotionRule),
+            buff=self._section(name, BUFF_SECTION, GuardBuffRule),
+        )
 
     def save(self, name: str, config: GuardConfig) -> None:
-        with self._lock:
-            data = self._read_all()
-            data[name] = config.model_dump()
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            os.replace(tmp, self._path)
+        self._db.set_setting(name, POTION_SECTION, config.potion.model_dump())
+        self._db.set_setting(name, BUFF_SECTION, config.buff.model_dump())
+
+    def load_items(self, name: str) -> ItemRules:
+        return self._section(name, ITEMS_SECTION, ItemRules)
+
+    def save_items(self, name: str, rules: ItemRules) -> None:
+        self._db.set_setting(name, ITEMS_SECTION, rules.model_dump(mode="json"))
+
+
+def migrate_legacy_store(db, path: Path | None = None) -> int:
+    """Move %APPDATA%\\御心鑒\\guard.json (before 2026-10-05) into the settings table.
+
+    Sections already in the table win. The old cure list becomes
+    "use_on_status" rules. The file is renamed to guard.json.migrated, so this
+    runs once. Returns how many characters were moved.
+    """
+    path = path or _legacy_store_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0
+    moved = 0
+    for name, cfg in (data if isinstance(data, dict) else {}).items():
+        if not isinstance(cfg, dict):
+            continue
+        for key, section in (("potion", POTION_SECTION), ("buff", BUFF_SECTION)):
+            if isinstance(cfg.get(key), dict) and db.get_setting(name, section) is None:
+                db.set_setting(name, section, cfg[key])
+        cure = (cfg.get("cure") or {}).get("items") or []
+        if cure and db.get_setting(name, ITEMS_SECTION) is None:
+            rules = ItemRules(items={int(i): ItemRule(action=USE_ON_STATUS) for i in cure})
+            db.set_setting(name, ITEMS_SECTION, rules.model_dump(mode="json"))
+        moved += 1
+    try:
+        os.replace(path, path.with_name(path.name + ".migrated"))
+    except OSError:
+        log.warning("could not rename %s after migrating it", path, extra={"cat": "guard"})
+    log.info("guard settings migrated from %s: %d characters", path, moved, extra={"cat": "guard"})
+    return moved
 
 
 # ---- manager ---------------------------------------------------------------
@@ -701,9 +780,13 @@ class _LogLine:
 
 
 class _Run:
-    def __init__(self, name: str, config: GuardConfig) -> None:
+    def __init__(self, name: str, config: GuardConfig, items: ItemRules | None = None) -> None:
         self.name = name
         self.config = config
+        self.items = items or ItemRules()
+        self.item_state = BuffState()  # 定期使用, timed like casts
+        self.item_lines: dict[int, _LogLine] = {}  # items.id -> its open use line
+        self.uses = 0
         self.stop = threading.Event()
         self.wake = threading.Event()  # set by every own 0x06
         self.thread: threading.Thread | None = None
@@ -746,7 +829,7 @@ class GuardManager:
         channel: CommandChannel | None = None,
         store: GuardStore | None = None,
         potions: Callable[[], dict[int, Potion]] = load_potions,
-        cures: Callable[[], dict[int, Cure]] = load_cures,
+        item_facts: Callable[[int], ItemFact | None] | None = None,
         status_names: Callable[[], dict[int, str]] = load_status_names,
         self_buffs: Callable[[], dict[tuple[int, int], SelfBuff]] = load_self_buffs,
         towns: Callable[[], frozenset[int]] = load_town_stages,
@@ -763,8 +846,7 @@ class GuardManager:
         self._store = store or GuardStore()
         self._load_potions = potions
         self._potions: dict[int, Potion] | None = None
-        self._load_cures = cures
-        self._cures: dict[int, Cure] | None = None
+        self._facts = item_facts or load_item_facts()
         self._load_status_names = status_names
         self._status_names: dict[int, str] | None = None
         self._load_self_buffs = self_buffs
@@ -801,7 +883,7 @@ class GuardManager:
                 if not run.stop.is_set():
                     return GuardStartResult(ok=True)
                 run.thread.join(timeout=2.0)  # a stop is still winding down: let it end first
-            run = _Run(name, self._store.load(name))
+            run = _Run(name, self._store.load(name), self._store.load_items(name))
             self._runs[pid] = run
             run.thread = threading.Thread(
                 target=self._loop, args=(pid, run), daemon=True, name=f"guard-{pid}"
@@ -892,6 +974,57 @@ class GuardManager:
             run.config = config
         return config
 
+    def items(self, pid: int) -> ItemRules | None:
+        name = self._character_name(pid)
+        return self._store.load_items(name) if name else None
+
+    def set_items(self, pid: int, rules: ItemRules) -> ItemRules | None:
+        name = self._character_name(pid)
+        if not name:
+            return None
+        self._store.save_items(name, rules)
+        with self._lock:
+            run = self._runs.get(pid)
+        if run is not None and run.name == name:
+            run.items = rules
+        return rules
+
+    def reload_settings(self, name: str) -> None:
+        """Settings for `name` changed outside this manager (copied): reload running guards."""
+        with self._lock:
+            runs = [r for r in self._runs.values() if r.name == name]
+        for run in runs:
+            run.config = self._store.load(name)
+            run.items = self._store.load_items(name)
+
+    def item_view(self, pid: int, extra: set[int] | None = None) -> ItemRulesView:
+        """The 道具處置 table: held items (bag and pet bag), items with a rule, and `extra`."""
+        name = self._character_name(pid)
+        rules = self._store.load_items(name) if name else ItemRules()
+        held = self._read_locked(pid, read_holdings) if name else None
+        bag, pet = held if held is not None else ({}, {})
+        active = active_items(self._buffs(pid) or [])
+        out = []
+        for item_id in sorted(set(bag) | set(pet) | set(rules.items) | (extra or set())):
+            fact = self._facts(item_id)
+            if fact is None:
+                continue
+            periodic = fact.periodic
+            out.append(
+                ItemRuleCandidate(
+                    item_id=item_id,
+                    name=fact.name,
+                    bag=bag.get(item_id, 0),
+                    pet=pet.get(item_id, 0),
+                    actions=fact.actions,
+                    effect=fact.effect,
+                    active=(item_id in active) if periodic else None,
+                    expires_at=active.get(item_id) if periodic else None,
+                    icon_url=self._icon_url(item_id),
+                )
+            )
+        return ItemRulesView(character=name, rules=rules, candidates=out)
+
     def status(self, pid: int) -> GuardStatus:
         name = self._character_name(pid)
         config = self._store.load(name) if name else GuardConfig()
@@ -916,7 +1049,7 @@ class GuardManager:
         with run.lock:
             entries = [line.entry(self._item_name) for line in run.log]
             problem, drinks, cures, debuffs = run.problem, run.drinks, run.cures, run.debuffs
-            casts = run.casts
+            casts, uses = run.casts, run.uses
         return GuardStatus(
             running=running,
             hook_cmd=hook_cmd,
@@ -925,6 +1058,7 @@ class GuardManager:
             drinks=drinks,
             cures=cures,
             casts=casts,
+            uses=uses,
             debuffs=[self._status_name(g) for g in dict.fromkeys(debuffs)] if running else [],
             log=entries[::-1],
             config=config,
@@ -994,31 +1128,6 @@ class GuardManager:
             )
         return out
 
-    def cure_candidates(self, pid: int) -> list[CureCandidate]:
-        """Cure items in the bag or pet bag."""
-        held = self._read_locked(pid, read_holdings)
-        if held is None:
-            return []
-        bag, pet = held
-        cures = self._cure_catalog()
-        out = []
-        for item_id in sorted(set(bag) | set(pet)):
-            cure = cures.get(item_id)
-            if cure is None:
-                continue
-            out.append(
-                CureCandidate(
-                    item_id=item_id,
-                    name=cure.name,
-                    group=cure.group,
-                    status=cure.status,
-                    bag=bag.get(item_id, 0),
-                    pet=pet.get(item_id, 0),
-                    icon_url=self._icon_url(item_id),
-                )
-            )
-        return out
-
     # -- loop ----------------------------------------------------------------
 
     def _catalog(self) -> dict[int, Potion]:
@@ -1031,10 +1140,17 @@ class GuardManager:
             self._self_buffs = self._load_self_buffs()
         return self._self_buffs
 
-    def _cure_catalog(self) -> dict[int, Cure]:
-        if self._cures is None:
-            self._cures = self._load_cures()
-        return self._cures
+    def _cures(self, run: _Run) -> tuple[list[int], dict[int, Cure]]:
+        """The run's use_on_status items and what each one clears."""
+        items, cures = [], {}
+        for item_id, rule in run.items.items.items():
+            fact = self._facts(item_id) if rule.action == USE_ON_STATUS else None
+            if fact is not None and fact.cure_group is not None:
+                items.append(item_id)
+                cures[item_id] = Cure(
+                    fact.name, fact.cure_group, self._status_name(fact.cure_group)
+                )
+        return items, cures
 
     def _status_name(self, group: int) -> str:
         if self._status_names is None:
@@ -1045,8 +1161,8 @@ class GuardManager:
         potion = self._catalog().get(item_id)
         if potion:
             return potion.name
-        cure = self._cure_catalog().get(item_id)
-        return cure.name if cure else f"#{item_id}"
+        fact = self._facts(item_id)
+        return fact.name if fact else f"#{item_id}"
 
     def _note(
         self,
@@ -1093,12 +1209,14 @@ class GuardManager:
             if name is None:
                 self._set_problem(run, "角色還沒定位")
                 return WAIT_NOT_LOCATED
-            run.name, run.config, run.state, run.live = (
+            run.name, run.config, run.items, run.state, run.live = (
                 name,
                 self._store.load(name),
+                self._store.load_items(name),
                 DrinkState(),
                 None,
             )
+            run.item_state, run.item_lines = BuffState(), {}
             run.awaiting = {}
             run.cure_state, run.cure_lines = CureState(), {}
             run.buff_state, run.buff_lines, run.learned_at = BuffState(), {}, -SKILLS_EVERY
@@ -1126,9 +1244,10 @@ class GuardManager:
             if hp > 0:  # dead: nothing to drink for, nothing to cure
                 # HP first (staying alive), then debuffs, then MP.
                 self._drink_up(pid, run, "hp", hp, rule.hp_pct, rule.hp_items, maxes, bag, now)
-                self._cure(pid, run, sample.debuffs, run.config.cure.items, bag, now)
+                self._cure(pid, run, sample.debuffs, bag, now)
                 self._drink_up(pid, run, "mp", mp, rule.mp_pct, rule.mp_items, maxes, bag, now)
                 self._keep_buffs(pid, run, mp, now)
+                self._keep_items(pid, run, bag, now)
         except _Stop as stop:
             return stop.wait
         self._set_problem(run, None)
@@ -1238,12 +1357,13 @@ class GuardManager:
         pid: int,
         run: _Run,
         debuffs: tuple[int, ...],
-        items: list[int],
         bag: dict[int, int],
         now: float,
     ) -> None:
-        """Use a ticked cure for each debuff it clears, one try per group per pass."""
-        cures = self._cure_catalog()
+        """Use a use_on_status item for each debuff it clears, one try per group per pass."""
+        items, cures = self._cures(run)
+        if not items:
+            return
         for _ in range(MAX_PER_PASS):
             pick = next_cure(debuffs, items, cures, bag, run.cure_state, run.state.empty_until, now)
             if pick is None:
@@ -1295,18 +1415,8 @@ class GuardManager:
                 self._note(run, "info", "坐著放不了技能，站起來後再補 buff", rule="buff")
             return
         run.sit_noted = False
-        try:
-            stage = self._read_locked(pid, read_stage_id)
-        except Exception:
-            stage = None
-        if self._towns is None:
-            self._towns = self._load_towns()
-        if stage is not None and stage[0] in self._towns:
-            if run.town_noted != stage[0]:
-                run.town_noted = stage[0]
-                self._note(run, "info", f"在{stage[1]}（不能戰鬥的地圖），不補 buff", rule="buff")
+        if self._in_town(pid, run):
             return
-        run.town_noted = None
         wall = self._wall()
         active = active_skills(buffs)
         if now - run.learned_at >= SKILLS_EVERY:
@@ -1353,6 +1463,77 @@ class GuardManager:
                 line.text = f"{what}（放了 {CAST_TRIES + 1} 次都沒生效，{CAST_PAUSE:g} 秒後再試）"
             elif tries > 1:
                 line.text = f"{what} ×{tries}"
+
+    def _in_town(self, pid: int, run: _Run) -> bool:
+        """On a no-fight map (town, market, hall); noted once per map."""
+        try:
+            stage = self._read_locked(pid, read_stage_id)
+        except Exception:
+            stage = None
+        if self._towns is None:
+            self._towns = self._load_towns()
+        if stage is not None and stage[0] in self._towns:
+            if run.town_noted != stage[0]:
+                run.town_noted = stage[0]
+                self._note(
+                    run,
+                    "info",
+                    f"在{stage[1]}（不能戰鬥的地圖），不補 buff、不用定期道具",
+                    rule="buff",
+                )
+            return True
+        run.town_noted = None
+        return False
+
+    def _keep_items(self, pid: int, run: _Run, bag: dict[int, int], now: float) -> None:
+        """Use every use_periodic item whose buff is missing or about to end."""
+        wanted = [i for i, r in run.items.items.items() if r.action == USE_PERIODIC]
+        if not wanted:
+            return
+        buffs = self._buffs(pid)
+        if buffs is None or self._in_town(pid, run):
+            return
+        wall = self._wall()
+        active = active_items(buffs)
+        with run.lock:
+            for item_id in settle_casts(run.item_state, active, wall):
+                line = run.item_lines.pop(item_id, None)
+                if line is not None:
+                    line.phase = "confirmed"
+                    line.text += "（已生效）"
+        for item_id in due_items(
+            wanted, bag, active, run.item_state, run.state.empty_until, now, wall
+        ):
+            self._use_periodic(pid, run, item_id, bag, now)
+
+    def _use_periodic(self, pid: int, run: _Run, item_id: int, bag: dict[int, int], now: float):
+        name = self._item_name(item_id)
+        before = bag.get(item_id, 0)
+        rested: list[bool] = []
+
+        def sent() -> None:
+            rested.append(record_cast(run.item_state, item_id, now))
+            bag[item_id] = before - 1
+
+        if not self._use(pid, run, item_id, f"用 {name}", "item", sent, now):
+            return
+        with run.lock:
+            run.uses += 1
+            line = run.item_lines.get(item_id)
+            if line is None:
+                run.next_id += 1
+                line = _LogLine(run.next_id, self._wall(), "item", "sent", f"用 {name}")
+                run.log.append(line)
+                run.item_lines[item_id] = line
+            tries = run.item_state.skills[item_id].tries
+            if rested and rested[0]:
+                run.item_lines.pop(item_id, None)
+                line.phase = "unconfirmed"
+                line.text = (
+                    f"用 {name}（用了 {CAST_TRIES + 1} 次都沒生效，{CAST_PAUSE:g} 秒後再試）"
+                )
+            elif tries > 1:
+                line.text = f"用 {name} ×{tries}"
 
     def _own_handle(self, pid: int, run: _Run, what: str) -> int | None:
         """The character's own handle for `cast`, from `status` (changes on a map change)."""

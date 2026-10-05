@@ -83,6 +83,8 @@ button.gd-add:hover { border-color: var(--tt-accent); color: var(--tt-text); }
 .gd-buff-clash { display: block; font-size: 11px; color: var(--tt-warn); }
 .gd-cures input:focus-visible { outline: 1px solid var(--tt-accent); outline-offset: 2px; }
 
+.gd-cure-now { padding: 0 2px; }
+
 .gd-fixed { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .gd-fixed span { font-size: 11.5px; padding: 1px 8px; border: 1px dotted var(--tt-line); color: var(--tt-mute); }
 

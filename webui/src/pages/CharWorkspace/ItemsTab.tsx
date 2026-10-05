@@ -5,7 +5,9 @@ import type { CharacterDetail, SaveSnapshotResult } from '../../api/types';
 import { LinkDot, type LinkStatus } from '../../primitives';
 import { buildEntries, CATEGORIES, groupByCategory, SOURCE_LABEL, type Category, type Entry, type Tab } from '../../components/items/entries';
 import { ContainerHoldings, ItemDetail } from '../../components/items/ItemDetail';
-import { Row, Slot } from '../../components/items/ItemCells';
+import { Row, Slot, type RuleBadge } from '../../components/items/ItemCells';
+import { CopySettings, ItemRuleEditor } from '../../components/items/ItemRuleEditor';
+import { ACTION_LABEL, ACTION_SHORT, LATER_ACTIONS, useItemRules } from '../../components/items/useItemRules';
 import { useItemMeta } from '../../components/items/useItemMeta';
 import '../../components/items/items.css';
 
@@ -53,6 +55,7 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState<SnapshotSource | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [ruledOnly, setRuledOnly] = useState(false);
 
   const updatePrefs = (next: Partial<typeof prefs>) => {
     const merged = { ...prefs, ...next };
@@ -80,9 +83,17 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
   const warehouse = detail?.warehouse ?? [];
   const slots = [...inventory, ...pet, ...warehouse];
   const meta = useItemMeta(slots.map(s => s.item_id));
+  const itemRules = useItemRules(pid, warehouse.map(s => s.item_id));
+  const badge = (itemId: number): RuleBadge | undefined => {
+    const a = itemRules.rules[itemId]?.action;
+    const short = a ? ACTION_SHORT[a] : undefined;
+    return a && short ? { short, label: ACTION_LABEL[a], tone: LATER_ACTIONS.includes(a) ? 'later' : 'use' } : undefined;
+  };
+  const ruledCount = Object.keys(itemRules.rules).length;
 
   const entries = buildEntries(slots, meta, { tab, merge: prefs.merge, query });
-  const shown = category === 'all' ? entries : entries.filter(e => e.category === category);
+  const byCategory = category === 'all' ? entries : entries.filter(e => e.category === category);
+  const shown = ruledOnly ? byCategory.filter(e => itemRules.rules[e.itemId]) : byCategory;
   const current: Entry | undefined = shown.find(e => e.key === selected) ?? shown[0];
 
   const invTs = detail?.inventory_updated_at ?? null;
@@ -106,14 +117,14 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
 
   const showSources = tab === 'all';
   // Raw slot order (as in game) only when nothing regroups or merges the slots.
-  const flat = prefs.view === 'grid' && !prefs.merge && category === 'all' && !query.trim();
+  const flat = prefs.view === 'grid' && !prefs.merge && category === 'all' && !query.trim() && !ruledOnly;
 
   const renderEntries = (list: Entry[]) => prefs.view === 'grid'
     ? (
       <div className="inv-grid">
         {list.map(e => (
           <Slot key={e.key} entry={e} selected={e.key === current?.key} showSources={showSources}
-            onSelect={() => setSelected(e.key)} />
+            onSelect={() => setSelected(e.key)} rule={badge(e.itemId)} />
         ))}
       </div>
     )
@@ -121,12 +132,14 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
       <div className="inv-list">
         {list.map(e => (
           <Row key={e.key} entry={e} selected={e.key === current?.key} showSources={showSources}
-            onSelect={() => setSelected(e.key)} />
+            onSelect={() => setSelected(e.key)} rule={badge(e.itemId)} />
         ))}
       </div>
     );
 
-  const emptyText = query.trim()
+  const emptyText = ruledOnly
+    ? '這裡沒有設定處置的道具 — 點選道具後在右側「處置」設定'
+    : query.trim()
     ? `沒有符合「${query.trim()}」的道具`
     : tab === 'warehouse' && whTs === null
       ? '尚未讀取庫房 — 在遊戲中開啟倉庫即可自動讀取'
@@ -170,6 +183,11 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
               title="同一種道具佔好幾格時，合成一格顯示總數"
               onClick={() => { updatePrefs({ merge: !prefs.merge }); setSelected(null); }}>
               合併同名
+            </button>
+            <button type="button" className={ruledOnly ? 'is-active' : ''} aria-pressed={ruledOnly}
+              title="只顯示有設定處置（定期使用、中了狀態就用、賣掉、存倉）的道具"
+              onClick={() => { setRuledOnly(!ruledOnly); setSelected(null); }}>
+              已設處置 {ruledCount}
             </button>
             <div className="inv-seg" role="group" aria-label="檢視方式">
               <button type="button" className={prefs.view === 'grid' ? 'is-active' : ''} aria-pressed={prefs.view === 'grid'}
@@ -215,7 +233,8 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
             <span>
               {prefs.merge ? `${shown.length} 種道具` : `${shown.length} 格`} · 共 {totalQty.toLocaleString()} 個
             </span>
-            <span style={{ display: 'flex', gap: 6 }}>
+            <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <CopySettings character={itemRules.character} onCopied={msg => { setToast(msg); itemRules.reload(); }} />
               <button type="button" className="is-ghost" onClick={() => saveSnapshot('inventory')}
                 disabled={inventory.length === 0 || saving !== null} title="將目前行囊內容存入留影">
                 {saving === 'inventory' ? '保存中…' : '↧ 留影身'}
@@ -232,6 +251,7 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
         </section>
 
         <ItemDetail entry={current}>
+          {current && <ItemRuleEditor itemId={current.itemId} state={itemRules} />}
           {current && <ContainerHoldings slots={slots} itemId={current.itemId} />}
         </ItemDetail>
       </div>

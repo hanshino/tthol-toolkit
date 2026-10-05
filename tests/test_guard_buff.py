@@ -140,7 +140,7 @@ class FakeChannel:
 
 def make(tmp_path, skills, buffs, mp=5000, channel=None, caps=("use", "cast", "status")):
     clock = {"t": 100.0}
-    store = GuardStore(tmp_path / "guard.json")
+    store = GuardStore()
     store.save(
         "寒江孤影",
         GuardConfig(
@@ -163,7 +163,7 @@ def make(tmp_path, skills, buffs, mp=5000, channel=None, caps=("use", "cast", "s
         channel=channel or FakeChannel(),
         store=store,
         potions=lambda: {},
-        cures=lambda: {},
+        item_facts=lambda _i: None,
         self_buffs=lambda: DEFS,
         towns=lambda: frozenset({51}),
         buffs=lambda pid: state["buffs"],
@@ -305,7 +305,7 @@ def test_no_casts_in_town_noted_once_per_map(tmp_path):
     mgr._tick(1, run)
     assert casts(mgr) == []
     assert [e.text for e in run.log if e.rule == "buff"] == [
-        "在洛陽外城（不能戰鬥的地圖），不補 buff"
+        "在洛陽外城（不能戰鬥的地圖），不補 buff、不用定期道具"
     ]
     state["stage"] = (1, "莫愁谷入口")
     mgr._tick(1, run)
@@ -321,4 +321,4 @@ def test_load_town_stages_from_the_game_db():
     towns = load_town_stages()
     assert {2, 9, 44, 51, 52, 53, 54, 173, 174} <= towns  # towns and markets
     assert not {1, 3, 16, 202, 1721, 1936} & towns  # fighting maps
-    assert 10 not in towns  # 成都城郊: NOFIGHT + PK, a PvP field
+    assert 10 in towns  # 成都城郊: NOFIGHT + PK, paused like the puppet does

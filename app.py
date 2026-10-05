@@ -21,7 +21,7 @@ from services import item_catalog, skill_catalog, window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.damage_capture import DamageRecorderManager
-from services.guard import POSE_PACKET, GuardManager
+from services.guard import POSE_PACKET, GuardManager, GuardStore, migrate_legacy_store
 from services.buff_tracker import BUFF_PACKET, BuffTracker
 from services.hook_cmd import CommandChannel
 from services.hook_hub import HookHub, read_templates
@@ -65,10 +65,13 @@ def _build_services(dev: bool) -> dict:
     )
     # Shout / system-line templates come from game memory, through the worker's lock.
     hook.set_strings(lambda pid: wm.read_locked(pid, read_templates))
+    # Guard settings moved from guard.json into snapshots.db (2026-10-05).
+    migrate_legacy_store(db)
     guard = GuardManager(
         read_locked=wm.read_locked,
         character_name=wm.character_name,
         channel=channel,
+        store=GuardStore(db),
         buffs=buffs.buffs,
         skill_icon=lambda mid, level: skill_catalog.icon_path(mid, level),
         icon_url=lambda item_id: (

@@ -1,6 +1,7 @@
 import pytest
 
-from services.api_types import GuardConfig, GuardCureRule, GuardPotionRule
+from services.api_types import GuardConfig, GuardPotionRule, ItemRule, ItemRules
+from services.item_rules import ItemFact
 from services.guard import (
     CONFIRM_WINDOW,
     CURE_HOLD,
@@ -40,6 +41,10 @@ MAXES = {"hp": 1000, "mp": 500}
 POISON, SLOW = 19, 20
 JIEDU, JIANBU = 24206, 24207
 CURES = {JIEDU: Cure("解毒劑", POISON, "中毒"), JIANBU: Cure("健步散", SLOW, "緩速")}
+FACTS = {
+    JIEDU: ItemFact("解毒劑", True, True, False, POISON, "解中毒"),
+    JIANBU: ItemFact("健步散", True, True, False, SLOW, "解緩速"),
+}
 
 
 def sample(hp=1000, mp=500, bag=None, hp_max=1000, mp_max=500, debuffs=()):
@@ -186,18 +191,56 @@ def test_load_potions_keeps_restoring_items_only():
 
 
 def test_store_round_trip_and_defaults(tmp_path):
-    store = GuardStore(tmp_path / "guard.json")
+    from services.snapshot_db import SnapshotDB
+
+    db = SnapshotDB(str(tmp_path / "s.db"))
+    store = GuardStore(db)
     assert store.load("寒江孤影") == GuardConfig()
     cfg = GuardConfig(potion=rule(hp_items=[QIONG, YIQI]))
     store.save("寒江孤影", cfg)
-    assert GuardStore(tmp_path / "guard.json").load("寒江孤影") == cfg
+    assert GuardStore(SnapshotDB(str(tmp_path / "s.db"))).load("寒江孤影") == cfg
     assert store.load("別人") == GuardConfig()
+    rules = ItemRules(
+        items={JIEDU: ItemRule(action="use_on_status"), 24007: ItemRule(action="sell", keep=50)}
+    )
+    store.save_items("寒江孤影", rules)
+    assert GuardStore(SnapshotDB(str(tmp_path / "s.db"))).load_items("寒江孤影") == rules
+    # Each feature is its own section: saving the guard leaves the items alone.
+    store.save("寒江孤影", GuardConfig())
+    assert store.load_items("寒江孤影") == rules
 
 
-def test_store_survives_corrupt_file(tmp_path):
+def test_store_survives_a_bad_section():
+    from services.guard import MemorySettings
+
+    db = MemorySettings()
+    db.set_setting("x", "guard.potion", {"hp_pct": "not a number"})
+    assert GuardStore(db).load("x") == GuardConfig()
+
+
+def test_migrate_legacy_guard_json(tmp_path):
+    import json
+
+    from services.guard import MemorySettings, migrate_legacy_store
+
     path = tmp_path / "guard.json"
-    path.write_text("{not json", encoding="utf-8")
-    assert GuardStore(path).load("x") == GuardConfig()
+    old = {
+        "寒江孤影": {
+            "potion": {"hp_pct": 55, "mp_pct": 30, "hp_items": [JIN], "mp_items": []},
+            "cure": {"items": [JIEDU]},
+            "buff": {"skills": [713]},
+        }
+    }
+    path.write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+    db = MemorySettings()
+    db.set_setting("寒江孤影", "guard.buff", {"skills": [762]})  # newer: kept
+    assert migrate_legacy_store(db, path) == 1
+    store = GuardStore(db)
+    assert store.load("寒江孤影").potion.hp_pct == 55
+    assert store.load("寒江孤影").buff.skills == [762]
+    assert store.load_items("寒江孤影").items == {JIEDU: ItemRule(action="use_on_status")}
+    assert not path.exists() and (tmp_path / "guard.json.migrated").exists()
+    assert migrate_legacy_store(db, path) == 0  # once
 
 
 # ---- manager tick ----------------------------------------------------------
@@ -219,21 +262,24 @@ class FakeChannel:
 def make_manager(tmp_path, samples, replies=(), cfg=None, name="寒江孤影", cure_items=()):
     clock = {"t": 0.0}
     seq = list(samples)
-    store = GuardStore(tmp_path / "guard.json")
-    store.save(name, GuardConfig(potion=cfg or rule(), cure=GuardCureRule(items=list(cure_items))))
+    store = GuardStore()
+    store.save(name, GuardConfig(potion=cfg or rule()))
+    store.save_items(
+        name, ItemRules(items={i: ItemRule(action="use_on_status") for i in cure_items})
+    )
     mgr = GuardManager(
         read_locked=lambda pid, fn: seq.pop(0) if len(seq) > 1 else seq[0],
         character_name=lambda pid: name,
         channel=FakeChannel(replies),
         store=store,
         potions=lambda: CATALOG,
-        cures=lambda: CURES,
+        item_facts=FACTS.get,
         status_names=lambda: {POISON: "中毒", SLOW: "緩速"},
         pipe_present=lambda pid: True,
         clock=lambda: clock["t"],
         wall=lambda: 1000.0 + clock["t"],
     )
-    run = _Run(name, mgr.config(1))
+    run = _Run(name, mgr.config(1), store.load_items(name))
     with mgr._lock:
         mgr._runs[1] = run
     return mgr, run, clock
@@ -383,14 +429,14 @@ def test_start_refuses_without_pipe_or_name(tmp_path, monkeypatch):
     mgr = GuardManager(
         read_locked=lambda pid, fn: None,
         character_name=lambda pid: None,
-        store=GuardStore(tmp_path / "g.json"),
+        store=GuardStore(),
         pipe_present=lambda pid: True,
     )
     assert mgr.start(1).ok is False
     mgr2 = GuardManager(
         read_locked=lambda pid, fn: None,
         character_name=lambda pid: "a",
-        store=GuardStore(tmp_path / "g.json"),
+        store=GuardStore(),
         pipe_present=lambda pid: False,
     )
     assert mgr2.start(1).ok is False
@@ -402,7 +448,7 @@ def test_potions_lists_held_restoring_items(tmp_path):
     mgr = GuardManager(
         read_locked=lambda pid, fn: ({JIN: 87, 99999: 1}, {JIN: 300, ZHONG: 120}),
         character_name=lambda pid: "a",
-        store=GuardStore(tmp_path / "g.json"),
+        store=GuardStore(),
         potions=lambda: CATALOG,
     )
     got = {(p.item_id, p.restores, p.bag, p.pet) for p in mgr.potions(1)}
@@ -443,19 +489,19 @@ def test_read_debuffs_swallows_read_errors():
 # ---- cure catalog (real DB) --------------------------------------------------
 
 
-def test_load_cures_keeps_real_cures_only():
+def test_item_facts_find_real_cures_only():
     from services._paths import bundled
-    from services.guard import load_cures
+    from services.item_rules import load_item_facts
 
     if not bundled("tthol.sqlite").exists():
         pytest.skip("tthol.sqlite not pulled")
-    cures = load_cures()
-    assert set(cures) == {24201, 24202, 24204, 24205, 24206, 24207, 24208, 24209, 24210}
-    assert cures[24206].group == 19 and cures[24206].status == "中毒"
+    f = load_item_facts()
+    cures = {i for i in range(24201, 24211) if f(i) and f(i).cure_group is not None}
+    assert cures == {24201, 24202, 24204, 24205, 24206, 24207, 24208, 24209, 24210}
+    assert f(24206).cure_group == 19 and f(24206).effect == "解中毒"
     # These point at a hostile group too, but inflict it or strip the user's own 隱形.
-    assert 28034 not in cures  # 謎之藥水
-    assert 24161 not in cures  # 烤壞的肉串
-    assert 24203 not in cures  # 現形丹
+    for item_id in (28034, 24161, 24203):  # 謎之藥水, 烤壞的肉串, 現形丹
+        assert f(item_id).cure_group is None and not f(item_id).periodic
 
 
 # ---- rule: curing (pure) -------------------------------------------------------
@@ -568,7 +614,7 @@ def _caps_manager(tmp_path, reply):
         read_locked=lambda pid, fn: None,
         character_name=lambda pid: "a",
         channel=FakeChannel([reply]),
-        store=GuardStore(tmp_path / "g.json"),
+        store=GuardStore(),
         pipe_present=lambda pid: True,
     )
 

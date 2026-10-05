@@ -2,7 +2,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from services.api import build_app
-from services.guard import Cure, GuardManager, GuardStore, Potion, read_vitals
+from services.guard import GuardManager, GuardStore, Potion, read_vitals
+from services.item_rules import ItemFact
 
 
 @pytest.fixture
@@ -12,9 +13,12 @@ async def client(tmp_path):
             (40, 100, 5, 10) if fn is read_vitals else ({24008: 3}, {24206: 9})
         ),
         character_name=lambda pid: "寒江孤影" if pid == 1 else None,
-        store=GuardStore(tmp_path / "guard.json"),
+        store=GuardStore(),
         potions=lambda: {24008: Potion("瓊丹妙露", hp=20, hp_share=True)},
-        cures=lambda: {24206: Cure("解毒劑", 19, "中毒")},
+        item_facts={
+            24206: ItemFact("解毒劑", True, True, False, 19, "解中毒"),
+            24008: ItemFact("瓊丹妙露", True, True, False, None, None),
+        }.get,
         pipe_present=lambda pid: False,
     )
     app = build_app(services={"guard_manager": mgr})
@@ -34,7 +38,6 @@ async def test_status_defaults(client):
 async def test_config_round_trip(client):
     cfg = {
         "potion": {"hp_pct": 60, "mp_pct": 30, "hp_items": [24008], "mp_items": []},
-        "cure": {"items": [24206]},
         "buff": {"skills": [713]},
     }
     resp = await client.put("/api/characters/1/guard/config", json=cfg)
@@ -66,19 +69,24 @@ async def test_potions(client):
     ]
 
 
-async def test_cures(client):
-    body = (await client.get("/api/characters/1/guard/cures")).json()
-    assert body == [
-        {
-            "item_id": 24206,
-            "name": "解毒劑",
-            "group": 19,
-            "status": "中毒",
-            "bag": 0,
-            "pet": 9,
-            "icon_url": None,
-        }
-    ]
+async def test_item_rules_round_trip_and_view(client):
+    body = (await client.get("/api/characters/1/item-rules")).json()
+    assert body["character"] == "寒江孤影" and body["rules"] == {"items": {}}
+    assert {c["item_id"]: c["actions"] for c in body["candidates"]} == {
+        24008: ["keep", "sell", "store"],
+        24206: ["keep", "use_on_status", "sell", "store"],
+    }
+    rules = {"items": {"24206": {"action": "use_on_status", "keep": 0}}}
+    assert (await client.put("/api/characters/1/item-rules", json=rules)).status_code == 200
+    body = (await client.get("/api/characters/1/item-rules")).json()
+    assert body["rules"] == rules
+    # The guard config no longer carries the cure list.
+    assert "cure" not in (await client.get("/api/characters/1/guard")).json()["config"]
+
+
+async def test_item_rules_need_a_located_character(client):
+    resp = await client.put("/api/characters/2/item-rules", json={"items": {}})
+    assert resp.status_code == 409
 
 
 async def test_no_manager_is_harmless():
@@ -86,4 +94,4 @@ async def test_no_manager_is_harmless():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         assert (await ac.get("/api/characters/1/guard")).json()["running"] is False
         assert (await ac.get("/api/characters/1/guard/potions")).json() == []
-        assert (await ac.get("/api/characters/1/guard/cures")).json() == []
+        assert (await ac.get("/api/characters/1/item-rules")).json()["candidates"] == []

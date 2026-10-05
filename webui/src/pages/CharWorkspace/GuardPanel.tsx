@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, put } from '../../api/client';
-import type { BuffSkillCandidate, CureCandidate, GuardConfig, GuardLogEntry, GuardStatus, GuardVitals, PotionCandidate } from '../../api/types';
+import type { BuffSkillCandidate, GuardConfig, GuardLogEntry, GuardStatus, GuardVitals, PotionCandidate } from '../../api/types';
 import { reportClientError } from '../../diag/report';
 import './guard.css';
 
@@ -16,7 +16,7 @@ const PHASE_LABEL: Record<GuardLogEntry['phase'], string> = {
 };
 
 type Rule = { hp_pct: number; mp_pct: number; hp_items: number[]; mp_items: number[] };
-type Cfg = { potion: Rule; cure: { items: number[] }; buff: { skills: number[] } };
+type Cfg = { potion: Rule; buff: { skills: number[] } };
 
 const toCfg = (c?: GuardConfig): Cfg => ({
   potion: {
@@ -25,7 +25,6 @@ const toCfg = (c?: GuardConfig): Cfg => ({
     hp_items: c?.potion.hp_items ?? [],
     mp_items: c?.potion.mp_items ?? [],
   },
-  cure: { items: c?.cure?.items ?? [] },
   buff: { skills: c?.buff?.skills ?? [] },
 });
 
@@ -35,7 +34,6 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
   const [status, setStatus] = useState<GuardStatus | null>(null);
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [potions, setPotions] = useState<PotionCandidate[]>([]);
-  const [cures, setCures] = useState<CureCandidate[]>([]);
   const [skills, setSkills] = useState<BuffSkillCandidate[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -55,13 +53,11 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
 
   const loadPotions = useCallback(async () => {
     try {
-      const [p, c, k] = await Promise.all([
+      const [p, k] = await Promise.all([
         get<PotionCandidate[]>(`/api/characters/${pid}/guard/potions`),
-        get<CureCandidate[]>(`/api/characters/${pid}/guard/cures`),
         get<BuffSkillCandidate[]>(`/api/characters/${pid}/guard/skills`),
       ]);
       setPotions(p);
-      setCures(c);
       setSkills(k);
     } catch (e) {
       reportClientError(e, { component: 'GuardPanel.potions', silent: true });
@@ -135,6 +131,7 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
         <span className="gd-chip">本次喝水 {status.drinks} 次</span>
         <span className="gd-chip">解狀態 {status.cures} 次</span>
         <span className="gd-chip">補 buff {status.casts} 次</span>
+        <span className="gd-chip">用道具 {status.uses} 次</span>
         <button
           type="button" role="switch" aria-checked={running} aria-label="啟用常駐守護"
           className="gd-switch" onClick={toggle} disabled={busy || (!running && !status.hook_cmd)}
@@ -175,12 +172,12 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
         </div>
       </section>
 
-      <CureSection
-        items={cfg.cure.items}
-        candidates={cures}
-        debuffs={running ? status.debuffs : null}
-        onItems={items => update({ ...cfg, cure: { items } })}
-      />
+      {running && (
+        <div className="gd-cure-now">
+          目前狀態：{status.debuffs.length ? status.debuffs.map(d => <b key={d}>{d}</b>) : <span className="gd-dim">無</span>}
+          <span className="gd-dim">　解狀態、定期使用的道具在「行囊」分頁點選道具後設定處置</span>
+        </div>
+      )}
 
       <BuffSection
         skills={cfg.buff.skills}
@@ -278,73 +275,6 @@ function Whitelist({ res, pct, vitals, items, byId, candidates, onPct, onItems }
         <button type="button" className="gd-add" onClick={() => setPicking(true)}>＋ 加入{label}藥</button>
       )}
     </div>
-  );
-}
-
-// 解狀態: tick the cure items to use as soon as the debuff each one clears
-// shows up. Only items the character holds are listed, plus ticked ones that
-// ran out (so they can still be unticked).
-function CureSection({ items, candidates, debuffs, onItems }: {
-  items: number[];
-  candidates: CureCandidate[];
-  debuffs: string[] | null;
-  onItems: (v: number[]) => void;
-}) {
-  const held = new Set(candidates.map(c => c.item_id));
-  const gone = items.filter(id => !held.has(id));
-  const toggle = (id: number, on: boolean) =>
-    onItems(on ? [...items, id] : items.filter(x => x !== id));
-
-  return (
-    <section className="gd-panel">
-      <header className="gd-head">
-        <h3>解狀態</h3>
-        <span className="gd-dim">中了勾選的解藥能解的狀態就用；沒勾的道具不會動</span>
-        {debuffs !== null && (
-          <span className="gd-cure-now">
-            目前狀態：{debuffs.length ? debuffs.map(d => <b key={d}>{d}</b>) : <span className="gd-dim">無</span>}
-          </span>
-        )}
-      </header>
-      {candidates.length === 0 && gone.length === 0 ? (
-        <div className="gd-dim">身上和寵物背包裡沒有解藥（明目散、解毒劑、活竅散…）。</div>
-      ) : (
-        <ul className="gd-cures">
-          {candidates.map(c => {
-            const on = items.includes(c.item_id);
-            const id = `gd-cure-${c.item_id}`;
-            return (
-              <li key={c.item_id} className={c.bag > 0 ? '' : 'is-out'}>
-                <input id={id} type="checkbox" checked={on} onChange={e => toggle(c.item_id, e.target.checked)} />
-                <label htmlFor={id}>
-                  <span className="gd-name">{c.name}</span>
-                  <span className="gd-cure-st">解{c.status}</span>
-                  <span className="gd-cnt">身上 {c.bag} · 寵物 {c.pet}</span>
-                </label>
-              </li>
-            );
-          })}
-          {gone.map(itemId => {
-            const id = `gd-cure-${itemId}`;
-            return (
-              <li key={itemId} className="is-out">
-                <input id={id} type="checkbox" checked onChange={() => toggle(itemId, false)} />
-                <label htmlFor={id}>
-                  <span className="gd-name">#{itemId}</span>
-                  <span className="gd-cure-st" />
-                  <span className="gd-cnt">身上沒有</span>
-                </label>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      <div className="gd-fixed">
-        <span>只解解藥對應的那一種狀態</span>
-        <span>用了 2 秒內沒解就再用，最多 3 次</span>
-        <span>補體力優先，接著解狀態，再補真氣</span>
-      </div>
-    </section>
   );
 }
 

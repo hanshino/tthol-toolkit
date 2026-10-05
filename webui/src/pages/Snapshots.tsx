@@ -37,7 +37,7 @@ export function Snapshots({ chars, onOpenChar }: { chars: CharacterRow[]; onOpen
       const r = await upload<BackupImportResult>('/api/backup/import', file);
       setStatus({
         kind: 'ok',
-        text: `新增 ${r.snapshots_added} 筆 / 略過 ${r.snapshots_skipped} 筆 / 帳號衝突 ${r.account_conflicts} 個`,
+        text: `新增 ${r.snapshots_added} 筆 / 略過 ${r.snapshots_skipped} 筆 / 帳號衝突 ${r.account_conflicts} 個 / 角色設定新增 ${r.settings_added ?? 0} 筆（衝突 ${r.settings_conflicts ?? 0} 筆保留原設定）`,
       });
       await loadRows();
     } catch (err) {

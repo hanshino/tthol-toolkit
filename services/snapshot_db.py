@@ -5,6 +5,12 @@ Schema:
     snapshots(id, character, source, scanned_at, items TEXT, checksum TEXT)
     accounts(id, name TEXT UNIQUE)
     character_accounts(character TEXT PK, account_id INTEGER NOT NULL → accounts.id)
+    character_settings(character, section, data TEXT, updated_at)  PK (character, section)
+
+character_settings holds per-character feature settings as one JSON object per
+section ("guard.potion", "guard.buff", "items", later "daily.<module>"), so
+saving one feature never overwrites another and a new feature is a new section,
+not a schema change. Deleting a character's snapshots leaves its settings alone.
 
 items is a JSON array sorted by item_id: [{"item_id": N, "qty": N}, ...]
 checksum is SHA256 of the canonical items JSON string.
@@ -16,6 +22,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -127,6 +134,13 @@ CREATE TABLE IF NOT EXISTS character_accounts (
     character  TEXT PRIMARY KEY,
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT
 );
+CREATE TABLE IF NOT EXISTS character_settings (
+    character   TEXT NOT NULL,
+    section     TEXT NOT NULL,
+    data        TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (character, section)
+);
 """
 
 
@@ -148,6 +162,8 @@ class SnapshotDB:
         self._con.row_factory = sqlite3.Row
         self._con.executescript(SCHEMA)
         self._con.commit()
+        # Settings are read and written from guard threads as well as handlers.
+        self._settings_lock = threading.Lock()
 
     def close(self):
         self._con.close()
@@ -401,6 +417,55 @@ class SnapshotDB:
             for r in rows
         ]
 
+    # ---- Per-character settings ----------------------------------------------
+
+    def get_setting(self, character: str, section: str) -> dict | None:
+        with self._settings_lock:
+            row = self._con.execute(
+                "SELECT data FROM character_settings WHERE character=? AND section=?",
+                (character, section),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            data = json.loads(row["data"])
+        except ValueError:
+            return None
+        return data if isinstance(data, dict) else None
+
+    def set_setting(self, character: str, section: str, data: dict) -> None:
+        text = json.dumps(data, ensure_ascii=False, sort_keys=True)
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._settings_lock:
+            self._con.execute(
+                "INSERT INTO character_settings (character, section, data, updated_at) "
+                "VALUES (?, ?, ?, ?) ON CONFLICT(character, section) "
+                "DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at",
+                (character, section, text, now),
+            )
+            self._con.commit()
+
+    def settings_characters(self) -> list[dict]:
+        """[{character, sections}] for every character that has settings."""
+        with self._settings_lock:
+            rows = self._con.execute(
+                "SELECT character, section FROM character_settings ORDER BY character, section"
+            ).fetchall()
+        out: dict[str, list[str]] = {}
+        for r in rows:
+            out.setdefault(r["character"], []).append(r["section"])
+        return [{"character": c, "sections": secs} for c, secs in out.items()]
+
+    def copy_settings(self, source: str, target: str, sections: list[str]) -> int:
+        """Copy the given sections from one character to another; returns how many."""
+        copied = 0
+        for section in sections:
+            data = self.get_setting(source, section)
+            if data is not None:
+                self.set_setting(target, section, data)
+                copied += 1
+        return copied
+
     # ---- Backup / restore (full-db export + non-destructive merge) --------
 
     def export_all(self) -> dict:
@@ -411,7 +476,7 @@ class SnapshotDB:
         snapshot row is exported (full history, not just the latest per
         character/source) and item lists are parsed back to objects.
 
-        Returns {accounts, character_accounts, snapshots}.
+        Returns {accounts, character_accounts, snapshots, character_settings}.
         """
         accounts = [r["name"] for r in self._con.execute("SELECT name FROM accounts ORDER BY name")]
         character_accounts = [
@@ -432,10 +497,24 @@ class SnapshotDB:
                 "SELECT character, source, scanned_at, items FROM snapshots ORDER BY id"
             )
         ]
+        with self._settings_lock:
+            settings = [
+                {
+                    "character": r["character"],
+                    "section": r["section"],
+                    "data": json.loads(r["data"]),
+                    "updated_at": r["updated_at"],
+                }
+                for r in self._con.execute(
+                    "SELECT character, section, data, updated_at FROM character_settings "
+                    "ORDER BY character, section"
+                )
+            ]
         return {
             "accounts": accounts,
             "character_accounts": character_accounts,
             "snapshots": snapshots,
+            "character_settings": settings,
         }
 
     def snapshot_exists(self, character: str, source: str, scanned_at: str, checksum: str) -> bool:
@@ -471,6 +550,8 @@ class SnapshotDB:
           * snapshots   — identity is (character, source, scanned_at, checksum);
             the checksum is always recomputed from items (file value untrusted).
             Existing rows are skipped; new rows preserve the original scanned_at.
+          * character_settings — added where this db has no such (character,
+            section); an existing different one is kept and counted as a conflict.
 
         Returns a summary dict of counts.
         """
@@ -480,6 +561,8 @@ class SnapshotDB:
             "accounts_added": 0,
             "characters_assigned": 0,
             "account_conflicts": 0,
+            "settings_added": 0,
+            "settings_conflicts": 0,
         }
         con = self._con
         try:
@@ -527,6 +610,30 @@ class SnapshotDB:
                     (character, source, scanned_at, canonical, chk),
                 )
                 summary["snapshots_added"] += 1
+
+            for entry in data.get("character_settings") or []:
+                data_obj = entry.get("data")
+                if not isinstance(data_obj, dict):
+                    continue
+                text = json.dumps(data_obj, ensure_ascii=False, sort_keys=True)
+                existing = con.execute(
+                    "SELECT data FROM character_settings WHERE character=? AND section=?",
+                    (entry["character"], entry["section"]),
+                ).fetchone()
+                if existing is None:
+                    con.execute(
+                        "INSERT INTO character_settings (character, section, data, updated_at) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            entry["character"],
+                            entry["section"],
+                            text,
+                            entry.get("updated_at") or datetime.now().isoformat(timespec="seconds"),
+                        ),
+                    )
+                    summary["settings_added"] += 1
+                elif existing["data"] != text:
+                    summary["settings_conflicts"] += 1
 
             con.commit()
         except Exception:

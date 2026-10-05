@@ -466,6 +466,8 @@ class BackupImportResult(_Base):
     accounts_added: int
     characters_assigned: int
     account_conflicts: int
+    settings_added: int = 0
+    settings_conflicts: int = 0
 
 
 # ---- Auto-click ----------------------------------------------------------
@@ -932,16 +934,6 @@ class GuardPotionRule(_Base):
     mp_items: list[int] = []
 
 
-class GuardCureRule(_Base):
-    """Cure items to use as soon as the debuff they clear shows up.
-
-    Each item clears exactly one status group (its extra_status). No order: a
-    debuff is cured with whichever ticked item for it the bag holds.
-    """
-
-    items: list[int] = []
-
-
 class GuardBuffRule(_Base):
     """Self buffs to keep up: recast a ticked skill when its buff is gone or
     about to end. Skills are magic ids; the learned level is cast."""
@@ -953,14 +945,13 @@ class GuardConfig(_Base):
     """Saved per character name (pid changes on every game restart)."""
 
     potion: GuardPotionRule = GuardPotionRule()
-    cure: GuardCureRule = GuardCureRule()
     buff: GuardBuffRule = GuardBuffRule()
 
 
 class GuardLogEntry(_Base):
     id: int  # stable while the line is updated in place (bag confirmation)
     ts: float
-    rule: Literal["potion", "cure", "buff", "guard"]
+    rule: Literal["potion", "cure", "buff", "item", "guard"]
     text: str
     # sent: the hook accepted the command; confirmed: the bag count dropped for
     # every drink in the line (cure: the debuff went away); unconfirmed: some
@@ -984,6 +975,7 @@ class GuardStatus(_Base):
     drinks: int = 0
     cures: int = 0
     casts: int = 0
+    uses: int = 0  # 定期使用 item uses
     debuffs: list[str] = []  # debuffs on the character now, by name
     log: list[GuardLogEntry] = []
     config: GuardConfig = GuardConfig()
@@ -1022,13 +1014,52 @@ class BuffSkillCandidate(_Base):
     icon_url: str | None = None
 
 
-class CureCandidate(_Base):
-    """A cure item the character holds, for the 解狀態 picker."""
+ItemAction = Literal["keep", "use_periodic", "use_on_status", "sell", "store"]
+
+
+class ItemRule(_Base):
+    """What to do with one item (道具處置). `keep` is how many sell / store leave."""
+
+    action: ItemAction = "keep"
+    keep: int = 0
+
+
+class ItemRules(_Base):
+    """Per character; an item with no rule is left alone."""
+
+    items: dict[int, ItemRule] = {}
+
+
+class ItemRuleCandidate(_Base):
+    """An item the character holds (or has a rule for), for the 道具處置 table."""
 
     item_id: int
     name: str
-    group: int  # the status group it clears
-    status: str  # that group's name, e.g. 中毒
     bag: int
     pet: int
+    actions: list[ItemAction]  # the ones the DB allows for this item
+    effect: str | None = None  # e.g. 解中毒 / 效果 10 分鐘
+    active: bool | None = None  # its buff is on now (use_periodic items, with a hook)
+    expires_at: float | None = None
     icon_url: str | None = None
+
+
+class ItemRulesView(_Base):
+    character: str | None
+    rules: ItemRules
+    candidates: list[ItemRuleCandidate]
+
+
+class SettingsCharacter(_Base):
+    character: str
+    sections: list[str]
+
+
+class CopySettingsRequest(_Base):
+    source: str
+    target: str
+    sections: list[str]
+
+
+class CopySettingsResult(_Base):
+    copied: int

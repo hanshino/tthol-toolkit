@@ -508,23 +508,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/characters/{pid}/guard/cures": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Cures */
-        get: operations["cures_api_characters__pid__guard_cures_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/characters/{pid}/guard/skills": {
         parameters: {
             query?: never;
@@ -536,6 +519,58 @@ export interface paths {
         get: operations["skills_api_characters__pid__guard_skills_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/item-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rules */
+        get: operations["get_rules_api_characters__pid__item_rules_get"];
+        /** Put Rules */
+        put: operations["put_rules_api_characters__pid__item_rules_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/characters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Settings Characters */
+        get: operations["settings_characters_api_settings_characters_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy Settings */
+        post: operations["copy_settings_api_settings_copy_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1284,6 +1319,16 @@ export interface components {
             characters_assigned: number;
             /** Account Conflicts */
             account_conflicts: number;
+            /**
+             * Settings Added
+             * @default 0
+             */
+            settings_added: number;
+            /**
+             * Settings Conflicts
+             * @default 0
+             */
+            settings_conflicts: number;
         };
         /** Body_import_backup_api_backup_import_post */
         Body_import_backup_api_backup_import_post: {
@@ -1564,30 +1609,24 @@ export interface components {
             /** Hp Addr */
             hp_addr?: number | null;
         };
+        /** CopySettingsRequest */
+        CopySettingsRequest: {
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /** Sections */
+            sections: string[];
+        };
+        /** CopySettingsResult */
+        CopySettingsResult: {
+            /** Copied */
+            copied: number;
+        };
         /** CreateAccountRequest */
         CreateAccountRequest: {
             /** Name */
             name: string;
-        };
-        /**
-         * CureCandidate
-         * @description A cure item the character holds, for the 解狀態 picker.
-         */
-        CureCandidate: {
-            /** Item Id */
-            item_id: number;
-            /** Name */
-            name: string;
-            /** Group */
-            group: number;
-            /** Status */
-            status: string;
-            /** Bag */
-            bag: number;
-            /** Pet */
-            pet: number;
-            /** Icon Url */
-            icon_url?: string | null;
         };
         /** DamageBuff */
         DamageBuff: {
@@ -1933,30 +1972,10 @@ export interface components {
             potion: components["schemas"]["GuardPotionRule"];
             /**
              * @default {
-             *       "items": []
-             *     }
-             */
-            cure: components["schemas"]["GuardCureRule"];
-            /**
-             * @default {
              *       "skills": []
              *     }
              */
             buff: components["schemas"]["GuardBuffRule"];
-        };
-        /**
-         * GuardCureRule
-         * @description Cure items to use as soon as the debuff they clear shows up.
-         *
-         *     Each item clears exactly one status group (its extra_status). No order: a
-         *     debuff is cured with whichever ticked item for it the bag holds.
-         */
-        GuardCureRule: {
-            /**
-             * Items
-             * @default []
-             */
-            items: number[];
         };
         /** GuardLogEntry */
         GuardLogEntry: {
@@ -1968,7 +1987,7 @@ export interface components {
              * Rule
              * @enum {string}
              */
-            rule: "potion" | "cure" | "buff" | "guard";
+            rule: "potion" | "cure" | "buff" | "item" | "guard";
             /** Text */
             text: string;
             /**
@@ -2039,6 +2058,11 @@ export interface components {
              */
             casts: number;
             /**
+             * Uses
+             * @default 0
+             */
+            uses: number;
+            /**
              * Debuffs
              * @default []
              */
@@ -2055,9 +2079,6 @@ export interface components {
              *         "hp_pct": 70,
              *         "mp_items": [],
              *         "mp_pct": 30
-             *       },
-             *       "cure": {
-             *         "items": []
              *       },
              *       "buff": {
              *         "skills": []
@@ -2175,6 +2196,68 @@ export interface components {
              * @default []
              */
             stats: components["schemas"]["ItemStat"][];
+        };
+        /**
+         * ItemRule
+         * @description What to do with one item (道具處置). `keep` is how many sell / store leave.
+         */
+        ItemRule: {
+            /**
+             * Action
+             * @default keep
+             * @enum {string}
+             */
+            action: "keep" | "use_periodic" | "use_on_status" | "sell" | "store";
+            /**
+             * Keep
+             * @default 0
+             */
+            keep: number;
+        };
+        /**
+         * ItemRuleCandidate
+         * @description An item the character holds (or has a rule for), for the 道具處置 table.
+         */
+        ItemRuleCandidate: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Bag */
+            bag: number;
+            /** Pet */
+            pet: number;
+            /** Actions */
+            actions: ("keep" | "use_periodic" | "use_on_status" | "sell" | "store")[];
+            /** Effect */
+            effect?: string | null;
+            /** Active */
+            active?: boolean | null;
+            /** Expires At */
+            expires_at?: number | null;
+            /** Icon Url */
+            icon_url?: string | null;
+        };
+        /**
+         * ItemRules
+         * @description Per character; an item with no rule is left alone.
+         */
+        ItemRules: {
+            /**
+             * Items
+             * @default {}
+             */
+            items: {
+                [key: string]: components["schemas"]["ItemRule"];
+            };
+        };
+        /** ItemRulesView */
+        ItemRulesView: {
+            /** Character */
+            character: string | null;
+            rules: components["schemas"]["ItemRules"];
+            /** Candidates */
+            candidates: components["schemas"]["ItemRuleCandidate"][];
         };
         /** ItemStat */
         ItemStat: {
@@ -2753,6 +2836,13 @@ export interface components {
         SetCharacterAccountRequest: {
             /** Account Id */
             account_id: number | null;
+        };
+        /** SettingsCharacter */
+        SettingsCharacter: {
+            /** Character */
+            character: string;
+            /** Sections */
+            sections: string[];
         };
         /**
          * SkillInfo
@@ -3890,37 +3980,6 @@ export interface operations {
             };
         };
     };
-    cures_api_characters__pid__guard_cures_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                pid: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CureCandidate"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     skills_api_characters__pid__guard_skills_get: {
         parameters: {
             query?: never;
@@ -3939,6 +3998,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BuffSkillCandidate"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rules_api_characters__pid__item_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemRulesView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_rules_api_characters__pid__item_rules_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItemRules"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemRules"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    settings_characters_api_settings_characters_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsCharacter"][];
+                };
+            };
+        };
+    };
+    copy_settings_api_settings_copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopySettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CopySettingsResult"];
                 };
             };
             /** @description Validation Error */
