@@ -118,6 +118,11 @@ class WorkerManager:
         sess = self._sessions.get(pid)
         return sess.read_locked(read) if sess is not None else None
 
+    def character_name(self, pid: int) -> str | None:
+        """Name of the character located in this client, or None."""
+        sess = self._sessions.get(pid)
+        return (sess.name or None) if sess is not None else None
+
     def live_pids(self) -> list[int]:
         return list(self._sessions)
 

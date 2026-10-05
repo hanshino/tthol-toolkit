@@ -905,3 +905,70 @@ class DamageStatus(_Base):
     events: list[DamageEvent]
     summary: DamageSummary
     snapshot: DamageSnapshot | None = None
+
+
+# ---- Guard / 常駐守護 ----------------------------------------------------
+
+
+class GuardPotionRule(_Base):
+    """Drink from a whitelist when HP / MP drops below a share of its max.
+
+    Each whitelist is ordered: the first item the bag holds is used. An empty
+    whitelist never drinks.
+    """
+
+    hp_pct: int = 70  # the 2026-10-04 tower runs used 0.70 / 0.30
+    mp_pct: int = 30
+    hp_items: list[int] = []
+    mp_items: list[int] = []
+
+
+class GuardConfig(_Base):
+    """Saved per character name (pid changes on every game restart)."""
+
+    potion: GuardPotionRule = GuardPotionRule()
+
+
+class GuardLogEntry(_Base):
+    id: int  # stable while the line is updated in place (bag confirmation)
+    ts: float
+    rule: Literal["potion", "guard"]
+    text: str
+    # sent: the hook accepted the command; confirmed: the bag count dropped for
+    # every drink in the line; unconfirmed: some never showed up in time;
+    # error / info: no command effect.
+    phase: Literal["sent", "confirmed", "unconfirmed", "error", "info"]
+
+
+class GuardVitals(_Base):
+    hp: int
+    hp_max: int
+    mp: int
+    mp_max: int
+
+
+class GuardStatus(_Base):
+    running: bool
+    hook_cmd: bool  # a command pipe exists for this pid
+    character: str | None = None
+    problem: str | None = None  # why the guard is idle or backing off, in user words
+    drinks: int = 0
+    log: list[GuardLogEntry] = []
+    config: GuardConfig = GuardConfig()
+    vitals: GuardVitals | None = None  # current HP / MP, for the threshold sliders
+
+
+class GuardStartResult(_Base):
+    ok: bool
+    reason: str | None = None
+
+
+class PotionCandidate(_Base):
+    """A potion the character holds, for the whitelist picker."""
+
+    item_id: int
+    name: str
+    restores: Literal["hp", "mp", "both"]
+    bag: int
+    pet: int
+    icon_url: str | None = None

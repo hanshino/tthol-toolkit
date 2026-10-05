@@ -423,6 +423,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/guard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_characters__pid__guard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/guard/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Config */
+        put: operations["put_config_api_characters__pid__guard_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/guard/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_characters__pid__guard_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/guard/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__guard_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/guard/potions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Potions */
+        get: operations["potions_api_characters__pid__guard_potions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/walk": {
         parameters: {
             query?: never;
@@ -1719,6 +1804,120 @@ export interface components {
             /** Code */
             code?: string | null;
         };
+        /**
+         * GuardConfig
+         * @description Saved per character name (pid changes on every game restart).
+         */
+        GuardConfig: {
+            /**
+             * @default {
+             *       "hp_pct": 70,
+             *       "mp_pct": 30,
+             *       "hp_items": [],
+             *       "mp_items": []
+             *     }
+             */
+            potion: components["schemas"]["GuardPotionRule"];
+        };
+        /** GuardLogEntry */
+        GuardLogEntry: {
+            /** Id */
+            id: number;
+            /** Ts */
+            ts: number;
+            /**
+             * Rule
+             * @enum {string}
+             */
+            rule: "potion" | "guard";
+            /** Text */
+            text: string;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "sent" | "confirmed" | "unconfirmed" | "error" | "info";
+        };
+        /**
+         * GuardPotionRule
+         * @description Drink from a whitelist when HP / MP drops below a share of its max.
+         *
+         *     Each whitelist is ordered: the first item the bag holds is used. An empty
+         *     whitelist never drinks.
+         */
+        GuardPotionRule: {
+            /**
+             * Hp Pct
+             * @default 70
+             */
+            hp_pct: number;
+            /**
+             * Mp Pct
+             * @default 30
+             */
+            mp_pct: number;
+            /**
+             * Hp Items
+             * @default []
+             */
+            hp_items: number[];
+            /**
+             * Mp Items
+             * @default []
+             */
+            mp_items: number[];
+        };
+        /** GuardStartResult */
+        GuardStartResult: {
+            /** Ok */
+            ok: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** GuardStatus */
+        GuardStatus: {
+            /** Running */
+            running: boolean;
+            /** Hook Cmd */
+            hook_cmd: boolean;
+            /** Character */
+            character?: string | null;
+            /** Problem */
+            problem?: string | null;
+            /**
+             * Drinks
+             * @default 0
+             */
+            drinks: number;
+            /**
+             * Log
+             * @default []
+             */
+            log: components["schemas"]["GuardLogEntry"][];
+            /**
+             * @default {
+             *       "potion": {
+             *         "hp_items": [],
+             *         "hp_pct": 70,
+             *         "mp_items": [],
+             *         "mp_pct": 30
+             *       }
+             *     }
+             */
+            config: components["schemas"]["GuardConfig"];
+            vitals?: components["schemas"]["GuardVitals"] | null;
+        };
+        /** GuardVitals */
+        GuardVitals: {
+            /** Hp */
+            hp: number;
+            /** Hp Max */
+            hp_max: number;
+            /** Mp */
+            mp: number;
+            /** Mp Max */
+            mp_max: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2346,6 +2545,27 @@ export interface components {
             px?: number | null;
             /** Py */
             py?: number | null;
+        };
+        /**
+         * PotionCandidate
+         * @description A potion the character holds, for the whitelist picker.
+         */
+        PotionCandidate: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /**
+             * Restores
+             * @enum {string}
+             */
+            restores: "hp" | "mp" | "both";
+            /** Bag */
+            bag: number;
+            /** Pet */
+            pet: number;
+            /** Icon Url */
+            icon_url?: string | null;
         };
         /** RelocateRequest */
         RelocateRequest: {
@@ -3338,6 +3558,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AutoClickStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_characters__pid__guard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_config_api_characters__pid__guard_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuardConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_characters__pid__guard_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__guard_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    potions_api_characters__pid__guard_potions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PotionCandidate"][];
                 };
             };
             /** @description Validation Error */

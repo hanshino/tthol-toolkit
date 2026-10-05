@@ -17,10 +17,11 @@ import webview
 
 from services._paths import bundled
 from services import diagnostics
-from services import window_prefs
+from services import item_catalog, window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.damage_capture import DamageRecorderManager
+from services.guard import GuardManager
 from services.hook_hub import HookHub, read_templates
 from services.fake_active import KeepActiveManager
 from services.market_db import MarketDB
@@ -50,6 +51,15 @@ def _build_services(dev: bool) -> dict:
     wm = WorkerManager(snapshot_db=db, autoclick_manager=autoclick, hook_hub=hook)
     # Shout / system-line templates come from game memory, through the worker's lock.
     hook.set_strings(lambda pid: wm.read_locked(pid, read_templates))
+    guard = GuardManager(
+        read_locked=wm.read_locked,
+        character_name=wm.character_name,
+        icon_url=lambda item_id: (
+            item_catalog.icon_path(item_id) if item_catalog.icon_url(item_id) else None
+        ),
+    )
+    # Own HP / MP packets wake the guard at once instead of waiting for its next poll.
+    hook.add_vitals_listener(guard.on_vitals)
     market_db = MarketDB()
     market = MarketSurveyManager(live=wm.live_handle, pids=wm.live_pids, db=market_db)
     market.start()
@@ -63,6 +73,7 @@ def _build_services(dev: bool) -> dict:
         "snapshot_db": db,
         "autoclick_manager": autoclick,
         "keep_active_manager": keep_active,
+        "guard_manager": guard,
     }
 
 
@@ -202,6 +213,7 @@ def main() -> int:
         # Recorder threads hold timeBeginPeriod(1); stop them so it is released.
         services["damage_manager"].shutdown()
         services["hook_hub"].shutdown()
+        services["guard_manager"].shutdown()
     return 0
 
 

@@ -9,8 +9,9 @@ A hooked game client serves JSON lines on \\\\.\\pipe\\tthol-hook-<pid>:
 
 The pipe takes one reader at a time, so while the app runs it is that reader
 (set TTHOL_NO_HOOK=1 to leave the pipes alone). Only inbound chat (game packet
-sub-type 0x0E) and system lines (0xFD) are decoded and kept, in memory; every
-other message is dropped unread. Nothing here writes to the pipe.
+sub-type 0x0E) and system lines (0xFD) are decoded and kept, in memory; the own
+HP / MP packet (0x06) is decoded and handed to listeners (the guard), not kept;
+every other message is dropped unread. Nothing here writes to the pipe.
 
 World shouts and system lines carry an id into the client's template table
 (reader.read_string_table, read from game memory through the worker). They are
@@ -40,6 +41,7 @@ PIPE_PREFIX = "tthol-hook-"
 GAME_PACKET = 900
 CHAT = 0x0E
 SYSTEM = 0xFD
+VITALS = 0x06
 CHAT_TEXT_OFFSET = 29
 KEEP = 500
 SCAN_INTERVAL = 1.0
@@ -71,6 +73,14 @@ def decode_chat(raw: bytes) -> ChatPacket | None:
     return ChatPacket(
         raw[1:11], channel, bool(raw[12]), _cstr(raw[13:29]), _cstr(raw[CHAT_TEXT_OFFSET:])
     )
+
+
+def decode_vitals(raw: bytes) -> tuple[bytes, int, int] | None:
+    """06 <own key 10> <u32 HP> <u32 MP>: pushed on every change of the player's HP or MP."""
+    if len(raw) < 19 or raw[0] != VITALS:
+        return None
+    hp, mp = struct.unpack_from("<II", raw, 11)
+    return raw[1:11], hp, mp
 
 
 def decode_system(raw: bytes) -> tuple[int, list[str]] | None:
@@ -172,6 +182,7 @@ class HookHub:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._scanner: threading.Thread | None = None
+        self._vitals_listeners: list[Callable[[int, int, int], None]] = []
 
     def start(self) -> None:
         if os.environ.get("TTHOL_NO_HOOK") == "1":
@@ -179,6 +190,10 @@ class HookHub:
             return
         self._scanner = threading.Thread(target=self._scan_loop, daemon=True, name="hook-scan")
         self._scanner.start()
+
+    def add_vitals_listener(self, listener: Callable[[int, int, int], None]) -> None:
+        """listener(pid, hp, mp) on every own 0x06, on the pipe reader thread: keep it quick."""
+        self._vitals_listeners.append(listener)
 
     def set_strings(self, strings: Callable[[int], dict[int, str] | None]) -> None:
         """Where the template table comes from: pid -> {id: text}, or None while unavailable."""
@@ -286,6 +301,9 @@ class HookHub:
         if t != "msg" or ev.get("type") != GAME_PACKET:
             return
         raw_hex = ev.get("raw") or ""
+        if raw_hex[:2] == "06":
+            self._vitals(pid, ev, raw_hex)
+            return
         if raw_hex[:2].lower() not in ("0e", "fd"):
             return  # anything but chat and system lines is never decoded or kept
         raw = bytes.fromhex(raw_hex)
@@ -303,6 +321,21 @@ class HookHub:
         self_key = ev.get("self_key")
         own = bool(self_key) and any(pkt.key) and pkt.key == bytes.fromhex(self_key)
         self._append(pid, _Line(0, ts, pkt.channel, pkt.echo, own, pkt.name, pkt.text))
+
+    def _vitals(self, pid: int, ev: dict, raw_hex: str) -> None:
+        if not self._vitals_listeners:
+            return
+        decoded = decode_vitals(bytes.fromhex(raw_hex))
+        self_key = ev.get("self_key")
+        # Only our own: the key changes on every map change, so compare per event.
+        if decoded is None or not self_key or decoded[0] != bytes.fromhex(self_key):
+            return
+        _, hp, mp = decoded
+        for listener in self._vitals_listeners:
+            try:
+                listener(pid, hp, mp)
+            except Exception:
+                log.exception("vitals listener failed pid=%d", pid, extra={"cat": "hook"})
 
     def _append(self, pid: int, line: _Line) -> None:
         feed = self._feed(pid)

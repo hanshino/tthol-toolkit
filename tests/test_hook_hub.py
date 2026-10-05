@@ -243,3 +243,39 @@ def test_read_string_table_walks_the_tree():
     node(a, head, head, 6031, 0x02100100, STRINGS[6031])
     node(c, head, head, 60077, 0x02100200, STRINGS[60077])
     assert read_string_table(pm) == {k: STRINGS[k] for k in (6031, 6035, 60077)}
+
+
+def _vitals(key: bytes, hp: int, mp: int) -> bytes:
+    import struct
+
+    return b"\x06" + key + struct.pack("<II", hp, mp)
+
+
+def test_decode_vitals():
+    from services.hook_hub import decode_vitals
+
+    assert decode_vitals(_vitals(ME, 48877, 6170)) == (ME, 48877, 6170)
+    assert decode_vitals(b"\x06" + b"\0" * 5) is None
+    assert decode_vitals(_chat(OTHER, 1, "a", "b")) is None
+
+
+def test_hub_hands_own_vitals_to_listeners_and_keeps_nothing():
+    hub = HookHub(list_pids=lambda: [])
+    got = []
+    hub.add_vitals_listener(lambda pid, hp, mp: got.append((pid, hp, mp)))
+    hub._ingest(5, {"t": "hello", "v": 4})
+    hub._ingest(5, _msg(_vitals(ME, 30000, 100)))
+    hub._ingest(5, _msg(_vitals(OTHER, 1, 1)))  # not ours
+    hub._ingest(5, _msg(_vitals(ME, 1, 1), self_key=None))  # own key unknown: skip
+    assert got == [(5, 30000, 100)]
+    assert hub.chat(5).messages == []
+
+
+def test_vitals_listener_errors_do_not_break_the_reader():
+    hub = HookHub(list_pids=lambda: [])
+
+    def boom(pid, hp, mp):
+        raise RuntimeError("x")
+
+    hub.add_vitals_listener(boom)
+    hub._ingest(5, _msg(_vitals(ME, 1, 1)))  # must not raise
