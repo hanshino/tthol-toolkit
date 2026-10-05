@@ -62,13 +62,15 @@ def test_active_items_ignores_skill_buffs():
     assert active_items(buffs) == {GENGU: 1600.0}
 
 
-def test_due_items_needs_it_held_and_its_buff_missing_or_ending():
+def test_due_items_needs_it_held_and_its_buff_gone():
     st = BuffState()
     bag = {ROUFO: 3, GENGU: 1}
     assert due_items([ROUFO, GENGU], bag, {}, st, {}, 0.0, WALL0) == [ROUFO, GENGU]
     assert due_items([ROUFO, GENGU], bag, {ROUFO: WALL0 + 60}, st, {}, 0.0, WALL0) == [GENGU]
     assert due_items([ROUFO], bag, {ROUFO: None}, st, {}, 0.0, WALL0) == []  # on, time unknown
-    assert due_items([ROUFO], bag, {ROUFO: WALL0 + BUFF_LEAD - 1}, st, {}, 0.0, WALL0) == [ROUFO]
+    # still listed, even ending or past its estimate: wait for the off packet (puppet)
+    assert due_items([ROUFO], bag, {ROUFO: WALL0 + BUFF_LEAD - 1}, st, {}, 0.0, WALL0) == []
+    assert due_items([ROUFO], bag, {ROUFO: WALL0 - 5}, st, {}, 0.0, WALL0) == []
     assert due_items([ROUFO], {}, {}, st, {}, 0.0, WALL0) == []  # none left
     assert due_items([ROUFO], bag, {}, st, {ROUFO: 5.0}, 1.0, WALL0) == []  # "not in bag" rest
 

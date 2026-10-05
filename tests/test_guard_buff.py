@@ -425,3 +425,47 @@ def test_refused_hero_is_logged_and_held(tmp_path):
     mgr._tick(1, run)
     assert heroes(mgr) == ["hero"]
     assert any(e.rule == "hero" and "no hero" in e.text for e in run.log)
+
+
+def test_buffs_pending_until_every_ticked_buff_is_on(tmp_path):
+    mgr, run, clock, state = make(tmp_path, [ICE, BAGUA], buffs=[])
+    run.learned = dict(LEARNED)
+    assert mgr.buffs_pending(1)
+    state["buffs"] = [skill_buff(ICE, 20, WALL0 + 700), skill_buff(BAGUA, 5, WALL0 + 700)]
+    assert not mgr.buffs_pending(1)
+    state["buffs"] = [skill_buff(ICE, 20, WALL0 + 700)]
+    from services.guard import SkillTry
+
+    run.buff_state.skills[BAGUA] = SkillTry(paused_until=clock["t"] + 60)  # resting: not waited on
+    assert not mgr.buffs_pending(1)
+
+
+def test_buffs_pending_counts_the_hero(tmp_path):
+    mgr, run, _, state = make(tmp_path, [], buffs=[], caps=HERO_CAPS, hero=True)
+    assert mgr.buffs_pending(1)
+    state["buffs"] = [hero_buff(WALL0 + 300)]
+    assert not mgr.buffs_pending(1)
+
+
+def test_no_recast_past_the_estimated_end_while_still_listed():
+    # 0x29's time runs early: past it the buff is still on until the off packet.
+    st = BuffState()
+    ending = {ICE: WALL0 + BUFF_LEAD - 1}
+    assert next_cast([ICE], LEARNED, DEFS, ending, 5000, st, 0.0, WALL0) == (ICE, 20)
+    past = {ICE: WALL0 - 2}
+    assert next_cast([ICE], LEARNED, DEFS, past, 5000, st, 0.0, WALL0) is None
+
+
+def test_a_dropped_manifest_is_read_again_instead_of_disabling_buffs(tmp_path):
+    class CapsChannel(FakeChannel):
+        def send(self, pid, line, priority=0):
+            if line == "caps":
+                self.sent.append(line)
+                return {"ok": True, "commands": [{"cmd": c} for c in ("use", "cast", "status")]}
+            return super().send(pid, line, priority)
+
+    mgr, run, _, _ = make(tmp_path, [ICE], buffs=[], channel=CapsChannel())
+    mgr._caps.pop(1)  # as after a PipeGone on a drink
+    mgr._tick(1, run)
+    assert casts(mgr) == ["cast 71320 27395721"]
+    assert not any("沒有 buff 維持要用的指令" in e.text for e in run.log)

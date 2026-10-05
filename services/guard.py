@@ -91,10 +91,14 @@ LOG_KEEP = 100
 GUARD_COMMANDS = ("use",)  # what the guard needs from the hook's `caps` manifest
 BUFF_COMMANDS = ("cast", "status")  # what keeping buffs up needs on top
 HERO_COMMANDS = ("hero",)  # what 自動變身 needs on top
+CAPS_RETRY = 2.0  # re-read a dropped manifest at most this often
 HERO_CODE = 30295  # 英雄無雙: the `buffs` code of a hero transform
 REFILL_COMMANDS = ("pettake",)  # what 寵物取水 needs on top
 REFILL_STACK = 200  # one stack of a potion (what the pet bag holds per slot)
 SUMMON_COMMANDS = ("pet", "petsummon", "petdismiss")  # auto summon for a take
+# The client does not redraw the hotkey bar for a new bag stack (0x09), the last
+# packet of a take, so its counts stay old until the next HP / MP change.
+HOTKEY_REFRESH = "hotkeyrefresh"
 RESOURCE_LABEL = {"hp": "體力", "mp": "真氣"}
 CURE_HOLD = 2.0  # after a cure is sent, give the debuff this long to go away
 CURE_TRIES = 3  # cures per spell of a debuff before giving up on it
@@ -583,7 +587,10 @@ def next_cast(
             continue
         if mid in active:
             expires = active[mid]
-            if expires is None or expires - wall > BUFF_LEAD:
+            # Recast within BUFF_LEAD of the end; past the estimated end it is
+            # still listed only because 0x29's time runs early (map loads are
+            # not counted): wait for the off packet instead of casting again.
+            if expires is None or expires - wall > BUFF_LEAD or expires <= wall:
                 continue
         return mid, level
     return None
@@ -616,11 +623,13 @@ def due_items(
     now: float,
     wall: float,
 ) -> list[int]:
-    """Every use_periodic item to use now: held, not resting, its buff missing or ending.
+    """Every use_periodic item to use now: held, not resting, its buff gone.
 
-    All of them go in one pass, like the battle puppet (several 0x29 in the
-    same instant): an item has no cast animation, so there is no gap between
-    different items, only the per-item hold and rest.
+    Like the battle puppet, an item is used only once its buff has left the
+    list (the off packet), never early: 0x29's remaining time runs early, so
+    an early use could waste the item or be refused. All of them go in one
+    pass (several 0x29 in the same instant): an item has no cast animation, so
+    there is no gap between different items, only the per-item hold and rest.
     """
     out = []
     for item_id in wanted:
@@ -630,9 +639,7 @@ def due_items(
         if t is not None and (t.hold_until > now or t.paused_until > now):
             continue
         if item_id in active:
-            expires = active[item_id]
-            if expires is None or expires - wall > BUFF_LEAD:
-                continue
+            continue
         out.append(item_id)
     return out
 
@@ -742,6 +749,13 @@ class GuardStore:
 
     def save_items(self, name: str, rules: ItemRules) -> None:
         self._db.set_setting(name, ITEMS_SECTION, rules.model_dump(mode="json"))
+
+    def load_section(self, name: str, section: str, model):
+        """Any other per-character section (daily modules), as `model`."""
+        return self._section(name, section, model)
+
+    def save_section(self, name: str, section: str, value) -> None:
+        self._db.set_setting(name, section, value.model_dump(mode="json"))
 
 
 def migrate_legacy_store(db, path: Path | None = None) -> int:
@@ -915,6 +929,7 @@ class GuardManager:
         self._skill_icon = skill_icon
         # pid -> the hook's command names from `caps`; read on start
         self._caps: dict[int, frozenset[str]] = {}
+        self._caps_retry: dict[int, float] = {}  # pid -> clock of the last re-read
         self._icon_url = icon_url
         self._pipe_present = pipe_present
         self._clock = clock
@@ -975,6 +990,16 @@ class GuardManager:
     def _has_commands(self, pid: int, commands: tuple[str, ...]) -> bool:
         with self._lock:
             names = self._caps.get(pid)
+        if names is None:
+            # Dropped after a PipeGone, which also happens for a moment while
+            # the hook serves another client: read the manifest again rather
+            # than taking the rules as unsupported for the rest of the run.
+            now = self._clock()
+            if now - self._caps_retry.get(pid, -CAPS_RETRY) >= CAPS_RETRY:
+                self._caps_retry[pid] = now
+                self._check_caps(pid)
+                with self._lock:
+                    names = self._caps.get(pid)
         return names is not None and all(c in names for c in commands)
 
     def _hook_ready(self, pid: int) -> bool:
@@ -983,6 +1008,85 @@ class GuardManager:
         with self._lock:
             names = self._caps.get(pid)
         return names is None or all(c in names for c in GUARD_COMMANDS)
+
+    def running(self, pid: int) -> bool:
+        with self._lock:
+            run = self._runs.get(pid)
+        return (
+            run is not None
+            and run.thread is not None
+            and run.thread.is_alive()
+            and not run.stop.is_set()
+        )
+
+    def cast_count(self, pid: int) -> int:
+        """Buff casts and hero presses so far in this guard run (0 when not
+        running): a module pauses its fighting when this goes up, like the
+        puppet does after a support skill."""
+        with self._lock:
+            run = self._runs.get(pid)
+        if run is None:
+            return 0
+        with run.lock:
+            return run.casts + run.transforms
+
+    def missing_buffs(self, pid: int) -> list[str] | None:
+        """Ticked self buffs (and the hero transform) not on the character now,
+        by name; None when the hook's buff list is not known."""
+        name = self._character_name(pid)
+        buffs = self._buffs(pid)
+        if not name or buffs is None:
+            return None
+        rule = self._store.load(name).buff
+        try:
+            learned = self._read_locked(pid, read_learned) or {}
+        except Exception:
+            learned = {}
+        active = active_skills(buffs)
+        defs = self._self_buff_defs()
+        out = []
+        for mid in rule.skills:
+            level = learned.get(mid)
+            d = defs.get((mid, level)) if level else None
+            if d is not None and mid not in active:
+                out.append(d.name)
+        if rule.hero and not any(b.code == HERO_CODE for b in buffs):
+            out.append("英雄變身")
+        return out
+
+    def buffs_pending(self, pid: int) -> bool:
+        """The guard still has ticked buffs (or the hero transform) to put up:
+        a module waits for them before it starts something (the tower's 九尾狐仙).
+
+        Buffs it cannot cast now (not learned, resting after misses) do not count.
+        """
+        with self._lock:
+            run = self._runs.get(pid)
+        if run is None or run.stop.is_set():
+            return False
+        buffs = self._buffs(pid)
+        if buffs is None:
+            return False
+        now = self._clock()
+        with run.lock:
+            ticked = list(run.config.buff.skills)
+            learned = dict(run.learned)
+            hero = run.config.buff.hero and not run.hero_unsupported
+            tries = dict(run.buff_state.skills)
+            hero_try = run.hero_state.skills.get(HERO_CODE)
+        active = active_skills(buffs)
+        defs = self._self_buff_defs()
+        for mid in ticked:
+            level = learned.get(mid)
+            if not level or (mid, level) not in defs or mid in active:
+                continue
+            t = tries.get(mid)
+            if t is not None and t.paused_until > now:
+                continue
+            return True
+        if hero and not any(b.code == HERO_CODE for b in buffs):
+            return hero_try is None or hero_try.paused_until <= now
+        return False
 
     def stop(self, pid: int) -> None:
         with self._lock:
@@ -1534,6 +1638,7 @@ class GuardManager:
         rule = run.config.potion
         if not rule.pet_refill:
             return
+        arrived = False
         with run.lock:
             for item_id, (line, before) in list(run.refill_lines.items()):
                 if bag.get(item_id, 0) > before:
@@ -1541,6 +1646,15 @@ class GuardManager:
                     run.refill_state.skills[item_id].tries = 0
                     line.phase = "confirmed"
                     line.text += "（已取到）"
+                    arrived = True
+        if arrived and self._has_commands(pid, (HOTKEY_REFRESH,)):
+            try:
+                self._channel.send(pid, HOTKEY_REFRESH)  # display only: a failure is harmless
+            except (PipeBusy, NoReply):
+                pass
+            except PipeGone:
+                self._set_problem(run, "找不到 hook 指令通道（遊戲關了，或 hook 沒有注入）")
+                raise _Stop(WAIT_NO_PIPE)
         items = rule.hp_items + rule.mp_items
         if not any(bag.get(i, 0) < rule.refill_below for i in items):
             return  # nothing low: skip the pet bag read

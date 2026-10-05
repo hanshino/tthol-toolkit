@@ -209,3 +209,23 @@ def test_no_summon_when_off_without_commands_or_without_a_pet():
     assert pet_lines(mgr) == ["pet", f"pettake {JIN} 200"] * 2
     notes = [e.text for e in run.log if e.rule == "pet" and e.phase == "error"]
     assert notes == ["背包裡沒有寵物可以召喚，寵物取水要先召喚寵物"]  # noted once
+
+
+def test_hotkey_bar_redrawn_once_the_take_arrives():
+    mgr, run, clock, state = make(caps=("use", "pettake", "hotkeyrefresh"))
+    mgr._tick(1, run)
+    assert "hotkeyrefresh" not in mgr._channel.sent  # not before the bag shows it
+    state["bag"][JIN] = 205
+    clock["t"] += 0.5
+    mgr._tick(1, run)
+    assert mgr._channel.sent.count("hotkeyrefresh") == 1
+    mgr._tick(1, run)
+    assert mgr._channel.sent.count("hotkeyrefresh") == 1
+
+
+def test_no_hotkey_redraw_without_the_command():
+    mgr, run, clock, state = make()
+    mgr._tick(1, run)
+    state["bag"][JIN] = 205
+    mgr._tick(1, run)
+    assert "hotkeyrefresh" not in mgr._channel.sent
