@@ -1,0 +1,245 @@
+import pytest
+
+from services.api_types import BuffInfo, GuardBuffRule, GuardConfig, GuardPotionRule
+from services.guard import (
+    BUFF_LEAD,
+    CAST_GAP,
+    CAST_HOLD,
+    CAST_PAUSE,
+    CAST_TRIES,
+    BuffState,
+    GuardManager,
+    GuardStore,
+    Sample,
+    SelfBuff,
+    _Run,
+    active_skills,
+    next_cast,
+    read_learned,
+    record_cast,
+    settle_casts,
+)
+
+ICE, BAGUA, SHIELD = 713, 762, 761
+DEFS = {
+    (ICE, 20): SelfBuff("冰心靈訣", 2, "冰心", 325, 600000, "self"),
+    (BAGUA, 5): SelfBuff("八卦神武陣", 52, "八卦", 100, 240000, "self"),
+    (SHIELD, 5): SelfBuff("冰霜烈炎盾", 51, "護體", 55, 300000, "self"),
+}
+LEARNED = {ICE: 20, BAGUA: 5, SHIELD: 5, 1: 1}
+WALL0 = 1000.0
+
+
+def skill_buff(mid, level, expires_at=None):
+    return BuffInfo(
+        group=0, name="x", code=mid * 100 + level, level=level, expires_at=expires_at, source="hook"
+    )
+
+
+# ---- catalog (real DB) ---------------------------------------------------------
+
+
+def test_load_self_buffs_from_the_game_db():
+    from services._paths import bundled
+    from services.guard import load_self_buffs
+
+    if not bundled("tthol.sqlite").exists():
+        pytest.skip("tthol.sqlite not pulled")
+    d = load_self_buffs()
+    assert d[(713, 20)] == SelfBuff("冰心靈訣", 2, "冰心", 325, 600000, "self")
+    assert d[(308, 7)].target == "ally"  # 炎胄靈甲
+    assert d[(313, 10)].target == "group"  # 激攻符陣
+    assert (461, 4) not in d  # 心有靈犀 needs the partner
+    assert (305, 3) not in d  # 少淨神火 hits an enemy
+    assert (181, 5) not in d  # 百八蟲毒 poisons
+
+
+# ---- pure -----------------------------------------------------------------------
+
+
+def test_active_skills_ignores_item_buffs():
+    buffs = [
+        skill_buff(ICE, 20, 1500.0),
+        BuffInfo(group=0, name="賞善根骨丹", code=28146, source="hook"),  # item: level None
+    ]
+    assert active_skills(buffs) == {ICE: 1500.0}
+
+
+def test_next_cast_picks_missing_or_ending_buffs_in_order():
+    st = BuffState()
+    ticked = [ICE, BAGUA]
+    # both missing: the first ticked one
+    assert next_cast(ticked, LEARNED, DEFS, {}, 9999, st, 0.0, WALL0) == (ICE, 20)
+    # 冰心 on for a while, 八卦 missing
+    assert next_cast(ticked, LEARNED, DEFS, {ICE: WALL0 + 60}, 9999, st, 0.0, WALL0) == (BAGUA, 5)
+    # both on; time left unknown counts as on
+    active = {ICE: None, BAGUA: WALL0 + 60}
+    assert next_cast(ticked, LEARNED, DEFS, active, 9999, st, 0.0, WALL0) is None
+    # 八卦 about to end
+    active = {ICE: None, BAGUA: WALL0 + BUFF_LEAD - 0.1}
+    assert next_cast(ticked, LEARNED, DEFS, active, 9999, st, 0.0, WALL0) == (BAGUA, 5)
+
+
+def test_next_cast_skips_unlearned_unknown_and_short_of_mp():
+    st = BuffState()
+    assert next_cast([999], LEARNED, DEFS, {}, 9999, st, 0.0, WALL0) is None  # not learned
+    assert next_cast([1], LEARNED, DEFS, {}, 9999, st, 0.0, WALL0) is None  # not a buff
+    assert next_cast([ICE, SHIELD], LEARNED, DEFS, {}, 100, st, 0.0, WALL0) == (SHIELD, 5)
+
+
+def test_cast_gap_hold_and_pause():
+    st = BuffState()
+    assert record_cast(st, ICE, 0.0) is False
+    assert next_cast([ICE, BAGUA], LEARNED, DEFS, {}, 9999, st, CAST_GAP - 0.1, WALL0) is None
+    # after the gap 冰心 is still held, 八卦 can go
+    assert next_cast([ICE, BAGUA], LEARNED, DEFS, {}, 9999, st, CAST_GAP, WALL0) == (BAGUA, 5)
+    assert next_cast([ICE], LEARNED, DEFS, {}, 9999, st, CAST_HOLD, WALL0) == (ICE, 20)
+    t = CAST_HOLD
+    for _ in range(CAST_TRIES - 1):
+        assert record_cast(st, ICE, t) is False
+        t += CAST_HOLD
+    assert record_cast(st, ICE, t) is True  # one more miss: rest it
+    assert next_cast([ICE], LEARNED, DEFS, {}, 9999, st, t + CAST_HOLD, WALL0) is None
+    assert next_cast([ICE], LEARNED, DEFS, {}, 9999, st, t + CAST_PAUSE, WALL0) == (ICE, 20)
+
+
+def test_settle_casts_resets_once_the_buff_is_on():
+    st = BuffState()
+    record_cast(st, ICE, 0.0)
+    assert settle_casts(st, {}, WALL0) == []
+    assert settle_casts(st, {ICE: WALL0 + 600}, WALL0) == [ICE]
+    assert st.skills[ICE].tries == 0
+    assert settle_casts(st, {ICE: WALL0 + 600}, WALL0) == []
+
+
+def test_read_learned_wraps_read_skills(monkeypatch):
+    monkeypatch.setattr("services.guard.read_skills", lambda pm, a: [(713, 20), (1, 1)])
+    assert read_learned(None, 0, False) == {713: 20, 1: 1}
+    monkeypatch.setattr("services.guard.read_skills", lambda pm, a: None)
+    assert read_learned(None, 0, False) is None
+
+
+# ---- manager ----------------------------------------------------------------------
+
+
+class FakeChannel:
+    def __init__(self, handle=27395721, cast_reply=None):
+        self.sent = []
+        self.handle = handle
+        self.cast_reply = cast_reply or {"ok": True}
+
+    def send(self, pid, line, priority=0):
+        self.sent.append(line)
+        if line == "status":
+            return {"ok": True, "self": self.handle}
+        if line.startswith("cast"):
+            return self.cast_reply
+        return {"ok": True}
+
+
+def make(tmp_path, skills, buffs, mp=5000, channel=None, caps=("use", "cast", "status")):
+    clock = {"t": 100.0}
+    store = GuardStore(tmp_path / "guard.json")
+    store.save(
+        "寒江孤影",
+        GuardConfig(
+            potion=GuardPotionRule(hp_items=[], mp_items=[]),
+            buff=GuardBuffRule(skills=skills),
+        ),
+    )
+    state = {"buffs": buffs}
+
+    def read_locked(pid, fn):
+        if fn is read_learned:
+            return dict(LEARNED)
+        return Sample(1000, 1000, mp, 6000, {})
+
+    mgr = GuardManager(
+        read_locked=read_locked,
+        character_name=lambda pid: "寒江孤影",
+        channel=channel or FakeChannel(),
+        store=store,
+        potions=lambda: {},
+        cures=lambda: {},
+        self_buffs=lambda: DEFS,
+        buffs=lambda pid: state["buffs"],
+        pipe_present=lambda pid: True,
+        clock=lambda: clock["t"],
+        wall=lambda: WALL0 + clock["t"],
+    )
+    mgr._caps[1] = frozenset(caps)
+    run = _Run("寒江孤影", mgr.config(1))
+    with mgr._lock:
+        mgr._runs[1] = run
+    return mgr, run, clock, state
+
+
+def casts(mgr):
+    return [line for line in mgr._channel.sent if line.startswith("cast")]
+
+
+def test_casts_a_missing_buff_on_self_and_confirms(tmp_path):
+    mgr, run, clock, state = make(tmp_path, [ICE], buffs=[])
+    mgr._tick(1, run)
+    assert casts(mgr) == ["cast 71320 27395721"]
+    (line,) = [e for e in run.log if e.rule == "buff"]
+    assert line.text == "補 冰心靈訣 Lv20" and line.phase == "sent"
+    state["buffs"] = [skill_buff(ICE, 20, WALL0 + 700)]
+    clock["t"] += 0.5
+    mgr._tick(1, run)
+    assert casts(mgr) == ["cast 71320 27395721"]
+    assert line.phase == "confirmed" and line.text.endswith("（已生效）")
+    assert run.casts == 1
+
+
+def test_no_cast_without_hook_buff_list_or_cast_command(tmp_path):
+    mgr, run, _, _ = make(tmp_path, [ICE], buffs=None)
+    mgr._tick(1, run)
+    assert casts(mgr) == []
+    mgr, run, _, _ = make(tmp_path, [ICE], buffs=[], caps=("use",))
+    mgr._tick(1, run)
+    mgr._tick(1, run)
+    assert casts(mgr) == []
+    assert [e.text for e in run.log if e.rule == "buff"] == [
+        "這個 hook 沒有 buff 維持要用的指令：cast、status"
+    ]
+
+
+def test_no_cast_when_short_of_mp_or_dead(tmp_path):
+    mgr, run, _, _ = make(tmp_path, [ICE], buffs=[], mp=100)
+    mgr._tick(1, run)
+    assert casts(mgr) == []
+
+
+def test_mid_map_change_waits_for_the_own_handle(tmp_path):
+    mgr, run, _, _ = make(tmp_path, [ICE], buffs=[], channel=FakeChannel(handle=0))
+    mgr._tick(1, run)
+    assert casts(mgr) == []
+
+
+def test_buff_that_never_shows_up_rests_in_one_line(tmp_path):
+    mgr, run, clock, _ = make(tmp_path, [ICE], buffs=[])
+    for _ in range(CAST_TRIES + 1):
+        mgr._tick(1, run)
+        clock["t"] += CAST_HOLD
+    assert len(casts(mgr)) == CAST_TRIES + 1
+    (line,) = [e for e in run.log if e.rule == "buff"]
+    assert line.phase == "unconfirmed" and "都沒生效" in line.text
+    mgr._tick(1, run)  # resting
+    assert len(casts(mgr)) == CAST_TRIES + 1
+
+
+def test_refused_cast_is_logged_and_held(tmp_path):
+    ch = FakeChannel(cast_reply={"ok": False, "error": "skill not ready"})
+    mgr, run, clock, _ = make(tmp_path, [ICE], buffs=[], channel=ch)
+    mgr._tick(1, run)
+    clock["t"] += 0.5
+    mgr._tick(1, run)
+    assert len(casts(mgr)) == 1
+    assert any("skill not ready" in e.text for e in run.log)
+
+
+def test_buff_candidates_lists_learned_self_buffs(tmp_path):
+    mgr, _, _, _ = make(tmp_path, [], buffs=[skill_buff(ICE, 20, 1600.0)])
+    got = {(c.magic_id, c.level, c.active, c.expires_at) for c in mgr.buff_candidates(1)}
+    assert got == {(ICE, 20, True, 1600.0), (BAGUA, 5, False, None), (SHIELD, 5, False, None)}

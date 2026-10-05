@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, put } from '../../api/client';
-import type { CureCandidate, GuardConfig, GuardLogEntry, GuardStatus, GuardVitals, PotionCandidate } from '../../api/types';
+import type { BuffSkillCandidate, CureCandidate, GuardConfig, GuardLogEntry, GuardStatus, GuardVitals, PotionCandidate } from '../../api/types';
 import { reportClientError } from '../../diag/report';
 import './guard.css';
 
@@ -16,7 +16,7 @@ const PHASE_LABEL: Record<GuardLogEntry['phase'], string> = {
 };
 
 type Rule = { hp_pct: number; mp_pct: number; hp_items: number[]; mp_items: number[] };
-type Cfg = { potion: Rule; cure: { items: number[] } };
+type Cfg = { potion: Rule; cure: { items: number[] }; buff: { skills: number[] } };
 
 const toCfg = (c?: GuardConfig): Cfg => ({
   potion: {
@@ -26,6 +26,7 @@ const toCfg = (c?: GuardConfig): Cfg => ({
     mp_items: c?.potion.mp_items ?? [],
   },
   cure: { items: c?.cure?.items ?? [] },
+  buff: { skills: c?.buff?.skills ?? [] },
 });
 
 const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString('zh-TW', { hour12: false });
@@ -35,6 +36,7 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [potions, setPotions] = useState<PotionCandidate[]>([]);
   const [cures, setCures] = useState<CureCandidate[]>([]);
+  const [skills, setSkills] = useState<BuffSkillCandidate[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const saveTimer = useRef<number | null>(null);
@@ -53,12 +55,14 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
 
   const loadPotions = useCallback(async () => {
     try {
-      const [p, c] = await Promise.all([
+      const [p, c, k] = await Promise.all([
         get<PotionCandidate[]>(`/api/characters/${pid}/guard/potions`),
         get<CureCandidate[]>(`/api/characters/${pid}/guard/cures`),
+        get<BuffSkillCandidate[]>(`/api/characters/${pid}/guard/skills`),
       ]);
       setPotions(p);
       setCures(c);
+      setSkills(k);
     } catch (e) {
       reportClientError(e, { component: 'GuardPanel.potions', silent: true });
     }
@@ -130,6 +134,7 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
         <span className="gd-chip">{status.hook_cmd ? 'hook 指令通道已就緒' : '沒有 hook 指令通道'}</span>
         <span className="gd-chip">本次喝水 {status.drinks} 次</span>
         <span className="gd-chip">解狀態 {status.cures} 次</span>
+        <span className="gd-chip">補 buff {status.casts} 次</span>
         <button
           type="button" role="switch" aria-checked={running} aria-label="啟用常駐守護"
           className="gd-switch" onClick={toggle} disabled={busy || (!running && !status.hook_cmd)}
@@ -175,6 +180,12 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
         candidates={cures}
         debuffs={running ? status.debuffs : null}
         onItems={items => update({ ...cfg, cure: { items } })}
+      />
+
+      <BuffSection
+        skills={cfg.buff.skills}
+        candidates={skills}
+        onSkills={next => update({ ...cfg, buff: { skills: next } })}
       />
 
       <section className="gd-panel">
@@ -332,6 +343,65 @@ function CureSection({ items, candidates, debuffs, onItems }: {
         <span>只解解藥對應的那一種狀態</span>
         <span>用了 2 秒內沒解就再用，最多 3 次</span>
         <span>補體力優先，接著解狀態，再補真氣</span>
+      </div>
+    </section>
+  );
+}
+
+const TARGET_LABEL: Record<BuffSkillCandidate['target'], string> = { self: '自身', ally: '單體', group: '群體' };
+
+// buff 維持: tick the learned buff skills to keep up. A ticked skill is cast
+// on the character when its buff is gone or about to end.
+function BuffSection({ skills, candidates, onSkills }: {
+  skills: number[];
+  candidates: BuffSkillCandidate[];
+  onSkills: (v: number[]) => void;
+}) {
+  const now = Date.now() / 1000;
+  const toggle = (id: number, on: boolean) =>
+    onSkills(on ? [...skills, id] : skills.filter(x => x !== id));
+  // The same status group from two skills overwrites itself: warn about it.
+  const groups = new Map<number, number>();
+  for (const c of candidates) if (skills.includes(c.magic_id)) groups.set(c.group, (groups.get(c.group) ?? 0) + 1);
+
+  return (
+    <section className="gd-panel">
+      <header className="gd-head">
+        <h3>buff 維持</h3>
+        <span className="gd-dim">勾選的技能 buff 消失或剩不到 3 秒就對自己重放；真氣不夠、死亡時不放</span>
+      </header>
+      {candidates.length === 0 ? (
+        <div className="gd-dim">讀不到角色的技能，或沒有可以對自己施放的 buff 技能。</div>
+      ) : (
+        <ul className="gd-cures">
+          {candidates.map(c => {
+            const on = skills.includes(c.magic_id);
+            const id = `gd-buff-${c.magic_id}`;
+            const left = c.expires_at != null ? Math.max(0, Math.round(c.expires_at - now)) : null;
+            const clash = on && (groups.get(c.group) ?? 0) > 1;
+            return (
+              <li key={c.magic_id}>
+                <input id={id} type="checkbox" checked={on} onChange={e => toggle(c.magic_id, e.target.checked)} />
+                <label htmlFor={id} title={`${c.status}・${TARGET_LABEL[c.target]}・真氣 ${c.mp}・持續 ${Math.round(c.duration_s / 60)} 分`}>
+                  <span className="gd-name">
+                    {c.name} <span className="gd-dim">Lv{c.level}</span>
+                    {clash && <span className="gd-buff-clash">與其他勾選技能同類，會互相覆蓋</span>}
+                  </span>
+                  <span className={`gd-cure-st${c.active ? ' gd-buff-on' : ''}`}>
+                    {c.active ? (left != null ? `生效中 ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : '生效中') : '未生效'}
+                  </span>
+                  <span className="gd-cnt">真氣 {c.mp}</span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="gd-fixed">
+        <span>每次施放至少間隔 2 秒</span>
+        <span>放了 4 次都沒生效就暫停該技能 60 秒</span>
+        <span>換地圖清掉的 buff 會自動補回</span>
+        <span>需要 hook 回報 buff 清單</span>
       </div>
     </section>
   );

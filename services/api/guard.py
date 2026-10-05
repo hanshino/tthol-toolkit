@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 
 from services.api_types import (
+    BuffSkillCandidate,
     CureCandidate,
     GuardConfig,
     GuardStartResult,
@@ -61,3 +62,9 @@ async def potions(pid: int, request: Request) -> list[PotionCandidate]:
 async def cures(pid: int, request: Request) -> list[CureCandidate]:
     mgr = _mgr(request)
     return mgr.cure_candidates(pid) if mgr is not None else []
+
+
+@router.get("/skills", response_model=list[BuffSkillCandidate])
+async def skills(pid: int, request: Request) -> list[BuffSkillCandidate]:
+    mgr = _mgr(request)
+    return mgr.buff_candidates(pid) if mgr is not None else []

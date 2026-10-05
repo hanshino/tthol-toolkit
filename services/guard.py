@@ -17,6 +17,11 @@ clears gets that item used. Unlike a drink, a cure is confirmed by the group
 leaving the array; it is retried after CURE_HOLD, at most CURE_TRIES times per
 spell of the debuff.
 
+Rule 3 keeps self buffs up: a ticked skill is cast on the character when its
+buff is missing from the hook's buff list (services.buff_tracker) or ends
+within BUFF_LEAD. One cast per pass, CAST_GAP apart; a cast whose buff never
+shows up is retried CAST_TRIES times, then the skill rests for CAST_PAUSE.
+
 Settings are saved per character name in %APPDATA%\\御心鑒\\guard.json. The
 on/off switch is not saved: the guard never starts by itself after a restart.
 """
@@ -35,9 +40,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from reader import read_inventory, read_pet_inventory
+from reader import read_inventory, read_pet_inventory, read_skills
 from services._paths import app_root, bundled
 from services.api_types import (
+    BuffInfo,
+    BuffSkillCandidate,
     CureCandidate,
     GuardConfig,
     GuardLogEntry,
@@ -64,9 +71,16 @@ LIVE_FRESH = 1.0  # a 0x06 value newer than this beats the memory read
 CONFIRM_WINDOW = 2.0  # how long a drink may take to show up in the bag (log only)
 LOG_KEEP = 100
 GUARD_COMMANDS = ("use",)  # what the guard needs from the hook's `caps` manifest
+BUFF_COMMANDS = ("cast", "status")  # what keeping buffs up needs on top
 RESOURCE_LABEL = {"hp": "體力", "mp": "真氣"}
 CURE_HOLD = 2.0  # after a cure is sent, give the debuff this long to go away
 CURE_TRIES = 3  # cures per spell of a debuff before giving up on it
+BUFF_LEAD = 3.0  # recast a buff that ends within this many seconds
+CAST_GAP = 2.0  # at least this long between two casts
+CAST_HOLD = 4.0  # after a cast, wait this long for its buff before casting it again
+CAST_TRIES = 3  # casts in a row without the buff showing up before resting the skill
+CAST_PAUSE = 60.0
+SKILLS_EVERY = 30.0  # re-read the learned skills (levels go up) this often
 
 # Own debuffs: count, then one status group per int32 (compacting array; the
 # slots past count hold stale groups). Same layout in the compat layout.
@@ -264,6 +278,58 @@ def load_status_names(db_path: Path | None = None) -> dict[int, str]:
     return names
 
 
+# ---- self-buff skills ----------------------------------------------------------
+
+
+# Status groups that harm the one who has them; a skill giving one is not a self buff.
+HOSTILE_GROUPS = frozenset({14, 15, 17, 18, 19, 20, 21, 22, 23, 38, 39, 65, 66, 68, 69, 70, 71, 72})
+BUFF_TARGETS = {"TARGET_SELF": "self", "TARGET_ALLY": "ally", "TARGET_GROUP": "group"}
+
+
+@dataclass(frozen=True)
+class SelfBuff:
+    name: str
+    group: int
+    status: str
+    mp: int
+    duration_ms: int
+    target: str  # self / ally / group
+
+
+def load_self_buffs(db_path: Path | None = None) -> dict[tuple[int, int], SelfBuff]:
+    """(magic id, level) -> SelfBuff for every skill level that buffs its caster.
+
+    TARGET_LOVE skills are left out: they need the partner.
+    """
+    path = db_path or bundled("tthol.sqlite")
+    if not path.exists():
+        return {}
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    con.text_factory = lambda b: b.decode("utf-8", errors="replace")
+    try:
+        rows = con.execute(
+            'SELECT m.id, m.level, m.name, m.target, m.spend_mp, m.time, s."group", s.name'
+            " FROM magic m JOIN status s ON s.id = m.extra_status"
+            " WHERE m.time > 0 AND m.target IN ('TARGET_SELF', 'TARGET_ALLY', 'TARGET_GROUP')"
+        ).fetchall()
+    finally:
+        con.close()
+    return {
+        (mid, level): SelfBuff(name, group, status, mp or 0, ms, BUFF_TARGETS[target])
+        for mid, level, name, target, mp, ms, group, status in rows
+        if group not in HOSTILE_GROUPS
+    }
+
+
+def read_learned(pm, hp_addr, _compat_mode) -> dict[int, int] | None:
+    """magic id -> learned level, for WorkerManager.read_locked."""
+    try:
+        skills = read_skills(pm, hp_addr)
+    except ValueError:
+        return None
+    return dict(skills) if skills is not None else None
+
+
 # ---- rule: drinking (pure) -------------------------------------------------
 
 
@@ -418,6 +484,85 @@ def settle_cures(state: CureState, debuffs: tuple[int, ...], now: float) -> list
     return out
 
 
+# ---- rule: keeping buffs up (pure) -----------------------------------------------
+
+
+@dataclass
+class SkillTry:
+    tries: int = 0  # casts since the buff was last seen
+    hold_until: float = 0.0
+    paused_until: float = 0.0
+
+
+@dataclass
+class BuffState:
+    next_cast: float = 0.0  # no cast at all before this
+    skills: dict[int, SkillTry] = field(default_factory=dict)
+
+
+def active_skills(buffs: list[BuffInfo]) -> dict[int, float | None]:
+    """magic id -> expiry (unix s, None when unknown) for the skill buffs on the character."""
+    out: dict[int, float | None] = {}
+    for b in buffs:
+        if b.code is not None and b.level is not None:  # level set = a skill code
+            out[b.code // 100] = b.expires_at
+    return out
+
+
+def next_cast(
+    ticked: list[int],
+    learned: dict[int, int],
+    defs: dict[tuple[int, int], SelfBuff],
+    active: dict[int, float | None],
+    mp: int,
+    state: BuffState,
+    now: float,
+    wall: float,
+) -> tuple[int, int] | None:
+    """(magic id, level) of the first ticked buff to cast now, or None."""
+    if now < state.next_cast:
+        return None
+    for mid in ticked:
+        level = learned.get(mid)
+        d = defs.get((mid, level)) if level else None
+        if d is None or d.mp > mp:
+            continue
+        t = state.skills.get(mid)
+        if t is not None and (t.hold_until > now or t.paused_until > now):
+            continue
+        if mid in active:
+            expires = active[mid]
+            if expires is None or expires - wall > BUFF_LEAD:
+                continue
+        return mid, level
+    return None
+
+
+def record_cast(state: BuffState, mid: int, now: float) -> bool:
+    """A cast went out (or may have). True when the skill now rests (too many misses)."""
+    state.next_cast = now + CAST_GAP
+    t = state.skills.setdefault(mid, SkillTry())
+    t.tries += 1
+    t.hold_until = now + CAST_HOLD
+    if t.tries > CAST_TRIES:
+        t.tries = 0
+        t.paused_until = now + CAST_PAUSE
+        return True
+    return False
+
+
+def settle_casts(state: BuffState, active: dict[int, float | None], wall: float) -> list[int]:
+    """Skills whose buff is on (and not about to end) again: reset their tries."""
+    out = []
+    for mid, t in state.skills.items():
+        if t.tries and mid in active:
+            expires = active[mid]
+            if expires is None or expires - wall > BUFF_LEAD:
+                t.tries = 0
+                out.append(mid)
+    return out
+
+
 # ---- settings --------------------------------------------------------------
 
 
@@ -524,6 +669,12 @@ class _Run:
         self.next_id = 0
         # items.id -> drink lines still waiting for the bag, oldest first
         self.awaiting: dict[int, deque[_LogLine]] = {}
+        self.buff_state = BuffState()
+        self.buff_lines: dict[int, _LogLine] = {}  # magic id -> its open cast line
+        self.learned: dict[int, int] = {}
+        self.learned_at = -SKILLS_EVERY
+        self.buff_unsupported = False  # noted once that the hook cannot cast
+        self.casts = 0
         self.cure_state = CureState()
         self.cure_lines: dict[int, _LogLine] = {}  # status group -> its open cure line
         self.debuffs: tuple[int, ...] = ()
@@ -550,6 +701,9 @@ class GuardManager:
         potions: Callable[[], dict[int, Potion]] = load_potions,
         cures: Callable[[], dict[int, Cure]] = load_cures,
         status_names: Callable[[], dict[int, str]] = load_status_names,
+        self_buffs: Callable[[], dict[tuple[int, int], SelfBuff]] = load_self_buffs,
+        buffs: Callable[[int], list[BuffInfo] | None] = lambda _pid: None,
+        skill_icon: Callable[[int, int], str | None] = lambda _m, _l: None,
         icon_url: Callable[[int], str | None] = lambda _id: None,
         pipe_present: Callable[[int], bool] = cmd_pipe_present,
         clock: Callable[[], float] = time.monotonic,
@@ -565,6 +719,10 @@ class GuardManager:
         self._cures: dict[int, Cure] | None = None
         self._load_status_names = status_names
         self._status_names: dict[int, str] | None = None
+        self._load_self_buffs = self_buffs
+        self._self_buffs: dict[tuple[int, int], SelfBuff] | None = None
+        self._buffs = buffs
+        self._skill_icon = skill_icon
         # pid -> the hook's command names from `caps`; read on start
         self._caps: dict[int, frozenset[str]] = {}
         self._icon_url = icon_url
@@ -623,6 +781,11 @@ class GuardManager:
         if missing:
             return f"這個 hook 沒有守護要用的指令：{'、'.join(missing)}"
         return None
+
+    def _has_commands(self, pid: int, commands: tuple[str, ...]) -> bool:
+        with self._lock:
+            names = self._caps.get(pid)
+        return names is not None and all(c in names for c in commands)
 
     def _hook_ready(self, pid: int) -> bool:
         if not self._pipe_present(pid):
@@ -692,6 +855,7 @@ class GuardManager:
         with run.lock:
             entries = [line.entry(self._item_name) for line in run.log]
             problem, drinks, cures, debuffs = run.problem, run.drinks, run.cures, run.debuffs
+            casts = run.casts
         return GuardStatus(
             running=running,
             hook_cmd=hook_cmd,
@@ -699,6 +863,7 @@ class GuardManager:
             problem=problem if running else None,
             drinks=drinks,
             cures=cures,
+            casts=casts,
             debuffs=[self._status_name(g) for g in dict.fromkeys(debuffs)] if running else [],
             log=entries[::-1],
             config=config,
@@ -739,6 +904,35 @@ class GuardManager:
             )
         return out
 
+    def buff_candidates(self, pid: int) -> list[BuffSkillCandidate]:
+        """Learned skills that buff the character, with whether each is on now."""
+        learned = self._read_locked(pid, read_learned)
+        if not learned:
+            return []
+        defs = self._self_buff_defs()
+        active = active_skills(self._buffs(pid) or [])
+        out = []
+        for mid, level in sorted(learned.items()):
+            d = defs.get((mid, level))
+            if d is None:
+                continue
+            out.append(
+                BuffSkillCandidate(
+                    magic_id=mid,
+                    level=level,
+                    name=d.name,
+                    status=d.status,
+                    group=d.group,
+                    mp=d.mp,
+                    duration_s=d.duration_ms // 1000,
+                    target=d.target,
+                    active=mid in active,
+                    expires_at=active.get(mid),
+                    icon_url=self._skill_icon(mid, level),
+                )
+            )
+        return out
+
     def cure_candidates(self, pid: int) -> list[CureCandidate]:
         """Cure items in the bag or pet bag."""
         held = self._read_locked(pid, read_holdings)
@@ -770,6 +964,11 @@ class GuardManager:
         if self._potions is None:
             self._potions = self._load_potions()
         return self._potions
+
+    def _self_buff_defs(self) -> dict[tuple[int, int], SelfBuff]:
+        if self._self_buffs is None:
+            self._self_buffs = self._load_self_buffs()
+        return self._self_buffs
 
     def _cure_catalog(self) -> dict[int, Cure]:
         if self._cures is None:
@@ -841,6 +1040,7 @@ class GuardManager:
             )
             run.awaiting = {}
             run.cure_state, run.cure_lines = CureState(), {}
+            run.buff_state, run.buff_lines, run.learned_at = BuffState(), {}, -SKILLS_EVERY
         try:
             sample = self._read_locked(pid, read_sample)
         except Exception:
@@ -867,6 +1067,7 @@ class GuardManager:
                 self._drink_up(pid, run, "hp", hp, rule.hp_pct, rule.hp_items, maxes, bag, now)
                 self._cure(pid, run, sample.debuffs, run.config.cure.items, bag, now)
                 self._drink_up(pid, run, "mp", mp, rule.mp_pct, rule.mp_items, maxes, bag, now)
+                self._keep_buffs(pid, run, mp, now)
         except _Stop as stop:
             return stop.wait
         self._set_problem(run, None)
@@ -1011,6 +1212,113 @@ class GuardManager:
                 line.text = f"{name} → 用 {self._item_name(item_id)}" + (
                     f" ×{tried[0]}" if tried and tried[0] > 1 else ""
                 )
+
+    def _keep_buffs(self, pid: int, run: _Run, mp: int, now: float) -> None:
+        """Cast one ticked self buff that is missing or about to end."""
+        ticked = run.config.buff.skills
+        if not ticked:
+            return
+        buffs = self._buffs(pid)
+        if buffs is None:
+            return  # the hook does not track buffs yet: nothing to judge by
+        if not self._has_commands(pid, BUFF_COMMANDS):
+            if not run.buff_unsupported:
+                run.buff_unsupported = True
+                self._note(
+                    run, "error", "這個 hook 沒有 buff 維持要用的指令：cast、status", rule="buff"
+                )
+            return
+        wall = self._wall()
+        active = active_skills(buffs)
+        if now - run.learned_at >= SKILLS_EVERY:
+            try:
+                run.learned = self._read_locked(pid, read_learned) or run.learned
+            except Exception:
+                pass
+            run.learned_at = now
+        with run.lock:
+            for mid in settle_casts(run.buff_state, active, wall):
+                line = run.buff_lines.pop(mid, None)
+                if line is not None:
+                    line.phase = "confirmed"
+                    line.text += "（已生效）"
+        defs = self._self_buff_defs()
+        pick = next_cast(ticked, run.learned, defs, active, mp, run.buff_state, now, wall)
+        if pick is None:
+            return
+        mid, level = pick
+        d = defs[(mid, level)]
+        what = f"補 {d.name} Lv{level}"
+        handle = self._own_handle(pid, run, what)
+        if handle is None:
+            return
+        rested: list[bool] = []
+
+        def sent() -> None:
+            rested.append(record_cast(run.buff_state, mid, now))
+
+        if not self._send_cast(pid, run, f"cast {mid * 100 + level} {handle}", what, sent):
+            return
+        with run.lock:
+            run.casts += 1
+            line = run.buff_lines.get(mid)
+            if line is None:
+                run.next_id += 1
+                line = _LogLine(run.next_id, self._wall(), "buff", "sent", what)
+                run.log.append(line)
+                run.buff_lines[mid] = line
+            tries = run.buff_state.skills[mid].tries
+            if rested and rested[0]:
+                run.buff_lines.pop(mid, None)
+                line.phase = "unconfirmed"
+                line.text = f"{what}（放了 {CAST_TRIES + 1} 次都沒生效，{CAST_PAUSE:g} 秒後再試）"
+            elif tries > 1:
+                line.text = f"{what} ×{tries}"
+
+    def _own_handle(self, pid: int, run: _Run, what: str) -> int | None:
+        """The character's own handle for `cast`, from `status` (changes on a map change)."""
+        try:
+            reply = self._channel.send(pid, "status")
+        except PipeGone:
+            self._set_problem(run, "找不到 hook 指令通道（遊戲關了，或 hook 沒有注入）")
+            raise _Stop(WAIT_NO_PIPE)
+        except (PipeBusy, NoReply):
+            raise _Stop(WAIT_BUSY)
+        handle = reply.get("self") if reply.get("ok") else None
+        if not isinstance(handle, int) or handle <= 0:
+            # Mid map change the own character is not built yet.
+            return None
+        return handle
+
+    def _send_cast(
+        self, pid: int, run: _Run, line: str, what: str, on_sent: Callable[[], None]
+    ) -> bool:
+        try:
+            reply = self._channel.send(pid, line)
+        except PipeGone:
+            self._set_problem(run, "找不到 hook 指令通道（遊戲關了，或 hook 沒有注入）")
+            raise _Stop(WAIT_NO_PIPE)
+        except PipeBusy:
+            self._set_problem(run, "指令通道正被其他程式使用")
+            raise _Stop(WAIT_BUSY)
+        except NoReply as e:
+            on_sent()  # it may still have run: hold the skill like a sent cast
+            self._note(run, "error", f"{what}：hook 沒有回應（{e}）", rule="buff")
+            raise _Stop(WAIT_NO_REPLY)
+        code = classify_error(reply)
+        if code is None:
+            on_sent()
+            return True
+        if code == "actions_not_loaded":
+            self._set_problem(run, "hook 的動作模組還沒載入，請在 hook 端載入後再試")
+            raise _Stop(WAIT_NOT_LOADED)
+        if code == "dispatcher_timeout":
+            self._note(run, "error", f"{what}：遊戲沒有回應（視窗可能最小化）", rule="buff")
+            raise _Stop(WAIT_DISPATCHER)
+        # Refused (e.g. on cooldown): hold it like a miss so it is not hammered.
+        on_sent()
+        self._note(run, "error", f"{what}：{reply.get('error', '未知錯誤')}", rule="buff")
+        return False
 
     def _log_cures(self, run: _Run, debuffs: tuple[int, ...], now: float) -> None:
         """Close the cure line of a debuff that went away, or ran out of tries."""

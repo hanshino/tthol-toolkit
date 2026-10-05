@@ -88,4 +88,6 @@ export type GuardStartResult = S['GuardStartResult'];
 export type PotionCandidate = S['PotionCandidate'];
 export type CureCandidate = S['CureCandidate'];
 export type GuardCureRule = S['GuardCureRule'];
+export type GuardBuffRule = S['GuardBuffRule'];
+export type BuffSkillCandidate = S['BuffSkillCandidate'];
 export type GuardVitals = S['GuardVitals'];

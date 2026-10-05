@@ -525,6 +525,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/guard/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Skills */
+        get: operations["skills_api_characters__pid__guard_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/walk": {
         parameters: {
             query?: never;
@@ -1309,6 +1326,37 @@ export interface components {
             source: "hook" | "memory";
         };
         /**
+         * BuffSkillCandidate
+         * @description A learned skill that buffs the character, for the buff 維持 picker.
+         */
+        BuffSkillCandidate: {
+            /** Magic Id */
+            magic_id: number;
+            /** Level */
+            level: number;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Group */
+            group: number;
+            /** Mp */
+            mp: number;
+            /** Duration S */
+            duration_s: number;
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "self" | "ally" | "group";
+            /** Active */
+            active: boolean;
+            /** Expires At */
+            expires_at?: number | null;
+            /** Icon Url */
+            icon_url?: string | null;
+        };
+        /**
          * Character
          * @description Lightweight row used by GET /api/characters.
          */
@@ -1858,6 +1906,18 @@ export interface components {
             code?: string | null;
         };
         /**
+         * GuardBuffRule
+         * @description Self buffs to keep up: recast a ticked skill when its buff is gone or
+         *     about to end. Skills are magic ids; the learned level is cast.
+         */
+        GuardBuffRule: {
+            /**
+             * Skills
+             * @default []
+             */
+            skills: number[];
+        };
+        /**
          * GuardConfig
          * @description Saved per character name (pid changes on every game restart).
          */
@@ -1877,6 +1937,12 @@ export interface components {
              *     }
              */
             cure: components["schemas"]["GuardCureRule"];
+            /**
+             * @default {
+             *       "skills": []
+             *     }
+             */
+            buff: components["schemas"]["GuardBuffRule"];
         };
         /**
          * GuardCureRule
@@ -1902,7 +1968,7 @@ export interface components {
              * Rule
              * @enum {string}
              */
-            rule: "potion" | "cure" | "guard";
+            rule: "potion" | "cure" | "buff" | "guard";
             /** Text */
             text: string;
             /**
@@ -1968,6 +2034,11 @@ export interface components {
              */
             cures: number;
             /**
+             * Casts
+             * @default 0
+             */
+            casts: number;
+            /**
              * Debuffs
              * @default []
              */
@@ -1987,6 +2058,9 @@ export interface components {
              *       },
              *       "cure": {
              *         "items": []
+             *       },
+             *       "buff": {
+             *         "skills": []
              *       }
              *     }
              */
@@ -3834,6 +3908,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CureCandidate"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skills_api_characters__pid__guard_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuffSkillCandidate"][];
                 };
             };
             /** @description Validation Error */

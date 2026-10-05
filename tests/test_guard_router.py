@@ -35,6 +35,7 @@ async def test_config_round_trip(client):
     cfg = {
         "potion": {"hp_pct": 60, "mp_pct": 30, "hp_items": [24008], "mp_items": []},
         "cure": {"items": [24206]},
+        "buff": {"skills": [713]},
     }
     resp = await client.put("/api/characters/1/guard/config", json=cfg)
     assert resp.status_code == 200

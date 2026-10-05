@@ -942,17 +942,25 @@ class GuardCureRule(_Base):
     items: list[int] = []
 
 
+class GuardBuffRule(_Base):
+    """Self buffs to keep up: recast a ticked skill when its buff is gone or
+    about to end. Skills are magic ids; the learned level is cast."""
+
+    skills: list[int] = []
+
+
 class GuardConfig(_Base):
     """Saved per character name (pid changes on every game restart)."""
 
     potion: GuardPotionRule = GuardPotionRule()
     cure: GuardCureRule = GuardCureRule()
+    buff: GuardBuffRule = GuardBuffRule()
 
 
 class GuardLogEntry(_Base):
     id: int  # stable while the line is updated in place (bag confirmation)
     ts: float
-    rule: Literal["potion", "cure", "guard"]
+    rule: Literal["potion", "cure", "buff", "guard"]
     text: str
     # sent: the hook accepted the command; confirmed: the bag count dropped for
     # every drink in the line (cure: the debuff went away); unconfirmed: some
@@ -975,6 +983,7 @@ class GuardStatus(_Base):
     problem: str | None = None  # why the guard is idle or backing off, in user words
     drinks: int = 0
     cures: int = 0
+    casts: int = 0
     debuffs: list[str] = []  # debuffs on the character now, by name
     log: list[GuardLogEntry] = []
     config: GuardConfig = GuardConfig()
@@ -994,6 +1003,22 @@ class PotionCandidate(_Base):
     restores: Literal["hp", "mp", "both"]
     bag: int
     pet: int
+    icon_url: str | None = None
+
+
+class BuffSkillCandidate(_Base):
+    """A learned skill that buffs the character, for the buff 維持 picker."""
+
+    magic_id: int
+    level: int
+    name: str
+    status: str  # the status it gives, e.g. 冰心
+    group: int
+    mp: int  # 真氣 per cast
+    duration_s: int
+    target: Literal["self", "ally", "group"]
+    active: bool  # the buff is on the character now (from the hook)
+    expires_at: float | None = None  # unix seconds, when known
     icon_url: str | None = None
 
 

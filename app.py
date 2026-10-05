@@ -17,7 +17,7 @@ import webview
 
 from services._paths import bundled
 from services import diagnostics
-from services import item_catalog, window_prefs
+from services import item_catalog, skill_catalog, window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.damage_capture import DamageRecorderManager
@@ -69,6 +69,8 @@ def _build_services(dev: bool) -> dict:
         read_locked=wm.read_locked,
         character_name=wm.character_name,
         channel=channel,
+        buffs=buffs.buffs,
+        skill_icon=lambda mid, level: skill_catalog.icon_path(mid, level),
         icon_url=lambda item_id: (
             item_catalog.icon_path(item_id) if item_catalog.icon_url(item_id) else None
         ),

@@ -79,6 +79,8 @@ button.gd-add:hover { border-color: var(--tt-accent); color: var(--tt-text); }
 .gd-cures label { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: baseline; padding: 9px 0; cursor: pointer; }
 .gd-cure-st { font-size: 11.5px; color: var(--tt-dim); white-space: nowrap; }
 .gd-cures li.is-out .gd-name, .gd-cures li.is-out .gd-cnt { color: var(--tt-mute); }
+.gd-buff-on { color: var(--tt-ok); }
+.gd-buff-clash { display: block; font-size: 11px; color: var(--tt-warn); }
 .gd-cures input:focus-visible { outline: 1px solid var(--tt-accent); outline-offset: 2px; }
 
 .gd-fixed { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
