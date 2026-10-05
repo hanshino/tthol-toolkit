@@ -944,6 +944,120 @@ class GuardPotionRule(_Base):
     refill_summon: bool = True
 
 
+class CombatRule(_Base):
+    """How a module fights, laid out like the battle puppet's 戰鬥 page.
+
+    A new target gets the opener once, then the rotation skills take turns
+    (1 -> 2 -> 3 -> 1); a slot that cannot be used now (not learned, short of
+    MP) is skipped. The basic attack runs alongside the skills, not as a
+    fallback. Skills are magic ids; the learned level is cast.
+    """
+
+    basic: bool = True
+    opener: int | None = None
+    rotation: list[int] = Field(default_factory=list, max_length=3)
+    # Picking a new target (the current one stays until it dies):
+    # nearest, or the weak ones first: the pack before the elite (the one monster
+    # of its kind in a room; npc.hp alone is unreliable, the tower elites read
+    # lower than their pack).
+    target: Literal["nearest", "weakest"] = "nearest"
+    # Prefer monsters with few others around them, instead of running into a pack.
+    avoid_packs: bool = False
+
+
+class AttackSkillCandidate(_Base):
+    """A learned skill that hits an enemy, for the combat pickers."""
+
+    magic_id: int
+    level: int
+    name: str
+    mp: int
+    area: bool  # TARGET_ENEMYEX: hits around the target
+    gap_ms: int  # recharge_time + stun: how soon the next skill can follow
+
+
+class TowerConfig(_Base):
+    """神武玄天塔 module settings, per character name."""
+
+    # Leave the tower after clearing this floor (global floor number, 辰星關
+    # 1-10, 太白關 11-20, ...); None = climb until the game sends you out.
+    stop_floor: int | None = Field(None, ge=1, le=100)
+    # Potion floors, counting the 補水 whitelists in the bag and the pet bag.
+    # Below a leave floor at a floor's exit: pick "leave" instead of continuing.
+    leave_hp_below: int | None = Field(None, ge=1, le=100000)
+    leave_mp_below: int | None = Field(None, ge=1, le=100000)
+    # Mid-floor at or under a logout floor (0 = used up): log out of the game
+    # rather than die in the tower (Esc menu -> 登出遊戲, background clicks).
+    logout: bool = False
+    logout_hp_at: int = Field(0, ge=0, le=100000)
+    logout_mp_at: int | None = Field(None, ge=0, le=100000)
+
+
+class TowerRecord(_Base):
+    """The last run the toolkit saw, per character: the game's daily flag
+    cannot be read, so "done today" comes from here."""
+
+    date: str | None = None  # local YYYY-MM-DD the run started
+    top_floor: int = 0  # highest floor cleared that day
+    ended: str | None = None  # why it stopped
+
+
+class TowerFloor(_Base):
+    floor: int
+    secs: float
+
+
+class TowerLogEntry(_Base):
+    id: int
+    ts: float
+    phase: Literal["sent", "confirmed", "unconfirmed", "error", "info"]
+    text: str
+
+
+class TowerStatus(_Base):
+    running: bool
+    character: str | None = None
+    step: str | None = None  # what the module is doing, in user words
+    problem: str | None = None
+    stage_id: int | None = None
+    stage_name: str | None = None
+    floor: int | None = None  # current floor (global)
+    room: int | None = None  # 1-10 inside the 關
+    kills: int = 0
+    expect: int = 0
+    room_started: float | None = None  # unix s
+    run_started: float | None = None
+    floors: list[TowerFloor] = []  # cleared this run, in order
+    log: list[TowerLogEntry] = []
+
+
+class TowerEstimate(_Base):
+    """How far the character is expected to climb with its current hit."""
+
+    ok: bool
+    reason: str | None = None  # why there is no estimate
+    hit: int = 0
+    level: int = 0
+    max_floor: int = 0
+    blocker: str | None = None
+    missing_buffs: list[str] | None = None  # ticked buffs not on now (None: unknown)
+    applied: bool = False  # written into stop_floor
+
+
+class TowerView(_Base):
+    status: TowerStatus
+    combat: CombatRule = CombatRule()
+    config: TowerConfig = TowerConfig()
+    record: TowerRecord = TowerRecord()
+    skills: list[AttackSkillCandidate] = []
+    hook_ready: bool = False  # the hook lists every command the module needs
+
+
+class TowerSettings(_Base):
+    combat: CombatRule
+    config: TowerConfig
+
+
 class GuardBuffRule(_Base):
     """Self buffs to keep up: recast a ticked skill when its buff is gone or
     about to end. Skills are magic ids; the learned level is cast."""

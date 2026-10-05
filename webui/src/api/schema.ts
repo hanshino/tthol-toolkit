@@ -580,6 +580,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/tower": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** View */
+        get: operations["view_api_characters__pid__tower_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/tower/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Settings */
+        put: operations["put_settings_api_characters__pid__tower_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/tower/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_characters__pid__tower_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/tower/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__tower_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/tower/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Estimate
+         * @description Estimate the top floor from the current hit and set it as the stop floor.
+         */
+        post: operations["estimate_api_characters__pid__tower_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/walk": {
         parameters: {
             query?: never;
@@ -1263,6 +1351,24 @@ export interface components {
              */
             character_count: number;
         };
+        /**
+         * AttackSkillCandidate
+         * @description A learned skill that hits an enemy, for the combat pickers.
+         */
+        AttackSkillCandidate: {
+            /** Magic Id */
+            magic_id: number;
+            /** Level */
+            level: number;
+            /** Name */
+            name: string;
+            /** Mp */
+            mp: number;
+            /** Area */
+            area: boolean;
+            /** Gap Ms */
+            gap_ms: number;
+        };
         /** AutoClickConfig */
         AutoClickConfig: {
             /** Interval Ms */
@@ -1577,6 +1683,37 @@ export interface components {
             component?: string | null;
             /** Ua */
             ua?: string | null;
+        };
+        /**
+         * CombatRule
+         * @description How a module fights, laid out like the battle puppet's 戰鬥 page.
+         *
+         *     A new target gets the opener once, then the rotation skills take turns
+         *     (1 -> 2 -> 3 -> 1); a slot that cannot be used now (not learned, short of
+         *     MP) is skipped. The basic attack runs alongside the skills, not as a
+         *     fallback. Skills are magic ids; the learned level is cast.
+         */
+        CombatRule: {
+            /**
+             * Basic
+             * @default true
+             */
+            basic: boolean;
+            /** Opener */
+            opener?: number | null;
+            /** Rotation */
+            rotation?: number[];
+            /**
+             * Target
+             * @default nearest
+             * @enum {string}
+             */
+            target: "nearest" | "weakest";
+            /**
+             * Avoid Packs
+             * @default false
+             */
+            avoid_packs: boolean;
         };
         /** ConnectOptions */
         ConnectOptions: {
@@ -2973,6 +3110,185 @@ export interface components {
             /** Url */
             url: string;
         };
+        /**
+         * TowerConfig
+         * @description 神武玄天塔 module settings, per character name.
+         */
+        TowerConfig: {
+            /** Stop Floor */
+            stop_floor?: number | null;
+            /** Leave Hp Below */
+            leave_hp_below?: number | null;
+            /** Leave Mp Below */
+            leave_mp_below?: number | null;
+            /**
+             * Logout
+             * @default false
+             */
+            logout: boolean;
+            /**
+             * Logout Hp At
+             * @default 0
+             */
+            logout_hp_at: number;
+            /** Logout Mp At */
+            logout_mp_at?: number | null;
+        };
+        /**
+         * TowerEstimate
+         * @description How far the character is expected to climb with its current hit.
+         */
+        TowerEstimate: {
+            /** Ok */
+            ok: boolean;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Hit
+             * @default 0
+             */
+            hit: number;
+            /**
+             * Level
+             * @default 0
+             */
+            level: number;
+            /**
+             * Max Floor
+             * @default 0
+             */
+            max_floor: number;
+            /** Blocker */
+            blocker?: string | null;
+            /** Missing Buffs */
+            missing_buffs?: string[] | null;
+            /**
+             * Applied
+             * @default false
+             */
+            applied: boolean;
+        };
+        /** TowerFloor */
+        TowerFloor: {
+            /** Floor */
+            floor: number;
+            /** Secs */
+            secs: number;
+        };
+        /** TowerLogEntry */
+        TowerLogEntry: {
+            /** Id */
+            id: number;
+            /** Ts */
+            ts: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "sent" | "confirmed" | "unconfirmed" | "error" | "info";
+            /** Text */
+            text: string;
+        };
+        /**
+         * TowerRecord
+         * @description The last run the toolkit saw, per character: the game's daily flag
+         *     cannot be read, so "done today" comes from here.
+         */
+        TowerRecord: {
+            /** Date */
+            date?: string | null;
+            /**
+             * Top Floor
+             * @default 0
+             */
+            top_floor: number;
+            /** Ended */
+            ended?: string | null;
+        };
+        /** TowerSettings */
+        TowerSettings: {
+            combat: components["schemas"]["CombatRule"];
+            config: components["schemas"]["TowerConfig"];
+        };
+        /** TowerStatus */
+        TowerStatus: {
+            /** Running */
+            running: boolean;
+            /** Character */
+            character?: string | null;
+            /** Step */
+            step?: string | null;
+            /** Problem */
+            problem?: string | null;
+            /** Stage Id */
+            stage_id?: number | null;
+            /** Stage Name */
+            stage_name?: string | null;
+            /** Floor */
+            floor?: number | null;
+            /** Room */
+            room?: number | null;
+            /**
+             * Kills
+             * @default 0
+             */
+            kills: number;
+            /**
+             * Expect
+             * @default 0
+             */
+            expect: number;
+            /** Room Started */
+            room_started?: number | null;
+            /** Run Started */
+            run_started?: number | null;
+            /**
+             * Floors
+             * @default []
+             */
+            floors: components["schemas"]["TowerFloor"][];
+            /**
+             * Log
+             * @default []
+             */
+            log: components["schemas"]["TowerLogEntry"][];
+        };
+        /** TowerView */
+        TowerView: {
+            status: components["schemas"]["TowerStatus"];
+            /**
+             * @default {
+             *       "basic": true,
+             *       "rotation": [],
+             *       "target": "nearest",
+             *       "avoid_packs": false
+             *     }
+             */
+            combat: components["schemas"]["CombatRule"];
+            /**
+             * @default {
+             *       "logout": false,
+             *       "logout_hp_at": 0
+             *     }
+             */
+            config: components["schemas"]["TowerConfig"];
+            /**
+             * @default {
+             *       "top_floor": 0
+             *     }
+             */
+            record: components["schemas"]["TowerRecord"];
+            /**
+             * Skills
+             * @default []
+             */
+            skills: components["schemas"]["AttackSkillCandidate"][];
+            /**
+             * Hook Ready
+             * @default false
+             */
+            hook_ready: boolean;
+        };
         /** TreasuryHolder */
         TreasuryHolder: {
             /** Character */
@@ -4167,6 +4483,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CopySettingsResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_api_characters__pid__tower_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TowerView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_settings_api_characters__pid__tower_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TowerSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TowerSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_characters__pid__tower_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__tower_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    estimate_api_characters__pid__tower_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TowerEstimate"];
                 };
             };
             /** @description Validation Error */

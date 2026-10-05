@@ -1,0 +1,42 @@
+/* 日常 tab (DailyTab): built on the guard panel styles. */
+button.dl-btn { font: inherit; font-size: 13px; min-height: 34px; padding: 6px 16px; background: var(--tt-raised); color: var(--tt-gold); border: 1px solid var(--tt-gold); cursor: pointer; transition: border-color 0.15s, color 0.15s; }
+button.dl-btn.is-stop { color: var(--tt-bad); border-color: var(--tt-seal); }
+button.dl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+button.dl-btn:focus-visible { outline: 1px solid var(--tt-accent); outline-offset: 2px; }
+
+.dl-ladder { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; }
+.dl-ladder li { border: 1px solid var(--tt-line); background: var(--tt-bg); padding: 8px 2px 6px; text-align: center; min-width: 0; display: grid; gap: 4px; }
+.dl-ladder b { font-family: var(--tt-font-mono); font-size: 15px; font-weight: 600; color: var(--tt-dim); }
+.dl-ladder span { font-family: var(--tt-font-mono); font-size: 10.5px; color: var(--tt-mute); min-height: 1.2em; }
+.dl-ladder li.is-done { border-color: var(--tt-accent-dim); background: rgba(90, 136, 152, 0.10); }
+.dl-ladder li.is-done b { color: var(--tt-ok); }
+.dl-ladder li.is-cur { border-color: var(--tt-gold); box-shadow: inset 0 0 0 1px var(--tt-gold); }
+.dl-ladder li.is-cur b, .dl-ladder li.is-cur span { color: var(--tt-gold); }
+
+.dl-room { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin-top: 12px; background: var(--tt-line); border: 1px solid var(--tt-line); }
+.dl-room > div { background: var(--tt-panel); padding: 8px 12px; display: grid; gap: 2px; min-width: 0; }
+.dl-lbl { font-size: 11px; letter-spacing: 2px; color: var(--tt-mute); }
+.dl-num { font-family: var(--tt-font-mono); font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 600; color: var(--tt-text); }
+.dl-today { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; font-size: 13px; }
+.dl-today .dl-num { font-size: 14px; color: var(--tt-gold); }
+
+.dl-combat { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; }
+.dl-check { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.dl-check input { margin: 0; width: 15px; height: 15px; accent-color: var(--tt-accent); cursor: pointer; }
+.dl-pick { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--tt-line-soft); align-items: end; }
+.dl-check.dl-check-inline { grid-column: auto; min-height: 32px; }
+.dl-field { display: grid; gap: 4px; min-width: 0; font-size: 12px; color: var(--tt-mute); }
+.dl-field select { font: inherit; font-size: 12.5px; min-height: 32px; background: var(--tt-bg); color: var(--tt-text); border: 1px solid var(--tt-line); padding: 4px 8px; min-width: 0; }
+.dl-floors { display: grid; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--tt-line-soft); }
+.dl-row input[type=number]:disabled { opacity: 0.5; }
+.dl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13px; color: var(--tt-dim); }
+.dl-row input[type=number] { width: 72px; min-height: 32px; padding: 2px 8px; font-family: var(--tt-font-mono); background: var(--tt-bg); color: var(--tt-text); border: 1px solid var(--tt-line); }
+
+@media (max-width: 640px) {
+  .dl-ladder { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .dl-combat, .dl-room { grid-template-columns: 1fr; }
+}
+button.dl-btn.dl-btn-sm { min-height: 32px; padding: 4px 12px; font-size: 12.5px; color: var(--tt-accent); border-color: var(--tt-accent-dim); }
+.dl-estimate { margin-top: 8px; padding: 8px 12px; border-left: 2px solid var(--tt-accent); background: rgba(90, 136, 152, 0.08); font-size: 12.5px; line-height: 1.6; color: var(--tt-text); }
+.dl-estimate.is-warn { border-left-color: var(--tt-warn); background: rgba(212, 176, 114, 0.06); }
+

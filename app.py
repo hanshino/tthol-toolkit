@@ -22,6 +22,7 @@ from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.damage_capture import DamageRecorderManager
 from services.guard import POSE_PACKET, GuardManager, GuardStore, migrate_legacy_store
+from services.tower_run import ATTACK_PACKET, CAST_START_PACKET, TowerManager
 from services.buff_tracker import BUFF_PACKET, BuffTracker
 from services.hook_cmd import CommandChannel
 from services.hook_hub import HookHub, read_templates
@@ -81,6 +82,16 @@ def _build_services(dev: bool) -> dict:
     # Own HP / MP packets wake the guard at once instead of waiting for its next poll.
     hook.add_vitals_listener(guard.on_vitals)
     hook.add_packet_listener(POSE_PACKET, guard.on_pose_packet)
+    # 日常 modules: they start the guard and leave potions and buffs to it.
+    tower = TowerManager(
+        guard=guard,
+        read_locked=wm.read_locked,
+        character_name=wm.character_name,
+        channel=channel,
+        store=GuardStore(db),
+    )
+    hook.add_packet_listener(ATTACK_PACKET, tower.on_attack_packet)
+    hook.add_packet_listener(CAST_START_PACKET, tower.on_cast_packet)
     market_db = MarketDB()
     market = MarketSurveyManager(live=wm.live_handle, pids=wm.live_pids, db=market_db)
     market.start()
@@ -95,6 +106,7 @@ def _build_services(dev: bool) -> dict:
         "autoclick_manager": autoclick,
         "keep_active_manager": keep_active,
         "guard_manager": guard,
+        "tower_manager": tower,
         "buff_tracker": buffs,
     }
 
@@ -235,6 +247,7 @@ def main() -> int:
         # Recorder threads hold timeBeginPeriod(1); stop them so it is released.
         services["damage_manager"].shutdown()
         services["hook_hub"].shutdown()
+        services["tower_manager"].shutdown()
         services["guard_manager"].shutdown()
         services["buff_tracker"].shutdown()
     return 0

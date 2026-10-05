@@ -6,6 +6,7 @@ import { GuardPanel } from './GuardPanel';
 import { BodyTab } from './BodyTab';
 import { CharHeader } from './CharHeader';
 import { ChatTab } from './ChatTab';
+import { DailyTab } from './DailyTab';
 import { DamageTab } from './DamageTab';
 import { ItemsTab } from './ItemsTab';
 import { MapAnalysis } from './MapAnalysis';
@@ -22,6 +23,7 @@ const TABS: { k: CharTab; n: string; s: string }[] = [
   { k: 'market', n: '市集', s: '攤位調查' },
   { k: 'damage', n: '戰錄', s: '傷害 · DPS' },
   { k: 'assist', n: '輔助', s: '守護 · 英雄培養' },
+  { k: 'daily', n: '日常', s: '玄天塔' },
 ];
 // Only for a client whose hook pipe is connected.
 const CHAT_TAB = { k: 'chat' as const, n: '傳音', s: '聊天' };
@@ -81,6 +83,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
                   <AutoClickTab pid={char.pid} />
                 </div>
               )}
+              {t.k === 'daily' && <DailyTab pid={char.pid} active={tab === 'daily'} />}
               {t.k === 'chat' && <ChatTab pid={char.pid} active={tab === 'chat'} />}
             </div>
           ))}
