@@ -7,6 +7,7 @@ from services.guard import (
     CAST_HOLD,
     CAST_PAUSE,
     CAST_TRIES,
+    HERO_CODE,
     BuffState,
     GuardManager,
     GuardStore,
@@ -138,14 +139,16 @@ class FakeChannel:
         return {"ok": True}
 
 
-def make(tmp_path, skills, buffs, mp=5000, channel=None, caps=("use", "cast", "status")):
+def make(
+    tmp_path, skills, buffs, mp=5000, channel=None, caps=("use", "cast", "status"), hero=False
+):
     clock = {"t": 100.0}
     store = GuardStore()
     store.save(
         "寒江孤影",
         GuardConfig(
             potion=GuardPotionRule(hp_items=[], mp_items=[]),
-            buff=GuardBuffRule(skills=skills),
+            buff=GuardBuffRule(skills=skills, hero=hero),
         ),
     )
     state = {"buffs": buffs, "stage": (1, "莫愁谷入口")}
@@ -305,7 +308,7 @@ def test_no_casts_in_town_noted_once_per_map(tmp_path):
     mgr._tick(1, run)
     assert casts(mgr) == []
     assert [e.text for e in run.log if e.rule == "buff"] == [
-        "在洛陽外城（不能戰鬥的地圖），不補 buff、不用定期道具"
+        "在洛陽外城（不能戰鬥的地圖），不補 buff、不變身、不用定期道具"
     ]
     state["stage"] = (1, "莫愁谷入口")
     mgr._tick(1, run)
@@ -322,3 +325,103 @@ def test_load_town_stages_from_the_game_db():
     assert {2, 9, 44, 51, 52, 53, 54, 173, 174} <= towns  # towns and markets
     assert not {1, 3, 16, 202, 1721, 1936} & towns  # fighting maps
     assert 10 in towns  # 成都城郊: NOFIGHT + PK, paused like the puppet does
+
+
+# ---- 自動變身 ------------------------------------------------------------------------
+
+HERO_CAPS = ("use", "cast", "status", "hero")
+
+
+def hero_buff(expires_at=None):
+    return BuffInfo(
+        group=4901, name="英雄無雙", code=HERO_CODE, expires_at=expires_at, source="hook"
+    )
+
+
+def heroes(mgr):
+    return [line for line in mgr._channel.sent if line == "hero"]
+
+
+def test_hero_pressed_when_not_transformed_then_confirmed(tmp_path):
+    mgr, run, clock, state = make(tmp_path, [], buffs=[], caps=HERO_CAPS, hero=True)
+    mgr._tick(1, run)
+    assert heroes(mgr) == ["hero"]
+    (line,) = [e for e in run.log if e.rule == "hero"]
+    assert line.text == "變身" and line.phase == "sent"
+    state["buffs"] = [hero_buff(WALL0 + 400)]
+    clock["t"] += 0.5
+    mgr._tick(1, run)
+    assert line.phase == "confirmed" and line.text == "變身（已變身）"
+    assert run.transforms == 1
+
+
+def test_hero_not_pressed_while_transformed_even_when_ending(tmp_path):
+    # No early refresh, like the puppet: wait for 英雄無雙 to drop off.
+    mgr, run, clock, _ = make(
+        tmp_path, [], buffs=[hero_buff(WALL0 + 100 + 1)], caps=HERO_CAPS, hero=True
+    )
+    mgr._tick(1, run)
+    assert heroes(mgr) == []
+
+
+def test_hero_off_by_default_and_needs_the_command_and_buff_list(tmp_path):
+    mgr, run, _, _ = make(tmp_path, [], buffs=[], caps=HERO_CAPS)
+    mgr._tick(1, run)
+    assert heroes(mgr) == []
+    mgr, run, _, _ = make(tmp_path, [], buffs=None, caps=HERO_CAPS, hero=True)
+    mgr._tick(1, run)
+    assert heroes(mgr) == []
+    mgr, run, _, _ = make(tmp_path, [], buffs=[], hero=True)  # hook without `hero`
+    mgr._tick(1, run)
+    mgr._tick(1, run)
+    assert heroes(mgr) == []
+    assert [e.text for e in run.log if e.rule == "hero"] == [
+        "這個 hook 沒有自動變身要用的指令：hero"
+    ]
+
+
+def test_hero_waits_in_town_and_while_sitting(tmp_path):
+    mgr, run, _, state = make(tmp_path, [], buffs=[], caps=HERO_CAPS, hero=True)
+    state["stage"] = (51, "洛陽外城")
+    mgr._tick(1, run)
+    assert heroes(mgr) == []
+    state["stage"] = (1, "莫愁谷入口")
+    mgr.on_pose_packet(1, pose_pkt(0x0D), 0.0, KEY)
+    mgr._tick(1, run)
+    assert heroes(mgr) == []
+    mgr.on_pose_packet(1, pose_pkt(0x09), 0.0, KEY)
+    mgr._tick(1, run)
+    assert heroes(mgr) == ["hero"]
+
+
+def test_hero_that_never_shows_up_holds_then_rests(tmp_path):
+    mgr, run, clock, _ = make(tmp_path, [], buffs=[], caps=HERO_CAPS, hero=True)
+    for _ in range(CAST_TRIES + 1):
+        mgr._tick(1, run)
+        clock["t"] += 0.5
+        mgr._tick(1, run)  # held: no second press
+        clock["t"] += CAST_HOLD
+    assert len(heroes(mgr)) == CAST_TRIES + 1
+    (line,) = [e for e in run.log if e.rule == "hero"]
+    assert line.phase == "unconfirmed" and f"{CAST_PAUSE:g} 秒後再試" in line.text
+    mgr._tick(1, run)
+    assert len(heroes(mgr)) == CAST_TRIES + 1  # resting
+    clock["t"] += CAST_PAUSE
+    mgr._tick(1, run)
+    assert len(heroes(mgr)) == CAST_TRIES + 2
+
+
+def test_refused_hero_is_logged_and_held(tmp_path):
+    class NoHero(FakeChannel):
+        def send(self, pid, line, priority=0):
+            if line == "hero":
+                self.sent.append(line)
+                return {"ok": False, "error": "no hero"}
+            return super().send(pid, line, priority)
+
+    mgr, run, clock, _ = make(tmp_path, [], buffs=[], channel=NoHero(), caps=HERO_CAPS, hero=True)
+    mgr._tick(1, run)
+    clock["t"] += 0.5
+    mgr._tick(1, run)
+    assert heroes(mgr) == ["hero"]
+    assert any(e.rule == "hero" and "no hero" in e.text for e in run.log)

@@ -16,7 +16,7 @@ const PHASE_LABEL: Record<GuardLogEntry['phase'], string> = {
 };
 
 type Rule = { hp_pct: number; mp_pct: number; hp_items: number[]; mp_items: number[] };
-type Cfg = { potion: Rule; buff: { skills: number[] } };
+type Cfg = { potion: Rule; buff: { skills: number[]; hero: boolean } };
 
 const toCfg = (c?: GuardConfig): Cfg => ({
   potion: {
@@ -25,8 +25,16 @@ const toCfg = (c?: GuardConfig): Cfg => ({
     hp_items: c?.potion.hp_items ?? [],
     mp_items: c?.potion.mp_items ?? [],
   },
-  buff: { skills: c?.buff?.skills ?? [] },
+  buff: { skills: c?.buff?.skills ?? [], hero: c?.buff?.hero ?? false },
 });
+
+// This run's counts for the log header; only what happened, so it stays short.
+const tally = (s: GuardStatus) => {
+  const parts = ([
+    ['喝水', s.drinks], ['解狀態', s.cures], ['補 buff', s.casts], ['用道具', s.uses], ['變身', s.transforms],
+  ] as const).filter(([, n]) => n > 0).map(([what, n]) => `${what} ${n}`);
+  return parts.length ? `本次：${parts.join('・')}` : '本次還沒有動作';
+};
 
 const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString('zh-TW', { hour12: false });
 
@@ -125,13 +133,8 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
         </span>
         <div className="gd-strip-text">
           <span className="gd-title">常駐守護</span>
-          <span className="gd-dim">只用道具，不會移動角色；你自己玩的時候也照常運作</span>
+          <span className="gd-dim">不會移動角色；你自己玩的時候也照常運作</span>
         </div>
-        <span className="gd-chip">{status.hook_cmd ? 'hook 指令通道已就緒' : '沒有 hook 指令通道'}</span>
-        <span className="gd-chip">本次喝水 {status.drinks} 次</span>
-        <span className="gd-chip">解狀態 {status.cures} 次</span>
-        <span className="gd-chip">補 buff {status.casts} 次</span>
-        <span className="gd-chip">用道具 {status.uses} 次</span>
         <button
           type="button" role="switch" aria-checked={running} aria-label="啟用常駐守護"
           className="gd-switch" onClick={toggle} disabled={busy || (!running && !status.hook_cmd)}
@@ -182,11 +185,16 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
       <BuffSection
         skills={cfg.buff.skills}
         candidates={skills}
-        onSkills={next => update({ ...cfg, buff: { skills: next } })}
+        onSkills={next => update({ ...cfg, buff: { ...cfg.buff, skills: next } })}
+        hero={cfg.buff.hero}
+        onHero={on => update({ ...cfg, buff: { ...cfg.buff, hero: on } })}
       />
 
       <section className="gd-panel">
-        <header className="gd-head"><h3>守護紀錄</h3><span className="gd-dim">最新的在上面</span></header>
+        <header className="gd-head">
+          <h3>守護紀錄</h3>
+          <span className="gd-dim">{tally(status)}・最新的在上面</span>
+        </header>
         {status.log.length === 0 ? (
           <div className="gd-dim">還沒有紀錄。</div>
         ) : (
@@ -282,10 +290,12 @@ const TARGET_LABEL: Record<BuffSkillCandidate['target'], string> = { self: '自�
 
 // buff 維持: tick the learned buff skills to keep up. A ticked skill is cast
 // on the character when its buff is gone or about to end.
-function BuffSection({ skills, candidates, onSkills }: {
+function BuffSection({ skills, candidates, onSkills, hero, onHero }: {
   skills: number[];
   candidates: BuffSkillCandidate[];
   onSkills: (v: number[]) => void;
+  hero: boolean;
+  onHero: (on: boolean) => void;
 }) {
   const now = Date.now() / 1000;
   const toggle = (id: number, on: boolean) =>
@@ -327,6 +337,15 @@ function BuffSection({ skills, candidates, onSkills }: {
           })}
         </ul>
       )}
+      <ul className="gd-cures gd-hero">
+        <li>
+          <input id="gd-hero" type="checkbox" checked={hero} onChange={e => onHero(e.target.checked)} />
+          <label htmlFor="gd-hero" title="需要角色已培養英雄；按了 4 次都沒變身就暫停 60 秒">
+            <span className="gd-name">自動變身</span>
+            <span className="gd-cure-st">英雄變身結束就再開（不提前續）</span>
+          </label>
+        </li>
+      </ul>
       <div className="gd-fixed">
         <span>每次施放至少間隔 2 秒</span>
         <span>放了 4 次都沒生效就暫停該技能 60 秒</span>

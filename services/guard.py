@@ -90,6 +90,8 @@ CONFIRM_WINDOW = 2.0  # how long a drink may take to show up in the bag (log onl
 LOG_KEEP = 100
 GUARD_COMMANDS = ("use",)  # what the guard needs from the hook's `caps` manifest
 BUFF_COMMANDS = ("cast", "status")  # what keeping buffs up needs on top
+HERO_COMMANDS = ("hero",)  # what 自動變身 needs on top
+HERO_CODE = 30295  # 英雄無雙: the `buffs` code of a hero transform
 RESOURCE_LABEL = {"hp": "體力", "mp": "真氣"}
 CURE_HOLD = 2.0  # after a cure is sent, give the debuff this long to go away
 CURE_TRIES = 3  # cures per spell of a debuff before giving up on it
@@ -805,6 +807,10 @@ class _Run:
         self.sit_noted = False
         self.town_noted: int | None = None  # stage id the "in town" note was made for
         self.casts = 0
+        self.hero_state = BuffState()  # 自動變身, timed like a cast keyed by HERO_CODE
+        self.hero_line: _LogLine | None = None
+        self.hero_unsupported = False
+        self.transforms = 0
         self.cure_state = CureState()
         self.cure_lines: dict[int, _LogLine] = {}  # status group -> its open cure line
         self.debuffs: tuple[int, ...] = ()
@@ -1049,7 +1055,7 @@ class GuardManager:
         with run.lock:
             entries = [line.entry(self._item_name) for line in run.log]
             problem, drinks, cures, debuffs = run.problem, run.drinks, run.cures, run.debuffs
-            casts, uses = run.casts, run.uses
+            casts, uses, transforms = run.casts, run.uses, run.transforms
         return GuardStatus(
             running=running,
             hook_cmd=hook_cmd,
@@ -1059,6 +1065,7 @@ class GuardManager:
             cures=cures,
             casts=casts,
             uses=uses,
+            transforms=transforms,
             debuffs=[self._status_name(g) for g in dict.fromkeys(debuffs)] if running else [],
             log=entries[::-1],
             config=config,
@@ -1220,6 +1227,7 @@ class GuardManager:
             run.awaiting = {}
             run.cure_state, run.cure_lines = CureState(), {}
             run.buff_state, run.buff_lines, run.learned_at = BuffState(), {}, -SKILLS_EVERY
+            run.hero_state, run.hero_line = BuffState(), None
         try:
             sample = self._read_locked(pid, read_sample)
         except Exception:
@@ -1247,6 +1255,7 @@ class GuardManager:
                 self._cure(pid, run, sample.debuffs, bag, now)
                 self._drink_up(pid, run, "mp", mp, rule.mp_pct, rule.mp_items, maxes, bag, now)
                 self._keep_buffs(pid, run, mp, now)
+                self._keep_hero(pid, run, now)
                 self._keep_items(pid, run, bag, now)
         except _Stop as stop:
             return stop.wait
@@ -1464,6 +1473,62 @@ class GuardManager:
             elif tries > 1:
                 line.text = f"{what} ×{tries}"
 
+    def _keep_hero(self, pid: int, run: _Run, now: float) -> None:
+        """Press the hero transform while 英雄無雙 is not on the character.
+
+        Like the battle puppet it waits for the transform to end (no early
+        refresh: what `hero` does mid-transform is unknown). A press that never
+        shows up (no hero cultivated, a cooldown) holds and rests like a cast.
+        """
+        if not run.config.buff.hero:
+            return
+        buffs = self._buffs(pid)
+        if buffs is None:
+            return
+        if not self._has_commands(pid, HERO_COMMANDS):
+            if not run.hero_unsupported:
+                run.hero_unsupported = True
+                self._note(run, "error", "這個 hook 沒有自動變身要用的指令：hero", rule="hero")
+            return
+        if run.pose == POSE_SIT or self._in_town(pid, run):
+            return
+        st = run.hero_state
+        if any(b.code == HERO_CODE for b in buffs):
+            with run.lock:
+                t = st.skills.get(HERO_CODE)
+                if t is not None and t.tries:
+                    t.tries = 0
+                    if run.hero_line is not None:
+                        run.hero_line.phase = "confirmed"
+                        run.hero_line.text += "（已變身）"
+                        run.hero_line = None
+            return
+        t = st.skills.get(HERO_CODE)
+        if t is not None and (t.hold_until > now or t.paused_until > now):
+            return
+        rested: list[bool] = []
+
+        def sent() -> None:
+            rested.append(record_cast(st, HERO_CODE, now))
+
+        if not self._send_cast(pid, run, "hero", "變身", sent, rule="hero"):
+            return
+        with run.lock:
+            run.transforms += 1
+            line = run.hero_line
+            if line is None:
+                run.next_id += 1
+                line = _LogLine(run.next_id, self._wall(), "hero", "sent", "變身")
+                run.log.append(line)
+                run.hero_line = line
+            tries = st.skills[HERO_CODE].tries
+            if rested and rested[0]:
+                run.hero_line = None
+                line.phase = "unconfirmed"
+                line.text = f"變身（按了 {CAST_TRIES + 1} 次都沒變，{CAST_PAUSE:g} 秒後再試）"
+            elif tries > 1:
+                line.text = f"變身 ×{tries}"
+
     def _in_town(self, pid: int, run: _Run) -> bool:
         """On a no-fight map (town, market, hall); noted once per map."""
         try:
@@ -1478,7 +1543,7 @@ class GuardManager:
                 self._note(
                     run,
                     "info",
-                    f"在{stage[1]}（不能戰鬥的地圖），不補 buff、不用定期道具",
+                    f"在{stage[1]}（不能戰鬥的地圖），不補 buff、不變身、不用定期道具",
                     rule="buff",
                 )
             return True
@@ -1557,7 +1622,13 @@ class GuardManager:
         return handle
 
     def _send_cast(
-        self, pid: int, run: _Run, line: str, what: str, on_sent: Callable[[], None]
+        self,
+        pid: int,
+        run: _Run,
+        line: str,
+        what: str,
+        on_sent: Callable[[], None],
+        rule: str = "buff",
     ) -> bool:
         try:
             reply = self._channel.send(pid, line)
@@ -1569,7 +1640,7 @@ class GuardManager:
             raise _Stop(WAIT_BUSY)
         except NoReply as e:
             on_sent()  # it may still have run: hold the skill like a sent cast
-            self._note(run, "error", f"{what}：hook 沒有回應（{e}）", rule="buff")
+            self._note(run, "error", f"{what}：hook 沒有回應（{e}）", rule=rule)
             raise _Stop(WAIT_NO_REPLY)
         code = classify_error(reply)
         if code is None:
@@ -1579,11 +1650,11 @@ class GuardManager:
             self._set_problem(run, "hook 的動作模組還沒載入，請在 hook 端載入後再試")
             raise _Stop(WAIT_NOT_LOADED)
         if code == "dispatcher_timeout":
-            self._note(run, "error", f"{what}：遊戲沒有回應（視窗可能最小化）", rule="buff")
+            self._note(run, "error", f"{what}：遊戲沒有回應（視窗可能最小化）", rule=rule)
             raise _Stop(WAIT_DISPATCHER)
         # Refused (e.g. on cooldown): hold it like a miss so it is not hammered.
         on_sent()
-        self._note(run, "error", f"{what}：{reply.get('error', '未知錯誤')}", rule="buff")
+        self._note(run, "error", f"{what}：{reply.get('error', '未知錯誤')}", rule=rule)
         return False
 
     def _log_cures(self, run: _Run, debuffs: tuple[int, ...], now: float) -> None:

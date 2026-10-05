@@ -532,7 +532,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Rules */
+        /**
+         * Get Rules
+         * @description `extra`: comma-separated items.id to describe as well (e.g. warehouse items).
+         */
         get: operations["get_rules_api_characters__pid__item_rules_get"];
         /** Put Rules */
         put: operations["put_rules_api_characters__pid__item_rules_put"];
@@ -1955,6 +1958,11 @@ export interface components {
              * @default []
              */
             skills: number[];
+            /**
+             * Hero
+             * @default false
+             */
+            hero: boolean;
         };
         /**
          * GuardConfig
@@ -1972,7 +1980,8 @@ export interface components {
             potion: components["schemas"]["GuardPotionRule"];
             /**
              * @default {
-             *       "skills": []
+             *       "skills": [],
+             *       "hero": false
              *     }
              */
             buff: components["schemas"]["GuardBuffRule"];
@@ -1987,7 +1996,7 @@ export interface components {
              * Rule
              * @enum {string}
              */
-            rule: "potion" | "cure" | "buff" | "item" | "guard";
+            rule: "potion" | "cure" | "buff" | "item" | "hero" | "guard";
             /** Text */
             text: string;
             /**
@@ -2063,6 +2072,11 @@ export interface components {
              */
             uses: number;
             /**
+             * Transforms
+             * @default 0
+             */
+            transforms: number;
+            /**
              * Debuffs
              * @default []
              */
@@ -2081,6 +2095,7 @@ export interface components {
              *         "mp_pct": 30
              *       },
              *       "buff": {
+             *         "hero": false,
              *         "skills": []
              *       }
              *     }
@@ -4013,7 +4028,9 @@ export interface operations {
     };
     get_rules_api_characters__pid__item_rules_get: {
         parameters: {
-            query?: never;
+            query?: {
+                extra?: string;
+            };
             header?: never;
             path: {
                 pid: number;

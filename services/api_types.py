@@ -939,6 +939,8 @@ class GuardBuffRule(_Base):
     about to end. Skills are magic ids; the learned level is cast."""
 
     skills: list[int] = []
+    # 自動變身: press the hero transform whenever 英雄無雙 is not on the character.
+    hero: bool = False
 
 
 class GuardConfig(_Base):
@@ -951,7 +953,7 @@ class GuardConfig(_Base):
 class GuardLogEntry(_Base):
     id: int  # stable while the line is updated in place (bag confirmation)
     ts: float
-    rule: Literal["potion", "cure", "buff", "item", "guard"]
+    rule: Literal["potion", "cure", "buff", "item", "hero", "guard"]
     text: str
     # sent: the hook accepted the command; confirmed: the bag count dropped for
     # every drink in the line (cure: the debuff went away); unconfirmed: some
@@ -976,6 +978,7 @@ class GuardStatus(_Base):
     cures: int = 0
     casts: int = 0
     uses: int = 0  # 定期使用 item uses
+    transforms: int = 0  # 自動變身 presses
     debuffs: list[str] = []  # debuffs on the character now, by name
     log: list[GuardLogEntry] = []
     config: GuardConfig = GuardConfig()
