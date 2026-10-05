@@ -21,7 +21,7 @@ from services import item_catalog, skill_catalog, window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.damage_capture import DamageRecorderManager
-from services.guard import GuardManager
+from services.guard import POSE_PACKET, GuardManager
 from services.buff_tracker import BUFF_PACKET, BuffTracker
 from services.hook_cmd import CommandChannel
 from services.hook_hub import HookHub, read_templates
@@ -77,6 +77,7 @@ def _build_services(dev: bool) -> dict:
     )
     # Own HP / MP packets wake the guard at once instead of waiting for its next poll.
     hook.add_vitals_listener(guard.on_vitals)
+    hook.add_packet_listener(POSE_PACKET, guard.on_pose_packet)
     market_db = MarketDB()
     market = MarketSurveyManager(live=wm.live_handle, pids=wm.live_pids, db=market_db)
     market.start()

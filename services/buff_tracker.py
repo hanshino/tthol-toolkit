@@ -171,7 +171,7 @@ class BuffTracker:
 
     # -- sources -------------------------------------------------------------
 
-    def on_packet(self, pid: int, raw: bytes, ts: float) -> None:
+    def on_packet(self, pid: int, raw: bytes, ts: float, _own_key: bytes | None = None) -> None:
         """A 0x29 from the event pipe (HookHub listener; keep it quick)."""
         decoded = decode_buff(raw)
         if decoded is None:

@@ -184,7 +184,9 @@ class HookHub:
         self._stop = threading.Event()
         self._scanner: threading.Thread | None = None
         self._vitals_listeners: list[Callable[[int, int, int], None]] = []
-        self._packet_listeners: dict[int, list[Callable[[int, bytes, float], None]]] = {}
+        self._packet_listeners: dict[
+            int, list[Callable[[int, bytes, float, bytes | None], None]]
+        ] = {}
 
     def start(self) -> None:
         if os.environ.get("TTHOL_NO_HOOK") == "1":
@@ -198,9 +200,13 @@ class HookHub:
         self._vitals_listeners.append(listener)
 
     def add_packet_listener(
-        self, sub_type: int, listener: Callable[[int, bytes, float], None]
+        self, sub_type: int, listener: Callable[[int, bytes, float, bytes | None], None]
     ) -> None:
-        """listener(pid, raw, unix ts) for every inbound packet of this sub-type (reader thread)."""
+        """listener(pid, raw, unix ts, own key or None) per inbound packet of this sub-type.
+
+        Runs on the pipe reader thread: keep it quick. The own key changes on
+        every map change, so it comes with each packet.
+        """
         self._packet_listeners.setdefault(sub_type, []).append(listener)
 
     def set_strings(self, strings: Callable[[int], dict[int, str] | None]) -> None:
@@ -322,9 +328,11 @@ class HookHub:
             raw = bytes.fromhex(raw_hex)
             ts_us = ev.get("ts_us")
             ts = ts_us / 1e6 if ts_us else time.time()
+            self_key = ev.get("self_key")
+            own = bytes.fromhex(self_key) if self_key else None
             for listener in listeners:
                 try:
-                    listener(pid, raw, ts)
+                    listener(pid, raw, ts, own)
                 except Exception:
                     log.exception("packet listener failed pid=%d", pid, extra={"cat": "hook"})
             return

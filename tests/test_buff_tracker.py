@@ -182,11 +182,13 @@ def test_hook_hub_routes_packets_to_listeners():
 
     hub = HookHub(list_pids=lambda: [])
     got = []
-    hub.add_packet_listener(0x29, lambda pid, raw, ts: got.append((pid, raw, ts)))
+    hub.add_packet_listener(0x29, lambda pid, raw, ts, key: got.append((pid, raw, ts, key)))
     raw = pkt(ICE, True, 600000)
-    hub._ingest(7, {"t": "msg", "type": 900, "ts_us": 1_000_000, "raw": raw.hex()})
+    hub._ingest(
+        7, {"t": "msg", "type": 900, "ts_us": 1_000_000, "self_key": "0a0b", "raw": raw.hex()}
+    )
     hub._ingest(7, {"t": "msg", "type": 900, "raw": "0a00"})  # not asked for
-    assert got == [(7, raw, 1.0)]
+    assert got == [(7, raw, 1.0, bytes.fromhex("0a0b"))]
 
 
 def test_worker_manager_swaps_in_the_hook_list():

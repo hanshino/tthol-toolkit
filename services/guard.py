@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from reader import read_inventory, read_pet_inventory, read_skills
+from reader import read_inventory, read_pet_inventory, read_skills, read_stage
 from services._paths import app_root, bundled
 from services.api_types import (
     BuffInfo,
@@ -81,6 +81,13 @@ CAST_HOLD = 4.0  # after a cast, wait this long for its buff before casting it a
 CAST_TRIES = 3  # casts in a row without the buff showing up before resting the skill
 CAST_PAUSE = 60.0
 SKILLS_EVERY = 30.0  # re-read the learned skills (levels go up) this often
+
+# Own pose, from the broadcast 0x59 `59 <u16 pose> 00 <key 10B>`, and from
+# the `pose` field of `status` (the action name, "Sit" when sitting). Skills cannot be cast
+# sitting, so keeping buffs up waits while the character sits.
+POSE_PACKET = 0x59
+POSE_SIT = 0x0D
+POSE_STAND = 0x09
 
 # Own debuffs: count, then one status group per int32 (compacting array; the
 # slots past count hold stale groups). Same layout in the compat layout.
@@ -319,6 +326,43 @@ def load_self_buffs(db_path: Path | None = None) -> dict[tuple[int, int], SelfBu
         for mid, level, name, target, mp, ms, group, status in rows
         if group not in HOSTILE_GROUPS
     }
+
+
+def load_town_stages(db_path: Path | None = None) -> frozenset[int]:
+    """Stage ids where fighting is off (STAGE_FLAG_NOFIGHT): towns, markets, halls.
+
+    NOFIGHT together with PK marks a PvP field (成都城郊, 迷路草原, 平行空間),
+    where buffs are wanted, so those are not towns. Monster counts are no
+    guide: about 125 fighting maps spawn theirs from map events only.
+    """
+    path = db_path or bundled("tthol.sqlite")
+    if not path.exists():
+        return frozenset()
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    con.text_factory = lambda b: b.decode("utf-8", errors="replace")
+    try:
+        rows = con.execute("SELECT id, flag FROM stages").fetchall()
+    finally:
+        con.close()
+    out = set()
+    for stage_id, flag in rows:
+        flags = set((flag or "").split(","))
+        if "STAGE_FLAG_NOFIGHT" in flags and "STAGE_FLAG_PK" not in flags:
+            out.add(stage_id)
+    return frozenset(out)
+
+
+def read_stage_id(pm, _hp_addr, _compat_mode) -> tuple[int, str] | None:
+    """(stage id, map name) for WorkerManager.read_locked."""
+    return read_stage(pm)
+
+
+def decode_pose(raw: bytes) -> tuple[int, bytes] | None:
+    """(pose, key) of a 0x59 packet."""
+    if len(raw) < 14 or raw[0] != POSE_PACKET:
+        return None
+    (pose,) = struct.unpack_from("<H", raw, 1)
+    return pose, bytes(raw[4:14])
 
 
 def read_learned(pm, hp_addr, _compat_mode) -> dict[int, int] | None:
@@ -674,6 +718,9 @@ class _Run:
         self.learned: dict[int, int] = {}
         self.learned_at = -SKILLS_EVERY
         self.buff_unsupported = False  # noted once that the hook cannot cast
+        self.pose: int | None = None  # last own pose seen; None = not known (taken as standing)
+        self.sit_noted = False
+        self.town_noted: int | None = None  # stage id the "in town" note was made for
         self.casts = 0
         self.cure_state = CureState()
         self.cure_lines: dict[int, _LogLine] = {}  # status group -> its open cure line
@@ -702,6 +749,7 @@ class GuardManager:
         cures: Callable[[], dict[int, Cure]] = load_cures,
         status_names: Callable[[], dict[int, str]] = load_status_names,
         self_buffs: Callable[[], dict[tuple[int, int], SelfBuff]] = load_self_buffs,
+        towns: Callable[[], frozenset[int]] = load_town_stages,
         buffs: Callable[[int], list[BuffInfo] | None] = lambda _pid: None,
         skill_icon: Callable[[int, int], str | None] = lambda _m, _l: None,
         icon_url: Callable[[int], str | None] = lambda _id: None,
@@ -721,6 +769,8 @@ class GuardManager:
         self._status_names: dict[int, str] | None = None
         self._load_self_buffs = self_buffs
         self._self_buffs: dict[tuple[int, int], SelfBuff] | None = None
+        self._load_towns = towns
+        self._towns: frozenset[int] | None = None
         self._buffs = buffs
         self._skill_icon = skill_icon
         # pid -> the hook's command names from `caps`; read on start
@@ -814,6 +864,17 @@ class GuardManager:
             run = self._runs.get(pid)
         if run is not None:
             run.live = (hp, mp, self._clock())
+            run.wake.set()
+
+    def on_pose_packet(self, pid: int, raw: bytes, _ts: float, own_key: bytes | None) -> None:
+        """A 0x59 from the event pipe (HookHub packet listener): track the own pose."""
+        decoded = decode_pose(raw)
+        if decoded is None or own_key is None or decoded[1] != own_key:
+            return
+        with self._lock:
+            run = self._runs.get(pid)
+        if run is not None:
+            run.pose = decoded[0]
             run.wake.set()
 
     def config(self, pid: int) -> GuardConfig | None:
@@ -1228,6 +1289,24 @@ class GuardManager:
                     run, "error", "這個 hook 沒有 buff 維持要用的指令：cast、status", rule="buff"
                 )
             return
+        if run.pose == POSE_SIT:
+            if not run.sit_noted:
+                run.sit_noted = True
+                self._note(run, "info", "坐著放不了技能，站起來後再補 buff", rule="buff")
+            return
+        run.sit_noted = False
+        try:
+            stage = self._read_locked(pid, read_stage_id)
+        except Exception:
+            stage = None
+        if self._towns is None:
+            self._towns = self._load_towns()
+        if stage is not None and stage[0] in self._towns:
+            if run.town_noted != stage[0]:
+                run.town_noted = stage[0]
+                self._note(run, "info", f"在{stage[1]}（不能戰鬥的地圖），不補 buff", rule="buff")
+            return
+        run.town_noted = None
         wall = self._wall()
         active = active_skills(buffs)
         if now - run.learned_at >= SKILLS_EVERY:
@@ -1285,6 +1364,12 @@ class GuardManager:
         except (PipeBusy, NoReply):
             raise _Stop(WAIT_BUSY)
         handle = reply.get("self") if reply.get("ok") else None
+        pose = reply.get("pose")  # the client's action name: "Wait", "Sit", ...
+        if isinstance(pose, str):
+            # A hook that reports the pose: trust it over the last 0x59.
+            run.pose = POSE_SIT if pose == "Sit" else POSE_STAND
+            if run.pose == POSE_SIT:
+                return None
         if not isinstance(handle, int) or handle <= 0:
             # Mid map change the own character is not built yet.
             return None

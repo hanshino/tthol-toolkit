@@ -16,6 +16,7 @@ from services.guard import (
     active_skills,
     next_cast,
     read_learned,
+    read_stage_id,
     record_cast,
     settle_casts,
 )
@@ -147,11 +148,13 @@ def make(tmp_path, skills, buffs, mp=5000, channel=None, caps=("use", "cast", "s
             buff=GuardBuffRule(skills=skills),
         ),
     )
-    state = {"buffs": buffs}
+    state = {"buffs": buffs, "stage": (1, "莫愁谷入口")}
 
     def read_locked(pid, fn):
         if fn is read_learned:
             return dict(LEARNED)
+        if fn is read_stage_id:
+            return state["stage"]
         return Sample(1000, 1000, mp, 6000, {})
 
     mgr = GuardManager(
@@ -162,6 +165,7 @@ def make(tmp_path, skills, buffs, mp=5000, channel=None, caps=("use", "cast", "s
         potions=lambda: {},
         cures=lambda: {},
         self_buffs=lambda: DEFS,
+        towns=lambda: frozenset({51}),
         buffs=lambda pid: state["buffs"],
         pipe_present=lambda pid: True,
         clock=lambda: clock["t"],
@@ -243,3 +247,78 @@ def test_buff_candidates_lists_learned_self_buffs(tmp_path):
     mgr, _, _, _ = make(tmp_path, [], buffs=[skill_buff(ICE, 20, 1600.0)])
     got = {(c.magic_id, c.level, c.active, c.expires_at) for c in mgr.buff_candidates(1)}
     assert got == {(ICE, 20, True, 1600.0), (BAGUA, 5, False, None), (SHIELD, 5, False, None)}
+
+
+# ---- pose ------------------------------------------------------------------------
+
+
+KEY = bytes.fromhex("0100a0a10000e6000000")
+
+
+def pose_pkt(pose, key=KEY):
+    import struct
+
+    return bytes([0x59]) + struct.pack("<HB", pose, 0) + key
+
+
+def test_decode_pose():
+    from services.guard import decode_pose
+
+    assert decode_pose(pose_pkt(0x0D)) == (0x0D, KEY)
+    assert decode_pose(b"\x59\x0d") is None
+
+
+def test_sitting_pauses_casts_until_standing(tmp_path):
+    mgr, run, clock, _ = make(tmp_path, [ICE], buffs=[])
+    mgr.on_pose_packet(1, pose_pkt(0x0D, key=b"\x00" * 10), 0.0, KEY)  # someone else sat
+    assert run.pose is None
+    mgr.on_pose_packet(1, pose_pkt(0x0D), 0.0, KEY)
+    mgr._tick(1, run)
+    mgr._tick(1, run)
+    assert casts(mgr) == []
+    assert [e.text for e in run.log if e.rule == "buff"] == ["坐著放不了技能，站起來後再補 buff"]
+    mgr.on_pose_packet(1, pose_pkt(0x09), 0.0, KEY)
+    mgr._tick(1, run)
+    assert casts(mgr) == ["cast 71320 27395721"]
+
+
+def test_status_pose_field_wins(tmp_path):
+    class SitChannel(FakeChannel):
+        def send(self, pid, line, priority=0):
+            if line == "status":
+                self.sent.append(line)
+                return {"ok": True, "self": self.handle, "pose": "Sit"}
+            return super().send(pid, line, priority)
+
+    mgr, run, _, _ = make(tmp_path, [ICE], buffs=[], channel=SitChannel())
+    mgr._tick(1, run)
+    assert casts(mgr) == [] and run.pose == 0x0D
+
+
+# ---- towns -------------------------------------------------------------------------
+
+
+def test_no_casts_in_town_noted_once_per_map(tmp_path):
+    mgr, run, clock, state = make(tmp_path, [ICE], buffs=[])
+    state["stage"] = (51, "洛陽外城")
+    mgr._tick(1, run)
+    mgr._tick(1, run)
+    assert casts(mgr) == []
+    assert [e.text for e in run.log if e.rule == "buff"] == [
+        "在洛陽外城（不能戰鬥的地圖），不補 buff"
+    ]
+    state["stage"] = (1, "莫愁谷入口")
+    mgr._tick(1, run)
+    assert casts(mgr) == ["cast 71320 27395721"]
+
+
+def test_load_town_stages_from_the_game_db():
+    from services._paths import bundled
+    from services.guard import load_town_stages
+
+    if not bundled("tthol.sqlite").exists():
+        pytest.skip("tthol.sqlite not pulled")
+    towns = load_town_stages()
+    assert {2, 9, 44, 51, 52, 53, 54, 173, 174} <= towns  # towns and markets
+    assert not {1, 3, 16, 202, 1721, 1936} & towns  # fighting maps
+    assert 10 not in towns  # 成都城郊: NOFIGHT + PK, a PvP field

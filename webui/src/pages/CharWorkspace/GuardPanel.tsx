@@ -401,6 +401,7 @@ function BuffSection({ skills, candidates, onSkills }: {
         <span>每次施放至少間隔 2 秒</span>
         <span>放了 4 次都沒生效就暫停該技能 60 秒</span>
         <span>換地圖清掉的 buff 會自動補回</span>
+        <span>坐著、在城裡（不能戰鬥的地圖）不放</span>
         <span>需要 hook 回報 buff 清單</span>
       </div>
     </section>
