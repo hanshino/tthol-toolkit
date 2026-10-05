@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ApiError, get, post } from '../../api/client';
 import { describeError, reportClientError } from '../../diag/report';
-import type { CharacterRow, ConnectResult, OkResponse, StatSimExport } from '../../api/types';
+import type {
+  CharacterRow, ConnectResult, FamilyInfo, OkResponse, StatSimExport,
+} from '../../api/types';
 import { friendlyError } from '../../components/friendlyError';
 import { isStopped, isUnlocated } from '../../nav';
 import { Bar, BuffChips, DollAvatar, LinkDot, Seal } from '../../primitives';
@@ -85,6 +87,7 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
               <span className="ws-hook"><span className="ws-hook-dot" aria-hidden />Hook 已連線 · v{char.hook.proto}</span>
             )}
           </div>
+          {!unlocated && <FamilyLine family={char.family ?? null} hooked={!!char.hook && !gone} />}
         </div>
         <div className="ws-actions">
           <button
@@ -276,6 +279,26 @@ function HpRescue({ pid, value, busy, onChange, onSubmit }: {
         {busy ? '定位中…' : '用血量定位'}
       </button>
       <span className="ws-rescue-hint">在遊戲中查看角色目前血量，填入後即可掃描定位</span>
+    </div>
+  );
+}
+
+// The family summary only arrives when the family window opens in game (hook
+// packet 0x31); the last one is kept per character, so say when it was seen.
+function FamilyLine({ family, hooked }: { family: FamilyInfo | null; hooked: boolean }) {
+  if (!family) {
+    return hooked
+      ? <div className="ws-family is-empty">家族：請在遊戲裡打開家族視窗</div>
+      : null;
+  }
+  const seen = new Date(family.received_at * 1000).toLocaleString('zh-TW', { hour12: false });
+  return (
+    <div className="ws-family" title={`莊園 #${family.manor_id} · ${seen} 收到`}>
+      <span className="ws-family-name">{family.name}</span>
+      <span>Lv {family.level}</span>
+      <span>{family.manor_name ?? '莊園'} #{family.manor_id}</span>
+      <span>{family.members}/{family.member_cap} 人</span>
+      <span className="ws-family-seen">{seen}</span>
     </div>
   );
 }

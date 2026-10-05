@@ -20,8 +20,16 @@ from services import diagnostics
 from services import item_catalog, skill_catalog, window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
+from services.family import FAMILY_PACKET, FamilyTracker
+from services.navigator import Navigator
 from services.damage_capture import DamageRecorderManager
-from services.guard import POSE_PACKET, GuardManager, GuardStore, migrate_legacy_store
+from services.guard import (
+    POSE_PACKET,
+    GuardManager,
+    GuardStore,
+    migrate_legacy_store,
+    read_stage_id,
+)
 from services.tower_run import ATTACK_PACKET, CAST_START_PACKET, TowerManager
 from services.buff_tracker import BUFF_PACKET, BuffTracker
 from services.hook_cmd import CommandChannel
@@ -64,6 +72,9 @@ def _build_services(dev: bool) -> dict:
     wm = WorkerManager(
         snapshot_db=db, autoclick_manager=autoclick, hook_hub=hook, buff_tracker=buffs
     )
+    family = FamilyTracker(character_name=wm.character_name, db=db)
+    wm.set_family_tracker(family)
+    hook.add_packet_listener(FAMILY_PACKET, family.on_packet)
     # Shout / system-line templates come from game memory, through the worker's lock.
     hook.set_strings(lambda pid: wm.read_locked(pid, read_templates))
     # Guard settings moved from guard.json into snapshots.db (2026-10-05).
@@ -82,13 +93,21 @@ def _build_services(dev: bool) -> dict:
     # Own HP / MP packets wake the guard at once instead of waiting for its next poll.
     hook.add_vitals_listener(guard.on_vitals)
     hook.add_packet_listener(POSE_PACKET, guard.on_pose_packet)
+
     # 日常 modules: they start the guard and leave potions and buffs to it.
+    # Cross-map walking for the 日常 modules; the 家族馬夫 menus follow the manor.
+    def manor(pid: int) -> int | None:
+        info = family.get(wm.character_name(pid))
+        return info.manor_id if info else None
+
+    navigator = Navigator(channel, wm.read_locked, read_stage_id, manor=manor)
     tower = TowerManager(
         guard=guard,
         read_locked=wm.read_locked,
         character_name=wm.character_name,
         channel=channel,
         store=GuardStore(db),
+        navigator=navigator,
     )
     hook.add_packet_listener(ATTACK_PACKET, tower.on_attack_packet)
     hook.add_packet_listener(CAST_START_PACKET, tower.on_cast_packet)

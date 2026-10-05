@@ -34,12 +34,17 @@ class WorkerManager:
         autoclick_manager=None,
         hook_hub=None,
         buff_tracker=None,
+        family=None,
     ) -> None:
         self._sessions: dict[int, CharSession] = {}
         self._db = snapshot_db
         self._autoclick = autoclick_manager
         self._hook = hook_hub
         self._buffs = buff_tracker
+        self._family = family  # FamilyTracker: last 0x31 per character name
+
+    def set_family_tracker(self, tracker) -> None:
+        self._family = tracker
 
     def set_autoclick_manager(self, mgr) -> None:
         self._autoclick = mgr
@@ -83,6 +88,8 @@ class WorkerManager:
                 r = r.model_copy(update={"autoclick": self._autoclick.status(pid)})
             if self._hook is not None:
                 r = r.model_copy(update={"hook": self._hook.status(pid)})
+            if self._family is not None and sess.name:
+                r = r.model_copy(update={"family": self._family.get(sess.name)})
             r = self._with_hook_buffs(pid, r)
             rows.append(r)
         return WorldSnapshot(chars=rows, server_ts=time.time())
