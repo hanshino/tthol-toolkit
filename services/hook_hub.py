@@ -167,6 +167,10 @@ class _Feed:
         self.seq = 0
         self.proto: int | None = None  # set while a reader is connected
         self.reader: threading.Thread | None = None
+        # Inbound game packets by sub-type: [count, last unix ts]. A connected
+        # client keeps getting some (a heartbeat); a dropped one gets none.
+        self.seen: dict[int, list] = {}
+        self.last_packet: float | None = None
 
 
 class HookHub:
@@ -334,6 +338,7 @@ class HookHub:
         if t != "msg" or ev.get("type") != GAME_PACKET:
             return
         raw_hex = ev.get("raw") or ""
+        self._count(pid, raw_hex)
         if raw_hex[:2] == "06":
             self._vitals(pid, ev, raw_hex)
             return
@@ -367,6 +372,27 @@ class HookHub:
         self_key = ev.get("self_key")
         own = bool(self_key) and any(pkt.key) and pkt.key == bytes.fromhex(self_key)
         self._append(pid, _Line(0, ts, pkt.channel, pkt.echo, own, pkt.name, pkt.text))
+
+    def _count(self, pid: int, raw_hex: str) -> None:
+        try:
+            sub = int(raw_hex[:2], 16)
+        except ValueError:
+            return
+        now = time.time()
+        feed = self._feed(pid)
+        with feed.lock:
+            entry = feed.seen.setdefault(sub, [0, now])
+            entry[0] += 1
+            entry[1] = now
+            feed.last_packet = now
+
+    def packets(self, pid: int) -> tuple[float | None, dict[int, tuple[int, float]]]:
+        """(last inbound packet unix ts, {sub-type: (count, last ts)}) for this client."""
+        feed = self._feeds.get(pid)
+        if feed is None:
+            return None, {}
+        with feed.lock:
+            return feed.last_packet, {k: (v[0], v[1]) for k, v in feed.seen.items()}
 
     def _vitals(self, pid: int, ev: dict, raw_hex: str) -> None:
         if not self._vitals_listeners:

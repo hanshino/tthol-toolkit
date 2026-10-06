@@ -6,6 +6,11 @@ Schema:
     accounts(id, name TEXT UNIQUE)
     character_accounts(character TEXT PK, account_id INTEGER NOT NULL → accounts.id)
     character_settings(character, section, data TEXT, updated_at)  PK (character, section)
+    login_entries(character PK, username, server, password BLOB, protect BLOB, enabled, sort, updated_at)
+
+login_entries feeds the batch dispatch (log a character in, run its daily
+modules, log out). Password and protect are DPAPI blobs (services/secret_box);
+the table is left out of export_all on purpose, so no backup carries them.
 
 character_settings holds per-character feature settings as one JSON object per
 section ("guard.potion", "guard.buff", "items", later "daily.<module>"), so
@@ -140,6 +145,16 @@ CREATE TABLE IF NOT EXISTS character_settings (
     data        TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
     PRIMARY KEY (character, section)
+);
+CREATE TABLE IF NOT EXISTS login_entries (
+    character   TEXT PRIMARY KEY,
+    username    TEXT NOT NULL,
+    server      TEXT NOT NULL,
+    password    BLOB,
+    protect     BLOB,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    sort        INTEGER NOT NULL DEFAULT 0,
+    updated_at  TEXT NOT NULL
 );
 """
 
@@ -465,6 +480,46 @@ class SnapshotDB:
                 self.set_setting(target, section, data)
                 copied += 1
         return copied
+
+    # ---- Login entries (batch dispatch; never exported) -------------------
+
+    def login_rows(self) -> list[dict]:
+        with self._settings_lock:
+            rows = self._con.execute(
+                "SELECT character, username, server, password, protect, enabled, sort "
+                "FROM login_entries ORDER BY sort, character"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def login_upsert(self, row: dict) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._settings_lock:
+            self._con.execute(
+                "INSERT INTO login_entries "
+                "(character, username, server, password, protect, enabled, sort, updated_at) "
+                "VALUES (:character, :username, :server, :password, :protect, :enabled, :sort, :now) "
+                "ON CONFLICT(character) DO UPDATE SET username=excluded.username, "
+                "server=excluded.server, password=excluded.password, protect=excluded.protect, "
+                "enabled=excluded.enabled, sort=excluded.sort, updated_at=excluded.updated_at",
+                {**row, "now": now},
+            )
+            self._con.commit()
+
+    def login_set_secret(self, username: str, column: str, blob: bytes | None) -> None:
+        """One account's password or protect, on every character of that account."""
+        if column not in ("password", "protect"):
+            raise ValueError(column)
+        with self._settings_lock:
+            self._con.execute(
+                f"UPDATE login_entries SET {column}=? WHERE username=?", (blob, username)
+            )
+            self._con.commit()
+
+    def login_delete(self, character: str) -> bool:
+        with self._settings_lock:
+            cur = self._con.execute("DELETE FROM login_entries WHERE character=?", (character,))
+            self._con.commit()
+        return cur.rowcount > 0
 
     # ---- Backup / restore (full-db export + non-destructive merge) --------
 

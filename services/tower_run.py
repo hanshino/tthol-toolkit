@@ -102,6 +102,7 @@ SWEEP_WAIT = 8.0  # per spawn point, for a monster to show up
 EXIT_TRIES = 8  # exit bumps (one a tick) before giving the room another sweep
 EXIT_DIALOG = 2.0  # after stepping on the exit, for its dialog to open
 EXIT_SETTLE = 6.0  # after the exit dialog closed, for the teleport to show
+DEATH_CONFIRM = 3.0  # HP 0 this long in a row is a death; a map load reads 0 a moment
 BODIES_MAX = 15.0  # a body that has not faded by then is not waited for
 WALK_WAIT = 6.0
 TALK_WAIT = 40.0
@@ -222,6 +223,7 @@ class _Run:
         self.idle = 0
         self.rot = Rotation()
         self.casts_seen = 0
+        self.zero_hp_at: float | None = None  # clock HP first read 0
         self.hits: dict[tuple[int, int], float] = {}  # target key -> clock of our last hit
         # target key -> magic id -> clock of our last hit with it (0 = basic attack)
         self.hit_skills: dict[tuple[int, int], dict[int, float]] = {}
@@ -306,19 +308,33 @@ class TowerManager:
                 run.combat, run.config = settings.combat, settings.config
         return settings
 
+    def config_problem(self, name: str) -> str | None:
+        """Why `name`'s saved settings cannot climb, or None (no game needed:
+        the batch dispatch asks before logging the character in)."""
+        combat = self._store.load_section(name, COMBAT_SECTION, CombatRule)
+        if not combat.basic and not combat.opener and not combat.rotation:
+            return "還沒設定攻擊方式：勾普攻，或選至少一個技能"
+        if not self._store.load(name).potion.hp_items:
+            return "補水的體力白名單是空的：塔裡不能回城，先在「輔助」設定補水"
+        return None
+
+    def done_for(self, name: str) -> bool:
+        """`name` finished today's tower (done_today by name)."""
+        return self._done_today(self._today_record(name))
+
     def start(self, pid: int) -> tuple[bool, str | None]:
         name = self._character_name(pid)
         if not name:
             return False, "角色還沒定位"
-        combat = self._store.load_section(name, COMBAT_SECTION, CombatRule)
-        if not combat.basic and not combat.opener and not combat.rotation:
-            return False, "還沒設定攻擊方式：勾普攻，或選至少一個技能"
-        if not self._store.load(name).potion.hp_items:
-            return False, "補水的體力白名單是空的：塔裡不能回城，先在「輔助」設定補水"
+        problem = self.config_problem(name)
+        if problem:
+            return False, problem
         try:
             missing = self._missing_commands(pid)
         except PipeGone:
             return False, "這個遊戲視窗沒有 hook 指令通道"
+        except (PipeBusy, NoReply):
+            return False, "hook 暫時沒有回應（還在登入或換地圖？），稍後再開始"
         if missing:
             return False, f"這個 hook 缺少登塔要用的指令：{'、'.join(missing)}"
         if not self._guard.running(pid):
@@ -331,7 +347,11 @@ class TowerManager:
                 if not run.stop.is_set():
                     return True, None
                 run.thread.join(timeout=2.0)
-            run = _Run(name, combat, self._store.load_section(name, TOWER_SECTION, TowerConfig))
+            run = _Run(
+                name,
+                self._store.load_section(name, COMBAT_SECTION, CombatRule),
+                self._store.load_section(name, TOWER_SECTION, TowerConfig),
+            )
             run.run_started = self._wall()
             self._runs[pid] = run
             run.thread = threading.Thread(
@@ -482,7 +502,7 @@ class TowerManager:
 
     def done_today(self, pid: int) -> bool:
         name = self._character_name(pid)
-        return bool(name) and self._done_today(self._today_record(name))
+        return bool(name) and self.done_for(name)
 
     def _today(self) -> str:
         return time.strftime("%Y-%m-%d", time.localtime(self._wall()))
@@ -710,7 +730,13 @@ class TowerManager:
             return WAIT_MAP
         hp = st.get("hp") or [0, 0]
         if hp[0] <= 0:
-            raise _Done("角色死亡", "error")
+            now = self._clock()
+            if run.zero_hp_at is None:
+                run.zero_hp_at = now
+            if now - run.zero_hp_at >= DEATH_CONFIRM:
+                raise _Done("角色死亡", "error")
+            return WAIT_MAP  # a map load reads 0 for a moment: look again
+        run.zero_hp_at = None
         try:
             stage = self._read_locked(pid, read_stage_id)
         except Exception:

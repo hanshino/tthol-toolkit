@@ -20,6 +20,7 @@ dependencies = [
     "websockets>=13.1",
     "pydantic>=2.9",
     "python-multipart>=0.0.32",
+    "cryptography>=50.0.2",
 ]
 
 [dependency-groups]

@@ -776,6 +776,171 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/logins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Logins */
+        get: operations["list_logins_api_logins_get"];
+        /**
+         * Update Login
+         * @description Change a listed character (new ones come in through 加入自動登入).
+         */
+        put: operations["update_login_api_logins_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/logins/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export Logins
+         * @description The whole list, secrets included, sealed with the user's passphrase.
+         */
+        post: operations["export_logins_api_logins_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/logins/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Logins */
+        post: operations["import_logins_api_logins_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/logins/{character}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Login */
+        delete: operations["delete_login_api_logins__character__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Character Login */
+        get: operations["get_character_login_api_characters__pid__login_get"];
+        /**
+         * Save Character Login
+         * @description 加入自動登入: the character name is the one located in this window.
+         */
+        put: operations["save_character_login_api_characters__pid__login_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/hook/packets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hook Packets */
+        get: operations["hook_packets_api_characters__pid__hook_packets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dispatch/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dispatch Plan */
+        get: operations["dispatch_plan_api_dispatch_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dispatch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dispatch Status */
+        get: operations["dispatch_status_api_dispatch_get"];
+        put?: never;
+        /** Dispatch Start */
+        post: operations["dispatch_start_api_dispatch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dispatch/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dispatch Stop */
+        post: operations["dispatch_stop_api_dispatch_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/walk": {
         parameters: {
             query?: never;
@@ -2250,6 +2415,112 @@ export interface components {
             /** Verbose */
             verbose: boolean;
         };
+        /** DispatchCandidate */
+        DispatchCandidate: {
+            entry: components["schemas"]["LoginEntry"];
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "run" | "done" | "blocked" | "no-login";
+            /** Reason */
+            reason?: string | null;
+        };
+        /** DispatchPlan */
+        DispatchPlan: {
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["DispatchCandidate"][];
+            /**
+             * Windows
+             * @default []
+             */
+            windows: components["schemas"]["DispatchWindowOption"][];
+            /**
+             * Servers
+             * @default []
+             */
+            servers: string[];
+        };
+        /** DispatchRequest */
+        DispatchRequest: {
+            /** Characters */
+            characters: string[];
+            /** Pids */
+            pids: number[];
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+        };
+        /** DispatchRow */
+        DispatchRow: {
+            /** Character */
+            character: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "skipped" | "login" | "running" | "done" | "failed" | "stopped";
+            /** Pid */
+            pid?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Started At */
+            started_at?: number | null;
+            /** Ended At */
+            ended_at?: number | null;
+        };
+        /** DispatchStatus */
+        DispatchStatus: {
+            /** Running */
+            running: boolean;
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+            /** Started At */
+            started_at?: number | null;
+            /**
+             * Rows
+             * @default []
+             */
+            rows: components["schemas"]["DispatchRow"][];
+            /**
+             * Windows
+             * @default []
+             */
+            windows: components["schemas"]["DispatchWindow"][];
+        };
+        /** DispatchWindow */
+        DispatchWindow: {
+            /** Pid */
+            pid: number;
+            /** Character */
+            character?: string | null;
+            /** Step */
+            step?: string | null;
+            /**
+             * Done
+             * @default 0
+             */
+            done: number;
+            /** Problem */
+            problem?: string | null;
+        };
+        /** DispatchWindowOption */
+        DispatchWindowOption: {
+            /** Pid */
+            pid: number;
+            /** Name */
+            name?: string | null;
+            /** Problem */
+            problem?: string | null;
+        };
         /**
          * DollLayer
          * @description One sprite layer; (anchor_x, anchor_y) is the attach point in the image.
@@ -2563,6 +2834,31 @@ export interface components {
             /** Proto */
             proto: number;
         };
+        /** HookPacketType */
+        HookPacketType: {
+            /** Sub Type */
+            sub_type: number;
+            /** Count */
+            count: number;
+            /** Ago */
+            ago: number;
+        };
+        /**
+         * HookPackets
+         * @description Inbound game packets the hook saw for one client, by sub-type (for
+         *     finding the heartbeat: a dropped connection stops all of them).
+         */
+        HookPackets: {
+            /** Connected */
+            connected: boolean;
+            /** Last Ago */
+            last_ago?: number | null;
+            /**
+             * Types
+             * @default []
+             */
+            types: components["schemas"]["HookPacketType"][];
+        };
         /**
          * Inlay
          * @description 真元 / 魂石 set into a piece of gear, grouped by kind.
@@ -2727,6 +3023,121 @@ export interface components {
             runtime_seconds?: number | null;
             /** Last Send At */
             last_send_at?: number | null;
+        };
+        /**
+         * LoginEntry
+         * @description One character the dispatch can log in. Secrets never leave the backend:
+         *     only whether each is set.
+         */
+        LoginEntry: {
+            /** Character */
+            character: string;
+            /** Username */
+            username: string;
+            /** Server */
+            server: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Has Password
+             * @default false
+             */
+            has_password: boolean;
+            /**
+             * Has Protect
+             * @default false
+             */
+            has_protect: boolean;
+            /**
+             * Sort
+             * @default 0
+             */
+            sort: number;
+        };
+        /**
+         * LoginEntryIn
+         * @description Save one character. password / protect: None keeps what is stored, ""
+         *     clears it. Both belong to the account: saving them updates every
+         *     character with the same username.
+         */
+        LoginEntryIn: {
+            /** Character */
+            character: string;
+            /** Username */
+            username: string;
+            /** Server */
+            server: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Password */
+            password?: string | null;
+            /** Protect */
+            protect?: string | null;
+            /**
+             * Sort
+             * @default 0
+             */
+            sort: number;
+        };
+        /** LoginExportRequest */
+        LoginExportRequest: {
+            /** Passphrase */
+            passphrase: string;
+        };
+        /**
+         * LoginForm
+         * @description 加入自動登入 from a character in game: the name comes from the game.
+         */
+        LoginForm: {
+            /** Username */
+            username: string;
+            /** Server */
+            server: string;
+            /** Password */
+            password?: string | null;
+            /** Protect */
+            protect?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /** LoginImportRequest */
+        LoginImportRequest: {
+            /** Data */
+            data: string;
+            /** Passphrase */
+            passphrase: string;
+            /**
+             * Overwrite
+             * @default false
+             */
+            overwrite: boolean;
+        };
+        /** LoginImportResult */
+        LoginImportResult: {
+            /**
+             * Added
+             * @default 0
+             */
+            added: number;
+            /**
+             * Updated
+             * @default 0
+             */
+            updated: number;
+            /**
+             * Skipped
+             * @default 0
+             */
+            skipped: number;
         };
         /** MapInfo */
         MapInfo: {
@@ -5098,6 +5509,346 @@ export interface operations {
         };
     };
     stop_all_api_daily_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    list_logins_api_logins_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginEntry"][];
+                };
+            };
+        };
+    };
+    update_login_api_logins_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginEntryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_logins_api_logins_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_logins_api_logins_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_login_api_logins__character__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                character: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_character_login_api_characters__pid__login_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginEntry"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_character_login_api_characters__pid__login_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginForm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hook_packets_api_characters__pid__hook_packets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HookPackets"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dispatch_plan_api_dispatch_plan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DispatchPlan"];
+                };
+            };
+        };
+    };
+    dispatch_status_api_dispatch_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DispatchStatus"];
+                };
+            };
+        };
+    };
+    dispatch_start_api_dispatch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DispatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dispatch_stop_api_dispatch_stop_post: {
         parameters: {
             query?: never;
             header?: never;

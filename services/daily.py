@@ -44,6 +44,9 @@ class DailyModule(Protocol):
     def outcome(self, pid: int) -> tuple[str, str] | None: ...
     def done_today(self, pid: int) -> bool: ...
     def summary(self, pid: int) -> DailySummary: ...
+    # By character name, with no game: the batch dispatch asks before a login.
+    def done_for(self, name: str) -> bool: ...
+    def config_problem(self, name: str) -> str | None: ...
 
 
 class _Item:
@@ -142,6 +145,21 @@ class DailyQueueManager:
             p.thread.start()
         log.info("daily queue started pid=%d %s", pid, keys, extra={"cat": "daily"})
         return True, None
+
+    def precheck(self, name: str) -> tuple[str, str | None]:
+        """Before logging `name` in: ("run", None), ("done", why) when every
+        listed module is done today, or ("blocked", why) when one cannot start."""
+        keys = self.config(name).modules
+        if not keys:
+            return "blocked", "日常清單是空的"
+        todo = [k for k in keys if not self._modules[k].done_for(name)]
+        if not todo:
+            return "done", "今日都做完了"
+        for key in todo:
+            problem = self._modules[key].config_problem(name)
+            if problem:
+                return "blocked", f"{self._modules[key].title}：{problem}"
+        return "run", None
 
     def _resumable(self, p: _Pass | None, name: str, keys: list[str]) -> bool:
         """Same character, same list, today, and something is left to run."""

@@ -49,6 +49,7 @@ class WorkerManager:
         self._hook_caps = None  # HookCaps: which hook features each client allows
         self._names: dict[int, str] = {}  # pid -> last character located in that window
         self._name_seen: dict[int, str] = {}  # pid -> a new name seen once, not yet trusted
+        self._names_lock = threading.Lock()  # the snapshot handler and the batch dispatch
         self._forget: list = []  # fn(pid): drop what a module holds for the window's last character
         self._family_query = (
             None  # fn(pid): the hook's `family` (the 0x31 reply lands in FamilyTracker)
@@ -65,26 +66,49 @@ class WorkerManager:
         self._forget.append(fn)
 
     def _watch_names(self, live_pids: set[int]) -> None:
-        gone = [pid for pid in self._names if pid not in live_pids]
-        for pid in live_pids:
-            sess = self._sessions.get(pid)
-            name = sess.name if sess is not None else None
-            if not name:
-                continue  # between characters, or a map load: not a switch yet
-            old = self._names.get(pid)
-            if old is not None and old != name and self._name_seen.get(pid) != name:
-                # A name read mid-login can be garbage (";w9w", live 2026-10-06):
-                # a switch stops modules, so the new name must hold for two ticks.
-                self._name_seen[pid] = name
-                continue
-            self._name_seen.pop(pid, None)
-            self._names[pid] = name
-            if old is not None and old != name:
-                log.info("character switched pid=%d %s -> %s", pid, old, name, extra={"cat": "api"})
-                self._run_forget(pid)
+        switched, gone = [], []
+        with self._names_lock:
+            gone = [pid for pid in self._names if pid not in live_pids]
+            for pid in live_pids:
+                sess = self._sessions.get(pid)
+                name = sess.name if sess is not None else None
+                if not name:
+                    continue  # between characters, or a map load: not a switch yet
+                old = self._names.get(pid)
+                if old is not None and old != name and self._name_seen.get(pid) != name:
+                    # A name read mid-login can be garbage (";w9w", live 2026-10-06):
+                    # a switch stops modules, so the new name must hold for two ticks.
+                    self._name_seen[pid] = name
+                    continue
+                self._name_seen.pop(pid, None)
+                self._names[pid] = name
+                if old is not None and old != name:
+                    switched.append((pid, old, name))
+            for pid in gone:
+                self._names.pop(pid, None)
+                self._name_seen.pop(pid, None)
+        for pid, old, name in switched:
+            log.info("character switched pid=%d %s -> %s", pid, old, name, extra={"cat": "api"})
+            self._run_forget(pid)
         for pid in gone:
-            self._names.pop(pid, None)
+            self._run_forget(pid)
+
+    def confirm_character(self, pid: int, name: str) -> None:
+        """The batch dispatch logged `name` in on this window (and checked it):
+        take the switch now, so the old character's modules are dropped before
+        the new one's start, not stopped by the next snapshot tick."""
+        with self._names_lock:
+            old = self._names.get(pid)
+            self._names[pid] = name
             self._name_seen.pop(pid, None)
+        if old is not None and old != name:
+            log.info(
+                "character switched pid=%d %s -> %s (dispatch)",
+                pid,
+                old,
+                name,
+                extra={"cat": "api"},
+            )
             self._run_forget(pid)
 
     def _run_forget(self, pid: int) -> None:

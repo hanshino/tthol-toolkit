@@ -21,8 +21,12 @@ from services import item_catalog, skill_catalog, window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.daily import DailyQueueManager
+from services.dispatch import PING_PROTO, DispatchManager, hook_problem, ping_problem
+from services.login_flow import LoginFlow
+from services.login_screen import GameInput, ScreenReader
+from services.login_store import LoginStore
 from services.family import FAMILY_PACKET, FamilyTracker
-from services.hook_caps import HookCaps
+from services.hook_caps import FEATURES, HookCaps
 from services.navigator import Navigator
 from services.damage_capture import DamageRecorderManager
 from services.guard import (
@@ -133,6 +137,49 @@ def _build_services(dev: bool) -> dict:
     # Another character on the same game window starts clean (queue first: it stops the tower).
     for forget in (daily.forget, tower.forget, guard.forget):
         wm.add_forget(forget)
+    # 帳號派發: log characters in on the hooked windows, run their 日常, log out.
+    logins = LoginStore(db)
+    screens = ScreenReader()
+
+    def window_problem(pid: int) -> str | None:
+        info = hook.status(pid)
+        if info is None:
+            return "這個視窗沒有 hook"
+        if daily.status(pid).running:
+            return "這個視窗正在跑日常"
+        if info.proto >= PING_PROTO:
+            # v5 answers `ping` at the login screen too: a missing action
+            # module shows before a login is spent on it.
+            problem = ping_problem(lambda line: channel.send(pid, line))
+            if problem is not None:
+                return problem
+        # At the 帳密 screen the hook does not answer `caps` (live 2026-10-07):
+        # only a manifest already read rules a window out; the tower checks its
+        # commands itself when it starts after the login.
+        names = hook_caps.cached(pid)
+        if names is not None and not set(FEATURES["daily.tower"]) <= names:
+            return "這個 hook 沒有登塔要用的指令"
+        return None
+
+    def hook_check(pid: int) -> str | None:
+        info = hook.status(pid)
+        return hook_problem(
+            lambda line: channel.send(pid, line),
+            FEATURES["daily.tower"],
+            ping=info is not None and info.proto >= PING_PROTO,
+        )
+
+    dispatch = DispatchManager(
+        logins,
+        LoginFlow(screens.read, GameInput(), wm.rescan, wm.character_name),
+        daily,
+        window_problem=window_problem,
+        confirm_character=wm.confirm_character,
+        hook_check=hook_check,
+        # The worker keeps the last name after a logout: only trust it in game.
+        in_game_as=lambda pid: wm.character_name(pid) if screens.read(pid).kind == "game" else None,
+        live_pids=wm.live_pids,
+    )
     market_db = MarketDB()
     market = MarketSurveyManager(live=wm.live_handle, pids=wm.live_pids, db=market_db)
     market.start()
@@ -149,6 +196,8 @@ def _build_services(dev: bool) -> dict:
         "guard_manager": guard,
         "tower_manager": tower,
         "daily_manager": daily,
+        "login_store": logins,
+        "dispatch_manager": dispatch,
         "buff_tracker": buffs,
     }
 
@@ -289,6 +338,7 @@ def main() -> int:
         # Recorder threads hold timeBeginPeriod(1); stop them so it is released.
         services["damage_manager"].shutdown()
         services["hook_hub"].shutdown()
+        services["dispatch_manager"].shutdown()
         services["daily_manager"].shutdown()
         services["tower_manager"].shutdown()
         services["guard_manager"].shutdown()

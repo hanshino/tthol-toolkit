@@ -260,3 +260,52 @@ def test_a_missing_0x31_gives_up_after_the_wait():
     run = _Run(nav, 7, None, lambda _t: None)
     run.learn_manor()
     assert run.manor is None and 2.0 <= clock["t"] < 2.5
+
+
+class LoadBlipGame(FakeGame):
+    """`status` reads HP 0 a few times, like a map load."""
+
+    def __init__(self, *a, zeros=2, **kw):
+        super().__init__(*a, **kw)
+        self.zeros = zeros
+
+    def send(self, pid, line):
+        if line == "status" and self.zeros != 0:
+            self.zeros -= 1
+            self.sent.append(line)
+            return {"ok": True, "self": 1, "hp": [0, 100], "tile": [-1, -1]}
+        return super().send(pid, line)
+
+
+def _clocked_nav(game):
+    clock = {"t": 0.0}
+
+    def sleep(ev, secs):
+        clock["t"] += secs
+        return False
+
+    nav = Navigator(
+        game,
+        lambda pid, fn: 120 if fn is read_level else (CHENGDU, "x"),
+        lambda *a: None,
+        manor=lambda pid: 1121,
+        clock=lambda: clock["t"],
+        sleep=sleep,
+    )
+    return nav
+
+
+def test_a_moment_of_zero_hp_is_not_a_death():
+    game = LoadBlipGame(CHENGDU, (47, 168), {}, zeros=2)
+    run = _Run(_clocked_nav(game), 7, None, lambda _t: None)
+    assert run.walk_to((47, 150), CHENGDU) == "arrived"
+
+
+def test_zero_hp_that_stays_is_a_death():
+    from services.navigator import _Stop
+
+    game = LoadBlipGame(CHENGDU, (47, 168), {}, zeros=-1)  # never comes back
+    run = _Run(_clocked_nav(game), 7, None, lambda _t: None)
+    with pytest.raises(_Stop) as e:
+        run.walk_to((47, 150), CHENGDU)
+    assert e.value.reason == "dead"

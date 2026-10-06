@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { ApiError, get, post } from '../../api/client';
 import { describeError, reportClientError } from '../../diag/report';
 import type {
-  CharacterRow, ConnectResult, FamilyInfo, OkResponse, StatSimExport,
+  CharacterRow, ConnectResult, FamilyInfo, LoginEntry, OkResponse, StatSimExport,
 } from '../../api/types';
+import { LoginDialog } from '../../components/LoginDialog';
 import { friendlyError } from '../../components/friendlyError';
 import { isStopped, isUnlocated } from '../../nav';
 import { Bar, BuffChips, DollAvatar, LinkDot, Seal } from '../../primitives';
@@ -28,6 +29,19 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
   const [busy, setBusy] = useState<'rescan' | 'relocate' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [hpDraft, setHpDraft] = useState('');
+  const [login, setLogin] = useState<LoginEntry | null>(null);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const located = !unlocated && !gone;
+
+  // 加入自動登入 is only for a character located in game: its name comes from there.
+  useEffect(() => {
+    if (!located) { setLogin(null); return; }
+    let alive = true;
+    get<LoginEntry | null>(`/api/characters/${char.pid}/login`)
+      .then(e => { if (alive) setLogin(e); })
+      .catch(e => reportClientError(e, { component: 'CharHeader.login', silent: true }));
+    return () => { alive = false; };
+  }, [char.pid, char.name, located]);
 
   const rescan = async () => {
     setBusy('rescan');
@@ -78,7 +92,24 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
           )
           : <Seal size={34}>{unlocated ? '?' : char.name[0]}</Seal>}
         <div className="ws-id-text">
-          <div className="ws-name"><LinkDot status={gone ? 'lost' : char.link} /><span>{char.name}</span></div>
+          <div className="ws-name">
+            <LinkDot status={gone ? 'lost' : char.link} /><span className="ws-name-text">{char.name}</span>
+            {located && (
+              <button
+                type="button" className="ws-login" data-on={login ? '' : undefined}
+                onClick={() => setLoginOpen(true)}
+                title={login ? `帳號派發會用 ${login.username} 登入這隻角色` : '記下這隻角色的帳號，讓帳號派發自動登入'}
+              >
+                {login ? (login.enabled ? '已加入自動登入' : '自動登入已停用') : '加入自動登入'}
+              </button>
+            )}
+          </div>
+          {loginOpen && (
+            <LoginDialog
+              pid={char.pid} name={char.name} entry={login}
+              onClose={() => setLoginOpen(false)} onSaved={setLogin}
+            />
+          )}
           <div className="ws-sub">
             {unlocated
               ? `pid ${char.pid} · 尚未定位`

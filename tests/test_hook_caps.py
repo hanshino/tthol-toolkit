@@ -63,3 +63,19 @@ def test_cached_reads_and_a_busy_pipe_backs_off():
     t["now"] = 10.0
     caps.features(1)
     assert busy.sent == 2
+
+
+def test_not_in_game_is_not_cached_as_no_manifest():
+    import pytest
+
+    from services.hook_caps import HookCaps
+    from services.hook_cmd import NoReply
+
+    class Channel:
+        def send(self, pid, line):
+            return {"ok": False, "error": "not in game: the game loop is idle"}
+
+    caps = HookCaps(Channel(), connected=lambda pid: True)
+    with pytest.raises(NoReply):
+        caps.read(1)
+    assert caps.cached(1) is None and 1 not in caps._entries
