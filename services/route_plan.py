@@ -324,6 +324,23 @@ def _family_dests(script: _Script) -> list[tuple[int, int, int]]:
 
 
 @lru_cache(maxsize=2)
+def manor_stages(db_path: Path | None = None) -> frozenset[int]:
+    """Family manors (sestage ids): the maps a 家族馬夫 stands on. Standing in
+    one tells the manor even before the family's 0x31 has come in."""
+    marks = ",".join("?" * len(FAMILY_HORSES))
+    con = _connect(db_path)
+    try:
+        rows = con.execute(
+            "SELECT DISTINCT stage_id FROM map_placements WHERE stage_kind = 'sestage'"
+            f" AND category = 'npc' AND npc_id IN ({marks})",
+            tuple(FAMILY_HORSES),
+        ).fetchall()
+    finally:
+        con.close()
+    return frozenset(r[0] for r in rows)
+
+
+@lru_cache(maxsize=2)
 def _tables(db_path: Path | None = None) -> _Tables:
     con = _connect(db_path)
     try:

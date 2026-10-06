@@ -5,7 +5,7 @@ import pytest
 
 from services import route_plan as rp
 from services._paths import bundled
-from services.navigator import Navigator, read_level
+from services.navigator import Navigator, _Replan, _Run, read_level
 
 pytestmark = pytest.mark.skipif(
     not bundled("tthol.sqlite").exists(), reason="tthol.sqlite not pulled"
@@ -126,3 +126,83 @@ def test_no_route_is_reported():
     game = FakeGame(CHENGDU, (47, 168), {})
     result = nav_for(game).go(7, 999_999)
     assert (result.ok, result.reason) == (False, "no-route")
+
+
+def test_a_door_on_the_way_to_an_npc_replans():
+    # Walking to the 成都車伕, a zone on the way puts us in the bank room.
+    game = FakeGame(CHENGDU, (47, 168), {(45, 168): (12, 13)})
+    run = _Run(nav_for(game), 7, None, lambda _t: None)
+    with pytest.raises(_Replan):
+        run.ride(6024, (25, 169), 1, CHENGDU)
+    assert not [line for line in game.sent if line.startswith("talk")]
+
+
+def test_a_warp_on_the_way_to_an_npc_replans():
+    game = FakeGame(CHENGDU, (47, 168), {})
+    orig = game._step
+
+    def step():
+        orig()
+        if game.target:
+            game.stage = 51  # stepped on an exit on the way
+
+    game._step = step
+    run = _Run(nav_for(game), 7, None, lambda _t: None)
+    with pytest.raises(_Replan):
+        run.ride(6024, (25, 169), 1, CHENGDU)
+
+
+def test_inside_a_manor_without_family_info_rides_its_horse():
+    # 地英莊 (1054), the family's 0x31 not in yet: the map tells the manor.
+    from services.tower import LOBBY_STAGE
+
+    game = FakeGame(1054, (36, 19), {})
+    notes = []
+    result = nav_for(game, level=150, manor=None).go(7, LOBBY_STAGE, note=notes.append)
+    # The fake has no NPCs: getting as far as looking for the 家族馬夫 is the point.
+    assert result.reason == "stuck" and "6347" in result.detail
+    assert any("先送到探幽曲徑" in n for n in notes)
+
+
+def test_the_target_is_clicked_again_every_few_seconds_while_walking():
+    game = FakeGame(CHENGDU, (47, 168), {})
+    clock = {"t": 0.0}
+
+    def sleep(ev, secs):
+        clock["t"] += secs
+        return False
+
+    class Rng:
+        def uniform(self, a, b):
+            return 3.0
+
+    nav = Navigator(
+        game,
+        lambda pid, fn: 120 if fn is read_level else (CHENGDU, "x"),
+        lambda *a: None,
+        manor=lambda pid: None,
+        clock=lambda: clock["t"],
+        sleep=sleep,
+        rng=Rng(),
+    )
+    run = _Run(nav, 7, None, lambda _t: None)
+    assert run.walk_to((47, 140), CHENGDU) == "arrived"  # 28 tiles at 2 a poll: ~5.6 s
+    walks = [line for line in game.sent if line.startswith("walk")]
+    assert len(walks) >= 2 and len(set(walks)) == 1  # the same target, clicked again
+
+
+class FastGame(FakeGame):
+    """A character with a speed buff: 6 tiles a poll."""
+
+    def _step(self):
+        if self.target is None:
+            return
+        x, y = self.pos
+        tx, ty = self.target
+        self.pos = (x + max(-6, min(6, tx - x)), y + max(-6, min(6, ty - y)))
+
+
+def test_a_fast_walk_is_not_taken_for_a_teleport():
+    game = FastGame(CHENGDU, (47, 168), {})
+    run = _Run(nav_for(game), 7, None, lambda _t: None)
+    assert run.walk_to((47, 120), CHENGDU) == "arrived"
