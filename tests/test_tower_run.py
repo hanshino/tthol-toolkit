@@ -307,9 +307,21 @@ def test_full_bag_at_the_exit_stops():
         ticks(mgr, run, 12)
 
 
-def test_death_stops():
+def test_death_stops_once_hp_stays_zero():
     mgr, run, game, _ = make()
+    t = {"extra": 0.0}
+    clock = mgr._clock
+    mgr._clock = lambda: clock() + t["extra"]
     game.hp = 0
+    mgr._tick(1, run)  # one read of 0 is a map load (live 2026-10-07): not yet
+    t["extra"] += 1.0
+    mgr._tick(1, run)
+    game.hp = 100  # back: the count starts over
+    mgr._tick(1, run)
+    game.hp = 0
+    t["extra"] += 2.5
+    mgr._tick(1, run)
+    t["extra"] += 3.0
     with pytest.raises(_Done, match="角色死亡"):
         mgr._tick(1, run)
 

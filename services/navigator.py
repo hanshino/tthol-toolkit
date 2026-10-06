@@ -68,6 +68,9 @@ EXIT_TRIES = 3  # walks to an exit zone before giving up on it
 # moving: a cast or a hit stops the walk short without it looking stalled yet.
 RECLICK = (2.5, 5.0)
 SETTLE = 1.5  # after a map change, before reading `near` again
+# HP 0 this long in a row is a death. A map load reads 0 for a moment (live
+# 2026-10-07: 聖火狂狐 stopped as dead entering 探幽曲徑 at full health).
+DEATH_CONFIRM = 3.0
 
 
 @dataclass
@@ -151,6 +154,7 @@ class _Run:
         self.manor = nav._manor(pid)
         self.script = rp._Script(rp._tables(), self.level, self.manor)
         self.names = rp._tables().stages
+        self.zero_hp_at: float | None = None  # clock HP first read 0 (see DEATH_CONFIRM)
 
     # -- plumbing ----------------------------------------------------------------
 
@@ -181,7 +185,13 @@ class _Run:
         st = self.cmd("status")
         hp = st.get("hp") or [1, 1]
         if hp[0] <= 0:
-            raise _Stop("dead", "角色死亡")
+            now = self.nav._clock()
+            if self.zero_hp_at is None:
+                self.zero_hp_at = now
+            if now - self.zero_hp_at >= DEATH_CONFIRM:
+                raise _Stop("dead", "角色死亡")
+            return None  # a map load, until it holds: position unknown for now
+        self.zero_hp_at = None
         for o in self.cmd("near").get("objects") or []:
             if o.get("h") == st.get("self"):
                 return o["x"] // TILE_PX, o["y"] // TILE_PX
