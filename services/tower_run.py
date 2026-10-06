@@ -103,6 +103,7 @@ EXIT_TRIES = 8  # exit bumps (one a tick) before giving the room another sweep
 EXIT_DIALOG = 2.0  # after stepping on the exit, for its dialog to open
 EXIT_SETTLE = 6.0  # after the exit dialog closed, for the teleport to show
 DEATH_CONFIRM = 3.0  # HP 0 this long in a row is a death; a map load reads 0 a moment
+BODIES_MAX = 15.0  # a body that has not faded by then is not waited for
 WALK_WAIT = 6.0
 TALK_WAIT = 40.0
 FOX_RETALK = 6.0  # after a fox talk, give the teleport this long before talking again
@@ -218,6 +219,7 @@ class _Run:
         self.exit_try = 0  # exit bumps in this room
         self.exit_closed_at: float | None = None  # clock the exit dialog went through
         self.exit_leave: tuple[bool, str | None] | None = None  # (leave, potions short)
+        self.bodies_since: float | None = None  # clock the wait for bodies to fade began
         self.idle = 0
         self.rot = Rotation()
         self.casts_seen = 0
@@ -1005,6 +1007,7 @@ class TowerManager:
                 run.force_exit = False
                 run.hits, run.hit_skills = {}, {}
                 run.exit_try, run.exit_closed_at, run.exit_leave = 0, None, None
+                run.bodies_since = None
             try:
                 run.learned = self._read_locked(pid, read_learned) or run.learned
             except Exception:
@@ -1026,9 +1029,16 @@ class TowerManager:
                     )
             run.kills = len(run.killed)
         expect = tower.expect[room]
-        if run.kills >= expect or run.force_exit:
-            return self._finish_room(pid, run, tower, room, bool(mine))
         live = [o for o in mine if not o.get("dead") and (o["id"], o["inst"]) not in run.killed]
+        if run.force_exit and live and run.kills < expect:
+            # The sweep missed it; it walked into view later (live 2026-10-06,
+            # floor 33: 48 min waiting for this "body" to fade, 8 / 9).
+            self._note(run, "info", f"又看到怪了（{run.kills} / {expect}），先打完再走出口")
+            run.force_exit = run.staged = False
+            run.exit_try, run.exit_closed_at, run.exit_leave = 0, None, None
+            run.bodies_since = None
+        if run.kills >= expect or run.force_exit:
+            return self._finish_room(pid, run, tower, room, self._bodies(run, mine))
         if not live:
             run.idle += 1
             if run.idle < IDLE_SWEEP:
@@ -1191,6 +1201,17 @@ class TowerManager:
             self._note(run, "unconfirmed", "出口沒有反應，再試一次")
             run.staged = run.force_exit = False
         return STEP
+
+    def _bodies(self, run: _Run, mine: list) -> bool:
+        """Bodies of this room still fading (live monsters do not count), for at
+        most BODIES_MAX: a body that stays must not hold the room forever."""
+        if not any(o.get("dead") for o in mine):
+            run.bodies_since = None
+            return False
+        now = self._clock()
+        if run.bodies_since is None:
+            run.bodies_since = now
+        return now - run.bodies_since < BODIES_MAX
 
     def _room_done(self, run: _Run, tower: TowerStage, room: int) -> bool:
         return (
