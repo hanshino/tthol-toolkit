@@ -366,6 +366,121 @@ class DailyStartResult(_Base):
     reason: str | None = None
 
 
+# ---- Batch dispatch (帳號派發) -----------------------------------------------
+
+
+class LoginEntry(_Base):
+    """One character the dispatch can log in. Secrets never leave the backend:
+    only whether each is set."""
+
+    character: str
+    username: str
+    server: str  # the server list row, e.g. 飛雁山莊(花)
+    enabled: bool = True
+    has_password: bool = False
+    has_protect: bool = False
+    sort: int = 0
+
+
+class LoginEntryIn(_Base):
+    """Save one character. password / protect: None keeps what is stored, ""
+    clears it. Both belong to the account: saving them updates every
+    character with the same username."""
+
+    character: str = Field(min_length=1, max_length=32)
+    username: str = Field(min_length=1, max_length=64)
+    server: str = Field(min_length=1, max_length=64)
+    enabled: bool = True
+    password: str | None = Field(None, max_length=64)
+    protect: str | None = Field(None, max_length=64)
+    sort: int = 0
+
+
+class LoginForm(_Base):
+    """加入自動登入 from a character in game: the name comes from the game."""
+
+    username: str = Field(min_length=1, max_length=64)
+    server: str = Field(min_length=1, max_length=64)
+    password: str | None = Field(None, max_length=64)
+    protect: str | None = Field(None, max_length=64)
+    enabled: bool = True
+
+
+class LoginExportRequest(_Base):
+    passphrase: str = Field(min_length=8, max_length=128)
+
+
+class LoginImportRequest(_Base):
+    data: str = Field(max_length=2_000_000)  # the export file's text
+    passphrase: str = Field(min_length=1, max_length=128)
+    overwrite: bool = False  # replace characters already on this computer
+
+
+class LoginImportResult(_Base):
+    added: int = 0
+    updated: int = 0
+    skipped: int = 0
+
+
+DispatchVerdict = Literal["run", "done", "blocked", "no-login"]
+
+
+class DispatchCandidate(_Base):
+    entry: LoginEntry
+    verdict: DispatchVerdict
+    reason: str | None = None
+
+
+class DispatchWindowOption(_Base):
+    pid: int
+    name: str | None = None  # who is in game there now, if located
+    problem: str | None = None  # why it cannot take work now
+
+
+class DispatchPlan(_Base):
+    candidates: list[DispatchCandidate] = []
+    windows: list[DispatchWindowOption] = []
+    servers: list[str] = []
+
+
+# pending 排隊 / skipped 不用跑 / login 登入中 / running 跑日常 / done 完成 /
+# failed 失敗 / stopped 手動停下
+DispatchRowState = Literal["pending", "skipped", "login", "running", "done", "failed", "stopped"]
+
+
+class DispatchRow(_Base):
+    character: str
+    state: DispatchRowState
+    pid: int | None = None  # the window it runs on
+    reason: str | None = None
+    started_at: float | None = None
+    ended_at: float | None = None
+
+
+class DispatchWindow(_Base):
+    pid: int
+    character: str | None = None  # who it is working on now
+    step: str | None = None
+    done: int = 0
+    problem: str | None = None  # why it took no (more) work
+
+
+class DispatchStatus(_Base):
+    running: bool
+    dry_run: bool = False
+    started_at: float | None = None
+    rows: list[DispatchRow] = []
+    windows: list[DispatchWindow] = []
+
+
+class DispatchRequest(_Base):
+    characters: list[str] = Field(min_length=1)
+    pids: list[int] = Field(min_length=1)  # the windows to use
+    # Log each one in, check it, log out: no daily run (tests the logins
+    # without spending the day's attempts).
+    dry_run: bool = False
+
+
 class CharacterRow(_Base):
     """Used inside WorldSnapshot — stats summary per char."""
 
