@@ -21,7 +21,7 @@ from services import item_catalog, skill_catalog, window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
 from services.daily import DailyQueueManager
-from services.dispatch import DispatchManager, hook_problem
+from services.dispatch import PING_PROTO, DispatchManager, hook_problem, ping_problem
 from services.login_flow import LoginFlow
 from services.login_screen import GameInput, ScreenReader
 from services.login_store import LoginStore
@@ -142,10 +142,17 @@ def _build_services(dev: bool) -> dict:
     screens = ScreenReader()
 
     def window_problem(pid: int) -> str | None:
-        if hook.status(pid) is None:
+        info = hook.status(pid)
+        if info is None:
             return "這個視窗沒有 hook"
         if daily.status(pid).running:
             return "這個視窗正在跑日常"
+        if info.proto >= PING_PROTO:
+            # v5 answers `ping` at the login screen too: a missing action
+            # module shows before a login is spent on it.
+            problem = ping_problem(lambda line: channel.send(pid, line))
+            if problem is not None:
+                return problem
         # At the 帳密 screen the hook does not answer `caps` (live 2026-10-07):
         # only a manifest already read rules a window out; the tower checks its
         # commands itself when it starts after the login.
@@ -155,7 +162,12 @@ def _build_services(dev: bool) -> dict:
         return None
 
     def hook_check(pid: int) -> str | None:
-        return hook_problem(lambda line: channel.send(pid, line), FEATURES["daily.tower"])
+        info = hook.status(pid)
+        return hook_problem(
+            lambda line: channel.send(pid, line),
+            FEATURES["daily.tower"],
+            ping=info is not None and info.proto >= PING_PROTO,
+        )
 
     dispatch = DispatchManager(
         logins,

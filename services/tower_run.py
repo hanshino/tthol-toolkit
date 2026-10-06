@@ -331,6 +331,8 @@ class TowerManager:
             missing = self._missing_commands(pid)
         except PipeGone:
             return False, "這個遊戲視窗沒有 hook 指令通道"
+        except (PipeBusy, NoReply):
+            return False, "hook 暫時沒有回應（還在登入或換地圖？），稍後再開始"
         if missing:
             return False, f"這個 hook 缺少登塔要用的指令：{'、'.join(missing)}"
         if not self._guard.running(pid):

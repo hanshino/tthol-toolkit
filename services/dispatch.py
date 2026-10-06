@@ -31,21 +31,48 @@ MAX_RUN_DROPS = 1  # disconnects while a character's 日常 runs before it count
 DROPPED = object()  # _attempt: the connection dropped, log the same character in again
 
 
+PING_PROTO = 5  # hooks from this protocol answer `ping` even at the login screens
+RELOAD_HINT = "這個視窗的 hook 沒有載入動作指令，請重新載入（reload）"
+
+
+def ping_problem(send: Callable[[str], dict]) -> str | None:
+    """Before a login, a v5+ hook (answers off the game loop):
+    {ok, v, actions, reloads, in_game}. Only a missing action module rules
+    the window out; not being in game is just the login screen."""
+    try:
+        reply = send("ping")
+    except Exception:
+        return "連不到這個視窗的 hook"
+    if not reply.get("ok"):
+        return f"hook 回報錯誤：{reply.get('error') or 'ping 沒有回應'}"
+    if not reply.get("actions"):
+        return RELOAD_HINT
+    return None
+
+
 def hook_problem(
     send: Callable[[str], dict],
     needed: tuple[str, ...],
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     wait: float = HOOK_WAIT,
+    ping: bool = False,
 ) -> str | None:
     """Why the hook in a freshly logged-in client cannot run a module, or None.
 
     `send(line)` is one hook command (raises when the pipe cannot be reached).
-    The hook answers nothing at the 帳密 screen, so this is asked after the
-    login. Its own errors are passed on in words the user can act on (live
-    2026-10-07: a hook whose action module was never loaded failed the tower
-    as "missing every command").
+    Asked after the login. Its own errors are passed on in words the user can
+    act on (live 2026-10-07: a hook whose action module was never loaded
+    failed the tower as "missing every command"). With `ping` (a v5+ hook),
+    a missing action module is known at once.
+
+    Waited out: "not in game" (v5: the game loop idle, e.g. a map loading) and
+    "dispatcher did not run" (a short stall).
     """
+    if ping:
+        problem = ping_problem(send)
+        if problem is not None:
+            return problem
     end = clock() + wait
     last = "hook 沒有回應"
     while True:
@@ -57,9 +84,11 @@ def hook_problem(
         if reply.get("ok"):
             break
         if "actions not loaded" in error:
-            return "這個視窗的 hook 沒有載入動作指令，請重新載入（reload）"
+            return RELOAD_HINT
         if error == "pipe":
             last = "連不到這個視窗的 hook"
+        elif error.startswith("not in game"):
+            last = "hook 回報還沒進入遊戲（畫面還在載入？）"
         elif "dispatcher did not run" in error:
             last = "hook 沒有回應指令（遊戲畫面沒在更新？）"
         else:

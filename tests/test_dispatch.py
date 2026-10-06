@@ -394,3 +394,30 @@ def test_two_disconnects_fail_the_character_and_move_on():
     assert out["甲"][0] == "failed" and "連線中斷" in out["甲"][1]
     assert out["乙"][0] == "done"
     assert [c for _, c in flow.logins].count("甲") == 2
+
+
+# ---- hook v5 (ping) -------------------------------------------------------------
+
+from services.dispatch import RELOAD_HINT, ping_problem  # noqa: E402
+
+
+def test_ping_rules_out_a_hook_without_its_action_module():
+    ready = hook({"ping": [{"ok": True, "v": 5, "actions": True, "in_game": False}]})
+    assert ping_problem(ready) is None  # at the login screen: fine
+    unloaded = hook({"ping": [{"ok": True, "v": 5, "actions": False, "in_game": False}]})
+    assert ping_problem(unloaded) == RELOAD_HINT
+    assert ping_problem(hook({"ping": [OSError("gone")]})) == "連不到這個視窗的 hook"
+
+
+def test_not_in_game_is_waited_out():
+    clock, sleep = clocked()
+    idle = [{"ok": False, "error": "not in game: the game loop is idle"}] * 3 + [{"ok": True}]
+    send = hook({"ping": [{"ok": True, "actions": True}], "status": idle, "caps": [CAPS]})
+    assert hook_problem(send, NEED, clock, sleep, ping=True) is None
+
+
+def test_a_v5_hook_without_actions_fails_at_once():
+    clock, sleep = clocked()
+    send = hook({"ping": [{"ok": True, "actions": False}], "status": [{"ok": True}]})
+    assert hook_problem(send, NEED, clock, sleep, ping=True) == RELOAD_HINT
+    assert clock() == 0.0

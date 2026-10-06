@@ -73,6 +73,9 @@ class HookCaps:
         Raises PipeGone / PipeBusy / NoReply when the hook cannot be asked.
         """
         reply = self._channel.send(pid, "caps")
+        if str(reply.get("error") or "").startswith("not in game"):
+            # v5 at the login screens: nothing to learn yet, read again later.
+            raise NoReply("not in game")
         commands = reply.get("commands") if reply.get("ok") else None
         names = (
             frozenset(c.get("cmd") for c in commands if isinstance(c, dict))
