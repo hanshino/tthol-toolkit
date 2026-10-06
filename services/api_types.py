@@ -396,6 +396,21 @@ class LoginEntryIn(_Base):
     sort: int = 0
 
 
+class HookPacketType(_Base):
+    sub_type: int
+    count: int
+    ago: float  # seconds since the last one
+
+
+class HookPackets(_Base):
+    """Inbound game packets the hook saw for one client, by sub-type (for
+    finding the heartbeat: a dropped connection stops all of them)."""
+
+    connected: bool
+    last_ago: float | None = None  # seconds since any packet
+    types: list[HookPacketType] = []
+
+
 class LoginForm(_Base):
     """加入自動登入 from a character in game: the name comes from the game."""
 

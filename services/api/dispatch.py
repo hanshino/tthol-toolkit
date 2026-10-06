@@ -1,5 +1,7 @@
 """帳號派發: the login list (secrets go in on save, never out) and the dispatch run."""
 
+import time
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
@@ -8,6 +10,8 @@ from services.api_types import (
     DispatchRequest,
     DispatchStatus,
     GuardStartResult,
+    HookPacketType,
+    HookPackets,
     LoginEntry,
     LoginEntryIn,
     LoginExportRequest,
@@ -105,6 +109,26 @@ async def save_character_login(pid: int, body: LoginForm, request: Request) -> L
         sort=old.sort if old else len(store.list()),
     )
     return store.save(entry)
+
+
+@router.get("/api/characters/{pid}/hook/packets", response_model=HookPackets)
+async def hook_packets(pid: int, request: Request) -> HookPackets:
+    hub = request.app.state.services.get("hook_hub")
+    if hub is None:
+        return HookPackets(connected=False)
+    now = time.time()
+    last, seen = hub.packets(pid)
+    return HookPackets(
+        connected=hub.status(pid) is not None,
+        last_ago=round(now - last, 1) if last else None,
+        types=sorted(
+            (
+                HookPacketType(sub_type=k, count=c, ago=round(now - t, 1))
+                for k, (c, t) in seen.items()
+            ),
+            key=lambda x: x.ago,
+        ),
+    )
 
 
 @router.get("/api/dispatch/plan", response_model=DispatchPlan)

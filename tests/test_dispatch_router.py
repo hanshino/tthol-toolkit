@@ -105,3 +105,19 @@ async def test_export_then_import_with_the_passphrase(client):
     assert same.json() == {"added": 0, "updated": 0, "skipped": 1}  # already here
     short = await client.post("/api/logins/export", json={"passphrase": "short"})
     assert short.status_code == 422
+
+
+async def test_hook_packets_by_sub_type():
+    from services.hook_hub import GAME_PACKET, HookHub
+
+    hub = HookHub(list_pids=lambda: [])
+    hub._ingest(1, {"t": "msg", "type": GAME_PACKET, "raw": "4a00"})
+    hub._ingest(1, {"t": "msg", "type": GAME_PACKET, "raw": "4a01"})
+    hub._ingest(1, {"t": "msg", "type": GAME_PACKET, "raw": "1100"})
+    last, seen = hub.packets(1)
+    assert last is not None and seen[0x4A][0] == 2 and seen[0x11][0] == 1
+    app = build_app(services={"hook_hub": hub})
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        body = (await ac.get("/api/characters/1/hook/packets")).json()
+    assert {t["sub_type"]: t["count"] for t in body["types"]} == {0x4A: 2, 0x11: 1}
+    assert body["last_ago"] is not None and body["connected"] is False

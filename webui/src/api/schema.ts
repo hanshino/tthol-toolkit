@@ -872,6 +872,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/hook/packets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hook Packets */
+        get: operations["hook_packets_api_characters__pid__hook_packets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dispatch/plan": {
         parameters: {
             query?: never;
@@ -2816,6 +2833,31 @@ export interface components {
         HookInfo: {
             /** Proto */
             proto: number;
+        };
+        /** HookPacketType */
+        HookPacketType: {
+            /** Sub Type */
+            sub_type: number;
+            /** Count */
+            count: number;
+            /** Ago */
+            ago: number;
+        };
+        /**
+         * HookPackets
+         * @description Inbound game packets the hook saw for one client, by sub-type (for
+         *     finding the heartbeat: a dropped connection stops all of them).
+         */
+        HookPackets: {
+            /** Connected */
+            connected: boolean;
+            /** Last Ago */
+            last_ago?: number | null;
+            /**
+             * Types
+             * @default []
+             */
+            types: components["schemas"]["HookPacketType"][];
         };
         /**
          * Inlay
@@ -5689,6 +5731,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoginEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hook_packets_api_characters__pid__hook_packets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HookPackets"];
                 };
             };
             /** @description Validation Error */
