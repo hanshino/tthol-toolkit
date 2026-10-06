@@ -206,3 +206,57 @@ def test_a_fast_walk_is_not_taken_for_a_teleport():
     game = FastGame(CHENGDU, (47, 168), {})
     run = _Run(nav_for(game), 7, None, lambda _t: None)
     assert run.walk_to((47, 120), CHENGDU) == "arrived"
+
+
+def _asking_nav(game, reply, arrives_after=None):
+    """manor unknown until `arrives_after` seconds past the `family` ask."""
+    clock = {"t": 0.0}
+    asked = []
+
+    def ask(pid):
+        asked.append(clock["t"])
+        return reply
+
+    def manor(pid):
+        if not asked or arrives_after is None or clock["t"] - asked[0] < arrives_after:
+            return None
+        return 1121
+
+    def sleep(ev, secs):
+        clock["t"] += secs
+        return False
+
+    nav = Navigator(
+        game,
+        lambda pid, fn: 120 if fn is read_level else (CHENGDU, "x"),
+        lambda *a: None,
+        manor=manor,
+        clock=lambda: clock["t"],
+        sleep=sleep,
+        ask_family=ask,
+    )
+    return nav, asked, clock
+
+
+def test_an_unknown_manor_is_asked_for_before_planning():
+    game = FakeGame(CHENGDU, (47, 168), {})
+    nav, asked, clock = _asking_nav(game, {"ok": True}, arrives_after=0.3)
+    run = _Run(nav, 7, None, lambda _t: None)
+    run.learn_manor()
+    assert asked == [0.0] and run.manor == 1121 and run.script.manor == 1121
+
+
+def test_no_family_reply_does_not_wait():
+    game = FakeGame(CHENGDU, (47, 168), {})
+    nav, asked, clock = _asking_nav(game, {"ok": False, "error": "no family"})
+    run = _Run(nav, 7, None, lambda _t: None)
+    run.learn_manor()
+    assert asked and run.manor is None and clock["t"] == 0.0
+
+
+def test_a_missing_0x31_gives_up_after_the_wait():
+    game = FakeGame(CHENGDU, (47, 168), {})
+    nav, asked, clock = _asking_nav(game, {"ok": True})
+    run = _Run(nav, 7, None, lambda _t: None)
+    run.learn_manor()
+    assert run.manor is None and 2.0 <= clock["t"] < 2.5

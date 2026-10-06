@@ -108,7 +108,14 @@ def _build_services(dev: bool) -> dict:
         info = family.get(wm.character_name(pid))
         return info.manor_id if info else None
 
-    navigator = Navigator(channel, wm.read_locked, read_stage_id, manor=manor)
+    def ask_family(pid: int) -> dict | None:
+        if "family" not in hook_caps.features(pid):
+            return None
+        return channel.send(pid, "family")
+
+    navigator = Navigator(
+        channel, wm.read_locked, read_stage_id, manor=manor, ask_family=ask_family
+    )
     tower = TowerManager(
         guard=guard,
         read_locked=wm.read_locked,

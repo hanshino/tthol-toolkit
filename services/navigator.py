@@ -62,6 +62,7 @@ DIALOG_WAIT = 20.0
 NPC_VIEW = 8  # tiles: closer than this, the NPC should be in `near`
 TOUCH_RADIUS = 3  # tiles between a click zone and its map object
 MAX_STEPS = 40
+FAMILY_WAIT = 2.0  # for the 0x31 a `family` ask brings (it lands in ~30 ms)
 EXIT_TRIES = 3  # walks to an exit zone before giving up on it
 # Click the target again every few seconds (random, like a player) even while
 # moving: a cast or a hit stops the walk short without it looking stalled yet.
@@ -107,8 +108,12 @@ class Navigator:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[threading.Event | None, float], bool] | None = None,
         rng: random.Random | None = None,
+        # pid -> the hook's `family` reply ({ok} / {ok: false, error}), or None
+        # when the client cannot ask; the 0x31 it brings lands in `manor`.
+        ask_family: Callable[[int], dict | None] | None = None,
     ) -> None:
         self._channel = channel
+        self._ask_family = ask_family
         self._read_locked = read_locked
         self._read_stage = read_stage
         self._manor = manor
@@ -208,7 +213,35 @@ class _Run:
 
     # -- the route ---------------------------------------------------------------
 
+    def learn_manor(self) -> None:
+        """No manor known yet: ask the hook for the family before planning, or a
+        family character takes the long road (live 2026-10-06: 檀泉別苑 rode to
+        天外天境 and walked six maps; the 0x31 with manor 1121 came 24 s later)."""
+        if self.manor is not None or self.nav._ask_family is None:
+            return
+        try:
+            reply = self.nav._ask_family(self.pid)
+        except Exception as e:
+            log.info(
+                "navigator pid=%d family ask failed: %s", self.pid, e, extra={"cat": "navigator"}
+            )
+            return
+        if not reply or not reply.get("ok"):
+            return  # no family, or the client cannot ask
+        deadline = self.nav._clock() + FAMILY_WAIT
+        while self.nav._clock() < deadline:
+            manor = self.nav._manor(self.pid)
+            if manor is not None:
+                self.manor = manor
+                self.script = rp._Script(rp._tables(), self.level, manor)
+                return
+            self.wait(0.1)
+        log.info(
+            "navigator pid=%d no 0x31 after the family ask", self.pid, extra={"cat": "navigator"}
+        )
+
     def go(self, dest: int, goal: Tile | None) -> NavResult:
+        self.learn_manor()
         for _ in range(MAX_STEPS):
             here, pos = self.settle()
             if here != dest and here in rp.manor_stages():
