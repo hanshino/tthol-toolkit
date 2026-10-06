@@ -14,7 +14,13 @@ step against what the game reports:
 - town / family: talk to the NPC and pick, at each menu, the option whose
   DB jump leads to the destination. The 家族總管 sends to the family's own
   manor; there the 家族馬夫 that has the destination stands in a room behind
-  a door.
+  a door. Started inside a manor, the map tells the manor (the family's 0x31
+  may not have come in), and the 家族馬夫 rides to whichever of its places
+  is closest to the destination.
+
+A walk that lands somewhere it was not going (a warp zone on the way to an
+NPC, a door into another room) is not an error: the route is planned again
+from where the character is.
 
 The position is always `near`'s own pixels / 40: `status.tile` keeps the
 pre-teleport tile after a teleport inside a map.
@@ -24,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 import threading
 import time
 from collections.abc import Callable
@@ -44,12 +51,22 @@ WALK_TIMEOUT = 120.0
 STALL_POLLS = 5  # no movement for this many polls: send the target again
 RESENDS = 5
 ARRIVE_SLACK = 2
-JUMP = 5  # tiles: further than this in one poll is a teleport
+# A teleport inside a map is told by the walkable region changing: walking
+# never crosses regions, and a door always does (its graph edge joins two).
+# Distance alone misleads both ways: a fast character (疾風身法) covers 5+
+# tiles a poll (live 2026-10-06), while some doors move only 2-4 tiles.
+# JUMP is the fallback on maps without walkability data.
+JUMP = 12  # tiles in one poll
 MAP_WAIT = 15.0  # after reaching an exit zone, for the map to change
 DIALOG_WAIT = 20.0
 NPC_VIEW = 8  # tiles: closer than this, the NPC should be in `near`
 TOUCH_RADIUS = 3  # tiles between a click zone and its map object
 MAX_STEPS = 40
+FAMILY_WAIT = 2.0  # for the 0x31 a `family` ask brings (it lands in ~30 ms)
+EXIT_TRIES = 3  # walks to an exit zone before giving up on it
+# Click the target again every few seconds (random, like a player) even while
+# moving: a cast or a hit stops the walk short without it looking stalled yet.
+RECLICK = (2.5, 5.0)
 SETTLE = 1.5  # after a map change, before reading `near` again
 
 
@@ -71,6 +88,10 @@ class _Stop(Exception):
         self.detail = detail
 
 
+class _Replan(Exception):
+    """The character ended up off the planned route: plan again from there."""
+
+
 def read_level(pm, hp_addr, _compat_mode) -> int | None:
     """等級 (HP-36) for WorkerManager.read_locked."""
     level = pm.read_int(hp_addr - 36)
@@ -86,12 +107,18 @@ class Navigator:
         manor: Callable[[int], int | None],  # pid -> family manor sestage id
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[threading.Event | None, float], bool] | None = None,
+        rng: random.Random | None = None,
+        # pid -> the hook's `family` reply ({ok} / {ok: false, error}), or None
+        # when the client cannot ask; the 0x31 it brings lands in `manor`.
+        ask_family: Callable[[int], dict | None] | None = None,
     ) -> None:
         self._channel = channel
+        self._ask_family = ask_family
         self._read_locked = read_locked
         self._read_stage = read_stage
         self._manor = manor
         self._clock = clock
+        self._rng = rng or random.Random()
         self._sleep = sleep or (lambda ev, s: ev.wait(s) if ev is not None else time.sleep(s))
 
     # -- entry -------------------------------------------------------------------
@@ -186,11 +213,43 @@ class _Run:
 
     # -- the route ---------------------------------------------------------------
 
+    def learn_manor(self) -> None:
+        """No manor known yet: ask the hook for the family before planning, or a
+        family character takes the long road (live 2026-10-06: 檀泉別苑 rode to
+        天外天境 and walked six maps; the 0x31 with manor 1121 came 24 s later)."""
+        if self.manor is not None or self.nav._ask_family is None:
+            return
+        try:
+            reply = self.nav._ask_family(self.pid)
+        except Exception as e:
+            log.info(
+                "navigator pid=%d family ask failed: %s", self.pid, e, extra={"cat": "navigator"}
+            )
+            return
+        if not reply or not reply.get("ok"):
+            return  # no family, or the client cannot ask
+        deadline = self.nav._clock() + FAMILY_WAIT
+        while self.nav._clock() < deadline:
+            manor = self.nav._manor(self.pid)
+            if manor is not None:
+                self.manor = manor
+                self.script = rp._Script(rp._tables(), self.level, manor)
+                return
+            self.wait(0.1)
+        log.info(
+            "navigator pid=%d no 0x31 after the family ask", self.pid, extra={"cat": "navigator"}
+        )
+
     def go(self, dest: int, goal: Tile | None) -> NavResult:
+        self.learn_manor()
         for _ in range(MAX_STEPS):
             here, pos = self.settle()
-            if here == self.manor and here != dest:
-                self.leave_manor(dest)
+            if here != dest and here in rp.manor_stages():
+                self.adopt_manor(here)
+                try:
+                    self.leave_manor(dest)
+                except _Replan:
+                    self.note("走到別的地方了，重新找路")
                 continue
             graph = rp.cached_graph(self.level, self.manor)
             route = rp.plan(graph, here, dest, pos, goal)
@@ -203,8 +262,34 @@ class _Run:
                 return NavResult(True, "arrived", f"抵達{self.name(dest)}", stage, tile)
             step = route.steps[0]
             self.note(self.describe(step))
-            self.take(step, here)
+            try:
+                self.take(step, here)
+            except _Replan:
+                self.note("走到別的地方了，重新找路")
         raise _Stop("stuck", "換圖次數太多，停止導航")
+
+    def adopt_manor(self, here: int) -> None:
+        """Standing in a manor: it is the family's (0x31 may be missing or old)."""
+        if self.manor == here:
+            return
+        log.info("navigator pid=%d takes manor %s from the map", self.pid, here)
+        self.manor = here
+        self.script = rp._Script(rp._tables(), self.level, here)
+
+    def region(self, stage: int | None, tile: Tile | None) -> int | None:
+        if stage is None or tile is None:
+            return None
+        kind = "sestage" if stage in rp.manor_stages() else "stage"
+        return rp._regions()(stage, tile, kind)
+
+    def off_route(self, stage: int, target: Tile) -> None:
+        """After a teleport on the way to `target`: replan unless still in its space."""
+        here, pos = self.settle()
+        if here != stage:
+            raise _Replan()
+        mine, theirs = self.region(here, pos), self.region(stage, target)
+        if mine is not None and theirs is not None and mine != theirs:
+            raise _Replan()
 
     def describe(self, step: rp.Step) -> str:
         to = self.name(step.dst)
@@ -216,18 +301,27 @@ class _Run:
         }[step.kind] + ("（點擊）" if step.touch else "")
 
     def take(self, step: rp.Step, here: int) -> None:
-        if step.kind in ("walk", "door"):
+        if step.kind == "door":
             if step.touch and self.touch_zone(step.at, here):
                 return
             r = self.walk_to(step.at, here, slack=0)
-            if r == "map":
+            if r == "map" or r == "jump" or self.jumped(self.me()):
                 return
-            if step.kind == "door":
-                if r == "jump" or self.jumped(self.me()):
+            raise _Stop("stuck", f"傳點 {step.at} 沒有傳送")
+        if step.kind == "walk":
+            if step.touch and self.touch_zone(step.at, here):
+                return
+            for _ in range(EXIT_TRIES):
+                r = self.walk_to(step.at, here, slack=0)
+                if r == "map":
+                    return  # the exit, or another one on the way: the next plan sorts it out
+                if r == "jump":
+                    self.off_route(here, step.at)
+                    continue  # a stale read: still in the exit's space
+                if self.wait_map(here, MAP_WAIT) is not None:
                     return
-                raise _Stop("stuck", f"傳點 {step.at} 沒有傳送")
-            if self.wait_map(here, MAP_WAIT) is None:
-                raise _Stop("stuck", f"走到出口 {step.at} 沒有換圖")
+                # Short of the zone (a bump stopped us): walk on.
+            raise _Stop("stuck", f"走到出口 {step.at} 沒有換圖")
         elif step.kind == "town":
             self.ride(step.npc_id, step.at, step.dst, here)
         else:
@@ -238,37 +332,70 @@ class _Run:
     def leave_manor(self, dest: int, horse: int | None = None) -> None:
         """In the family manor: through its door to the 家族馬夫 that has `dest`."""
         manor = self.manor
+        ride_to = dest
         if horse is None:
-            horse = next((h for d, _t, h in rp._family_dests(self.script) if d == dest), None)
+            ride_to, horse = self.nearest_ride(dest) or (dest, None)
         tile = _manor_npc_tile(manor, horse) if horse else None
         if horse is None or tile is None:
-            raise _Stop("no-route", f"莊園的家族馬夫不能去{self.name(dest)}")
+            raise _Stop("no-route", f"莊園的家族馬夫到不了{self.name(dest)}附近")
+        if ride_to != dest:
+            self.note(f"莊園的家族馬夫先送到{self.name(ride_to)}")
         pos = self.me()
         hops = rp.room_doors("sestage", manor, pos, tile) if pos else None
         for zone, _touch in hops or []:
             if self.walk_to(zone, None, slack=0) != "jump" and not self.jumped(self.me()):
                 raise _Stop("stuck", "莊園裡的門沒有傳送")
-        self.ride(horse, tile, dest, manor)
+        self.ride(horse, tile, ride_to, manor)
+
+    def nearest_ride(self, dest: int) -> tuple[int, int] | None:
+        """(place, 家族馬夫) in this manor whose ride leaves the least route to `dest`."""
+        t = rp._tables()
+        graph = rp.cached_graph(self.level, self.manor)
+        best: tuple[float, int, int] | None = None
+        for d, tag, horse in rp._family_dests(self.script):
+            if _manor_npc_tile(self.manor, horse) is None:
+                continue
+            if d == dest:
+                cost = 0.0
+            else:
+                route = rp.plan(graph, d, dest, t.middle(d, "trigger", tag))
+                if route is None:
+                    continue
+                cost = route.cost
+            if best is None or cost < best[0]:
+                best = (cost, d, horse)
+        return (best[1], best[2]) if best else None
 
     # -- moves -------------------------------------------------------------------
 
     def walk_to(self, tile: Tile, src: int | None, slack: int = ARRIVE_SLACK) -> str:
         """arrived / jump (teleported on this map) / map (the stage changed) / stuck.
-        A stalled walk is sent again."""
+        The target is clicked again every few seconds, and at once when the walk stalls."""
         line = f"walk {tile[0] * TILE_PX + TILE_PX // 2} {tile[1] * TILE_PX + TILE_PX // 2}"
+        start = self.me()  # so a zone on the very first steps still reads as a jump
+        space = src if src is not None else self.stage()
         for _ in range(WALK_TRIES):
             r = self.cmd(line)
             if r.get("ok") and r.get("path"):
                 break
             self.wait(0.5)
         end = self.nav._clock() + WALK_TIMEOUT
-        last, still, resends = None, 0, 0
+        last, still, resends = start, 0, 0
+        reclick = self.nav._clock() + self.nav._rng.uniform(*RECLICK)
         while self.nav._clock() < end:
             self.wait(POLL)
             if src is not None and self.stage() not in (src, None):
                 return "map"
             pos = self.me()
-            if pos and last and math.dist(pos, last) > JUMP:
+            if self.teleported(space, last, pos):
+                log.info(
+                    "walk jump pid=%d %s -> %s (%.1f tiles)",
+                    self.pid,
+                    last,
+                    pos,
+                    math.dist(last, pos),
+                    extra={"cat": "navigator"},
+                )
                 return "jump"  # a door / zone teleported us: the old target is stale
             if pos and max(abs(pos[0] - tile[0]), abs(pos[1] - tile[1])) <= max(slack, 0):
                 return "arrived"
@@ -283,6 +410,10 @@ class _Run:
                     return "stuck"
                 self.cmd(line)
                 still = 0
+            elif self.nav._clock() >= reclick:
+                self.cmd(line)
+            if self.nav._clock() >= reclick:
+                reclick = self.nav._clock() + self.nav._rng.uniform(*RECLICK)
         return "stuck"
 
     def reach(self, goal: Tile) -> bool:
@@ -298,13 +429,23 @@ class _Run:
                 return False
         return False
 
+    def teleported(self, stage: int | None, a: Tile | None, b: Tile | None) -> bool:
+        """Did going from `a` to `b` on `stage` take a door rather than steps?"""
+        if a is None or b is None or a == b:
+            return False
+        ra, rb = self.region(stage, a), self.region(stage, b)
+        if ra is not None and rb is not None:
+            return ra != rb
+        return math.dist(a, b) > JUMP
+
     def jumped(self, before: Tile | None) -> bool:
         """Wait for a teleport on this map: a jump between two reads (walking is
         2 tiles a poll at most; a door moves us across the map)."""
         last = before
+        space = self.stage()
         for _ in range(int(MAP_WAIT / 0.3)):
             p = self.me()
-            if p and last and math.dist(p, last) > JUMP:
+            if self.teleported(space, last, p):
                 return True
             last = p or last
             self.wait(0.3)
@@ -341,7 +482,7 @@ class _Run:
                 self.wait(SETTLE)
                 return True
             p = self.me()
-            if p and last and math.dist(p, last) > JUMP:
+            if self.teleported(here, last, p):
                 return True
             last = p or last
         raise _Stop("stuck", f"點了 {zone} 的物件沒有傳送")
@@ -365,9 +506,13 @@ class _Run:
         pos = self.me()
         if npc is None or (at and pos and math.dist(pos, at) > NPC_VIEW):
             if at:
-                for _ in range(3):  # a "jump" here can be a stale read: walk on
-                    if self.walk_to(at, here, slack=3) in ("arrived", "map", "stuck"):
+                for _ in range(3):
+                    r = self.walk_to(at, here, slack=3)
+                    if r == "map":
+                        raise _Replan()  # stepped on a warp on the way
+                    if r != "jump":
                         break
+                    self.off_route(here, at)  # a door into another room, or a stale read
             npc = self.find(npc_id)
         if npc is None:
             raise _Stop("stuck", f"找不到 NPC {npc_id}")

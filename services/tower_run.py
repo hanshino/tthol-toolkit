@@ -24,6 +24,9 @@ from typing import Callable
 from services.api_types import (
     AttackSkillCandidate,
     CombatRule,
+    DailyMetric,
+    DailySegment,
+    DailySummary,
     TowerConfig,
     TowerFloor,
     TowerLogEntry,
@@ -49,13 +52,23 @@ from services.combat import (
 )
 from services.game_input import leave_game
 from services.guard import GuardManager, GuardStore, read_holdings, read_learned, read_stage_id
+from services.hook_caps import FEATURES, HookCaps
 from services.hook_cmd import CommandChannel, NoReply, PipeBusy, PipeGone
 from services.tower import (
     FOX_AVOID,
     FOX_STAGE,
     LEAVE,
     LOBBY_STAGE,
+    ORB,
     ROOMS,
+    ENTER,
+    SKIP_BACK,
+    SKIP_LEVEL,
+    SKIP_OFFER,
+    SKIP_ORBS,
+    YAN_CHALLENGE,
+    skip_confirm,
+    skip_pick,
     TOO_LOW,
     YAN,
     YAN_AVOID,
@@ -75,7 +88,7 @@ RECORD_SECTION = "tower.record"
 ATTACK_PACKET = 0x43  # an attack landing: target key, attacker key, skill, hits
 # a cast starting: 10 <caster key> <u32 skill code> <tile x> <tile y> <target key> 01
 CAST_START_PACKET = 0x10
-TOWER_COMMANDS = ("status", "near", "walk", "attack", "cast", "talk", "dialog", "option", "next")
+TOWER_COMMANDS = FEATURES["daily.tower"]
 TILE_PX = 40
 LOGOUT_WAIT = 6.0  # after clicking 登出遊戲, for the character to leave the game
 POTION_EVERY = 1.0  # count the whitelisted potions this often while fighting
@@ -86,14 +99,18 @@ WAIT_BODIES = 0.3
 WAIT_MAP = 0.5  # own character not built yet after a map change
 IDLE_SWEEP = 3  # empty looks in a row before walking the spawn points
 SWEEP_WAIT = 8.0  # per spawn point, for a monster to show up
-EXIT_TRIES = 8
+EXIT_TRIES = 8  # exit bumps (one a tick) before giving the room another sweep
 EXIT_DIALOG = 2.0  # after stepping on the exit, for its dialog to open
+EXIT_SETTLE = 6.0  # after the exit dialog closed, for the teleport to show
 WALK_WAIT = 6.0
 TALK_WAIT = 40.0
 FOX_RETALK = 6.0  # after a fox talk, give the teleport this long before talking again
 CAPS_EVERY = 30.0  # re-read the hook's command list this often for the view
 BUFF_WAIT = 30.0  # at the 關 start, wait at most this long for the guard's buffs
 PIPE_RETRIES = 5  # a command pipe that is briefly unavailable (map load) is retried
+# missions 18913-18919 (神武玄天塔-辰星關 ...): sestage 1704-1710 in order.
+STAGE_NAMES = ("辰星關", "太白關", "熒惑關", "歲星關", "鎮星關", "冽星關", "颶星關")
+TITLE = "神武玄天塔"
 
 
 def own_tile(st: dict, objs: list[dict]) -> tuple[int, int]:
@@ -106,6 +123,42 @@ def own_tile(st: dict, objs: list[dict]) -> tuple[int, int]:
     if me is not None:
         return me["x"] // TILE_PX, me["y"] // TILE_PX
     return st["tile"][0], st["tile"][1]
+
+
+def _stage_name(floor: int) -> str:
+    i = (floor - 1) // ROOMS
+    return STAGE_NAMES[i] if 0 <= i < len(STAGE_NAMES) else TITLE
+
+
+def _ladder(
+    top: int, floor: int | None, state: str | None, stop_floor: int | None, skipped: int = 0
+) -> list[DailySegment]:
+    """The ten floors of the 關 being climbed (or last cleared): cleared up to
+    `top` (passed with 狐光靈珠 up to `skipped`), the current floor, the stop
+    floor; where it stopped on an error."""
+    ref = floor or (top + 1 if state == "stopped" else top) or None
+    if ref is None:
+        return []
+    first = (ref - 1) // ROOMS * ROOMS + 1
+    cells: list[DailySegment] = []
+    for f in range(first, first + ROOMS):
+        if f <= skipped:
+            cells.append("skipped")
+        elif f <= top:
+            cells.append("done")
+        elif floor is not None and f == floor:
+            cells.append("current")
+        elif state == "stopped" and f == top + 1:
+            cells.append("error")
+        elif f == stop_floor:
+            cells.append("target")
+        else:
+            cells.append("empty")
+    return cells
+
+
+def _target_metric(top: int, stop_floor: int | None) -> DailyMetric:
+    return DailyMetric(label="通過 / 目標", value=f"{top} / {stop_floor or '—'}", highlight=True)
 
 
 HIT_OFFSET = 92  # 命中, from the HP base (knowledge.json)
@@ -122,10 +175,14 @@ def read_hit_level(pm, hp_addr, _compat_mode) -> tuple[int, int] | None:
 
 
 class _Done(Exception):
-    def __init__(self, reason: str, phase: str = "info") -> None:
+    """Ends a run. `complete`: the climb is over for the day (stop floor, sent
+    out); anything else (an error, a potion stop) is picked up again later."""
+
+    def __init__(self, reason: str, phase: str = "info", complete: bool = False) -> None:
         super().__init__(reason)
         self.reason = reason
         self.phase = phase
+        self.complete = complete
 
 
 class _Line:
@@ -156,7 +213,10 @@ class _Run:
         self.cleared = False  # cleared at least one floor this run
         self.staged = False
         self.force_exit = False  # the spawn points were empty: try the exit anyway
-        self.room_open = False  # `room` holds until its exit goes through
+        self.room_seen: int | None = None  # another room seen once: confirmed on the next look
+        self.exit_try = 0  # exit bumps in this room
+        self.exit_closed_at: float | None = None  # clock the exit dialog went through
+        self.exit_leave: tuple[bool, str | None] | None = None  # (leave, potions short)
         self.idle = 0
         self.rot = Rotation()
         self.casts_seen = 0
@@ -171,6 +231,13 @@ class _Run:
         self.potions_at = -POTION_EVERY  # clock of the last potion count
         self.start_since: float | None = None  # clock we got to the 關 start
         self.navigated = False  # walked to 玄天之境 from elsewhere (once a run)
+        self.skip_tried = False  # 狐光靈珠 skips looked at (once a run, before entering)
+        self.moving = False  # the navigator is walking us to 玄天之境
+        self.user_stop = False  # stop() was called (the 日常 tab or the queue)
+        self.ended: str | None = None  # why it stopped, once it has
+        # done: the climb is over for the day; error: stopped on a problem
+        # (potions short too); user: stopped by hand.
+        self.outcome: str | None = None
 
 
 class TowerManager:
@@ -188,6 +255,7 @@ class TowerManager:
         wait: Callable[[threading.Event, float], bool] = lambda ev, secs: ev.wait(secs),
         leave_game: Callable[[int], bool] = leave_game,
         navigator=None,  # services.navigator.Navigator: walks to 玄天之境 from elsewhere
+        hook_caps: HookCaps | None = None,  # shared with the other modules
     ) -> None:
         self._leave_game = leave_game
         self._navigator = navigator
@@ -206,7 +274,7 @@ class TowerManager:
         self._wall = wall
         self._runs: dict[int, _Run] = {}
         self._lock = threading.Lock()
-        self._caps: dict[int, tuple[float, frozenset[str]]] = {}  # pid -> (clock, commands)
+        self._hook_caps = hook_caps or HookCaps(self._channel, clock)
 
     # -- API -----------------------------------------------------------------
 
@@ -275,7 +343,15 @@ class TowerManager:
         with self._lock:
             run = self._runs.get(pid)
         if run is not None:
+            if not run.stop.is_set():
+                run.user_stop = True
             run.stop.set()
+
+    def forget(self, pid: int) -> None:
+        """Another character on this window: stop the old one's climb, drop its log."""
+        self.stop(pid)
+        with self._lock:
+            self._runs.pop(pid, None)
 
     def shutdown(self) -> None:
         with self._lock:
@@ -382,6 +458,129 @@ class TowerManager:
             applied=applied,
         )
 
+    # -- 日常 module (services/daily.py) ----------------------------------------
+
+    key = "tower"
+    title = TITLE
+
+    def running(self, pid: int) -> bool:
+        with self._lock:
+            run = self._runs.get(pid)
+        return run is not None and run.thread is not None and run.thread.is_alive()
+
+    def outcome(self, pid: int) -> tuple[str, str] | None:
+        """How the last run ended, (done | error | user, reason); None while it
+        runs or when there was none."""
+        with self._lock:
+            run = self._runs.get(pid)
+        if run is None or self.running(pid):
+            return None
+        with run.lock:
+            return (run.outcome, run.ended or "") if run.outcome else None
+
+    def done_today(self, pid: int) -> bool:
+        name = self._character_name(pid)
+        return bool(name) and self._done_today(self._today_record(name))
+
+    def _today(self) -> str:
+        return time.strftime("%Y-%m-%d", time.localtime(self._wall()))
+
+    def _today_record(self, name: str) -> TowerRecord | None:
+        record = self._store.load_section(name, RECORD_SECTION, TowerRecord)
+        return record if record.date == self._today() else None
+
+    @staticmethod
+    def _done_today(record: TowerRecord | None) -> bool:
+        if record is None:
+            return False
+        return record.done if record.done is not None else record.top_floor > 0
+
+    def summary(self, pid: int) -> DailySummary:
+        """The overview card for this character's tower."""
+        name = self._character_name(pid)
+        base = DailySummary(module=self.key, title=self.title, state="idle")
+        if not name:
+            return base
+        record = self._today_record(name)
+        stop_floor = self._store.load_section(name, TOWER_SECTION, TowerConfig).stop_floor
+        top = record.top_floor if record else 0
+        skipped = record.skipped_to if record else 0
+        done_today = self._done_today(record)
+        with self._lock:
+            run = self._runs.get(pid)
+        live = run is not None and run.name == name and self.running(pid)
+        if run is not None and run.name == name and not live and run.outcome is None:
+            run = None  # never got going
+        if run is not None and (run.name != name or self._day(run.run_started) != self._today()):
+            run = None  # another character in this client, or yesterday's
+        if run is None:
+            state = "done_today" if done_today else "idle"
+            return base.model_copy(
+                update={
+                    "state": state,
+                    "headline": f"第 {top} 層" if top else None,
+                    "where": (
+                        "今天打完了"
+                        if done_today
+                        else f"今天打到第 {top} 層，可接續"
+                        if top
+                        else None
+                    ),
+                    "segments": _ladder(top, None, None, stop_floor, skipped),
+                    "step": record.ended if record else None,
+                    "metrics": [_target_metric(top, stop_floor)] if top else [],
+                    "result": f"{top} 層" if top else None,
+                    "done_today": done_today,
+                }
+            )
+        with run.lock:
+            stage, room = run.stage, run.room
+            floor = stage.floor(room) if stage and room else None
+            top = max([top, *(f.floor for f in run.floors)])
+            skipped = max([skipped, *(f.floor for f in run.floors if f.skipped)])
+            if live:
+                state = "moving" if run.moving else "running"
+                step = run.problem or run.step or "準備中"
+                kills, expect = run.kills, stage.expect.get(room, 0) if stage and room else 0
+                room_started = run.room_started
+            else:
+                state = {"done": "done", "error": "stopped"}.get(run.outcome, "idle")
+                step = run.ended
+        where = None
+        if live and run.moving:
+            where = "前往玄天之境"
+        elif live and floor is not None:
+            where = f"{_stage_name(floor)} · 第 {room} 房"
+        elif live:
+            where = "玄天之境"
+        elif top:
+            where = f"{_stage_name(top)} · 通過第 {top} 層"
+        metrics = []
+        if live and floor is not None:
+            metrics = [
+                DailyMetric(label="擊倒", value=f"{kills} / {expect}"),
+                DailyMetric(label="這一房", since=room_started),
+            ]
+        if top or stop_floor:
+            metrics.append(_target_metric(top, stop_floor))
+        shown = floor if live and floor is not None else top
+        return base.model_copy(
+            update={
+                "state": state,
+                "headline": f"第 {shown} 層" if shown else None,
+                "where": where,
+                "segments": _ladder(top, floor if live else None, state, stop_floor, skipped),
+                "step": step,
+                "metrics": metrics,
+                "result": f"{top} 層" if top else None,
+                "done_today": done_today,
+            }
+        )
+
+    @staticmethod
+    def _day(ts: float | None) -> str | None:
+        return time.strftime("%Y-%m-%d", time.localtime(ts)) if ts else None
+
     # -- helpers ---------------------------------------------------------------
 
     def _defs(self) -> dict[tuple[int, int], AttackSkill]:
@@ -399,15 +598,7 @@ class TowerManager:
 
         Raises PipeGone / PipeBusy / NoReply when the hook cannot be asked.
         """
-        now = self._clock()
-        cached = self._caps.get(pid)
-        if cached is not None and now - cached[0] < max_age:
-            have = cached[1]
-        else:
-            reply = self._channel.send(pid, "caps")
-            cmds = reply.get("commands", []) if reply.get("ok") else []
-            have = frozenset(c.get("cmd") for c in cmds)
-            self._caps[pid] = (now, have)
+        have = self._hook_caps.get(pid, max_age) or frozenset()
         return [c for c in TOWER_COMMANDS if c not in have]
 
     def _hook_ready(self, pid: int) -> bool:
@@ -415,8 +606,8 @@ class TowerManager:
         try:
             return self._missing_commands(pid, max_age=CAPS_EVERY) == []
         except (PipeGone, PipeBusy, NoReply):
-            cached = self._caps.get(pid)
-            return cached is not None and not [c for c in TOWER_COMMANDS if c not in cached[1]]
+            cached = self._hook_caps.cached(pid)
+            return cached is not None and not [c for c in TOWER_COMMANDS if c not in cached]
 
     def _skill_candidates(self, pid: int) -> list[AttackSkillCandidate]:
         try:
@@ -470,16 +661,24 @@ class TowerManager:
 
     def _loop(self, pid: int, run: _Run) -> None:
         self._note(run, "info", "開始登塔")
-        ended, phase = "已停止", "info"
+        ended, phase, complete = "已停止", "info", False
         try:
             while True:
                 self._wait(run, self._tick(pid, run))
         except _Done as done:
-            ended, phase = done.reason, done.phase
+            ended, phase, complete = done.reason, done.phase, done.complete
         except Exception:
             log.exception("tower loop failed pid=%d", pid, extra={"cat": "tower"})
             ended, phase = "登塔出錯停止（詳見診斷紀錄）", "error"
         finally:
+            if complete:
+                outcome = "done"
+            elif run.user_stop and phase != "error":
+                outcome = "user"
+            else:
+                outcome = "error"
+            with run.lock:
+                run.ended, run.outcome, run.moving = ended, outcome, False
             run.stop.set()
             self._note(run, phase, f"登塔結束：{ended}")
             self._save_record(run, ended)
@@ -489,10 +688,16 @@ class TowerManager:
         date = time.strftime("%Y-%m-%d", time.localtime(run.run_started or self._wall()))
         old = self._store.load_section(run.name, RECORD_SECTION, TowerRecord)
         top = max((f.floor for f in run.floors), default=0)
+        skipped = max((f.floor for f in run.floors if f.skipped), default=0)
+        done = run.outcome == "done"
         if old.date == date:
             top = max(top, old.top_floor)
+            skipped = max(skipped, old.skipped_to)
+            done = done or bool(old.done)
         self._store.save_section(
-            run.name, RECORD_SECTION, TowerRecord(date=date, top_floor=top, ended=ended)
+            run.name,
+            RECORD_SECTION,
+            TowerRecord(date=date, top_floor=top, ended=ended, done=done, skipped_to=skipped),
         )
 
     def _tick(self, pid: int, run: _Run) -> float:
@@ -513,7 +718,7 @@ class TowerManager:
         stage_id, stage_name = stage
         if stage_id == LOBBY_STAGE:
             if run.cleared:
-                raise _Done("被送出塔：等級不夠進下一層，或已經是最後一關")
+                raise _Done("被送出塔：等級不夠進下一層，或已經是最後一關", complete=True)
             return self._enter_lobby(pid, run)
         tower = self._tower(stage_id)
         if tower is None:
@@ -521,14 +726,12 @@ class TowerManager:
         if run.stage is None or run.stage.stage_id != stage_id:
             with run.lock:
                 run.stage, run.stage_name, run.room = tower, stage_name, None
-                run.room_open = False
             self._note(
                 run, "info", f"進入{stage_name}（第 {tower.floor(1)}–{tower.floor(ROOMS)} 層）"
             )
         objs = self._near(pid, run)
         tile = own_tile(st, objs)
         if tower.at_start(tile):
-            run.room_open = False
             return self._at_start(pid, run, tower)
         run.start_since = None
         return self._room_tick(pid, run, tower, st, tile, objs)
@@ -540,9 +743,17 @@ class TowerManager:
         run.navigated = True
         self._set_step(run, f"從{stage_name}前往玄天之境")
         self._note(run, "info", f"從{stage_name}導航到玄天之境")
-        result = self._navigator.go(
-            pid, LOBBY_STAGE, stop=run.stop, note=lambda text: self._set_step(run, text)
-        )
+        with run.lock:
+            run.moving = True
+        try:
+            # A buff cast stops the walk short of the exit: none while walking.
+            with self._guard.quiet(pid):
+                result = self._navigator.go(
+                    pid, LOBBY_STAGE, stop=run.stop, note=lambda text: self._set_step(run, text)
+                )
+        finally:
+            with run.lock:
+                run.moving = False
         if result.reason == "stopped":
             raise _Done("已停止")
         if not result.ok:
@@ -583,11 +794,93 @@ class TowerManager:
             yan = next((o for o in self._near(pid, run) if o.get("id") == YAN), None)
             if yan is None:
                 raise _Done("玄天之境找不到燕飄風", "error")
-        r = self._talk(pid, run, yan, YAN_WANT, YAN_AVOID)
+        r = None
+        if not run.skip_tried:
+            run.skip_tried = True
+            r = self._skip(pid, run, yan)
         if r != "map":
+            self._set_step(run, "和燕飄風對話進塔")
+            r = self._talk(pid, run, yan, YAN_WANT, YAN_AVOID)
+        if r != "map":
+            if any(f.skipped for f in run.floors):
+                # Skipped up to a 關 the level does not open: nothing left to climb.
+                top = max(f.floor for f in run.floors)
+                raise _Done(f"用狐光靈珠略過到第 {top} 層，等級不夠進下一關", complete=True)
             raise _Done(f"和燕飄風對話沒有進塔（{r}）", "error")
         self._note(run, "sent", "和燕飄風對話，進塔")
         return WAIT_MAP
+
+    def _orbs(self, pid: int) -> int | None:
+        """狐光靈珠 in the bag (what the dialog's item check counts)."""
+        try:
+            held = self._read_locked(pid, read_holdings)
+        except Exception:
+            held = None
+        return held[0].get(ORB, 0) if held else None
+
+    def _skip(self, pid: int, run: _Run, yan: dict) -> str | None:
+        """狐光靈珠: skip 關 up to config.skip_to before the day's first entry,
+        one talk per 關, as far as level and orbs allow (user, 2026-10-06); the
+        normal entry follows. "map" when a talk already took us in."""
+        target = run.config.skip_to
+        if not target:
+            return None
+        record = self._today_record(run.name)
+        passed = record.top_floor if record else 0
+        if passed % ROOMS:
+            return None  # a 關 is started today: the game skips only unstarted ones
+        for k in range(passed // ROOMS, min(target, len(SKIP_LEVEL))):
+            name = STAGE_NAMES[k]
+            try:
+                hit_level = self._read_locked(pid, read_hit_level)
+            except Exception:
+                hit_level = None
+            if hit_level and hit_level[1] < SKIP_LEVEL[k]:
+                self._note(
+                    run,
+                    "info",
+                    f"等級 {hit_level[1]} 不到 {SKIP_LEVEL[k]}，不能略過{name}，從這關開始打",
+                )
+                return None
+            orbs = self._orbs(pid)
+            if orbs is None:
+                self._note(run, "info", "讀不到背包裡的狐光靈珠，這次不略過")
+                return None
+            if orbs < SKIP_ORBS[k]:
+                self._note(
+                    run,
+                    "info",
+                    f"狐光靈珠剩 {orbs} 顆，略過{name}要 {SKIP_ORBS[k]} 顆，從這關開始打",
+                )
+                return None
+            self._set_step(run, f"用狐光靈珠略過{name}")
+            want = (YAN_CHALLENGE, SKIP_OFFER, skip_pick(k), skip_confirm(k))
+            # A refused skip loops back to the 關 list, which has no way out but
+            # a 關: pick it again, "reconsider", then "let me in".
+            back = (SKIP_BACK, ENTER, skip_pick(k))
+            r = self._talk(pid, run, yan, want, YAN_AVOID, once=True, fallback=back)
+            if r == "map":
+                self._note(run, "unconfirmed", f"略過{name}沒有成功，直接進塔從這關開始打")
+                return r
+            self._wait(run, 1.0)
+            after = self._orbs(pid)
+            if after is None or after >= orbs:
+                self._note(
+                    run,
+                    "unconfirmed",
+                    f"略過{name}沒有成功（{r}）：背包要 1 格空位、負重剩 5 以上，"
+                    "或這關今天已經開始打；從這關開始打",
+                )
+                return None
+            first = k * ROOMS + 1
+            with run.lock:
+                run.floors.extend(
+                    TowerFloor(floor=f, secs=0, skipped=True) for f in range(first, first + ROOMS)
+                )
+            self._note(
+                run, "confirmed", f"用狐光靈珠略過{name}（第 {first}–{first + ROOMS - 1} 層）"
+            )
+        return None
 
     # -- a room --------------------------------------------------------------------
 
@@ -665,11 +958,19 @@ class TowerManager:
     ) -> float:
         now = self._clock()
         self._check_logout(pid, run, now)
-        # Fixed from entering a room until its exit goes through (like tower.py):
-        # by an exit another room's start can be nearer than this room's own.
-        room = run.room if run.room_open else tower.room_of(tile)
-        if room != run.room or not run.room_open:
-            run.room_open = True
+        # The room is wherever the character stands, read every tick: an exit
+        # that goes through unseen (live 2026-10-06, floor 31: no dialog, and
+        # the bot kept bumping room 1's exit from room 2) is caught on the next look.
+        room = tower.room_of(tile)
+        if room != run.room:
+            if run.room is not None and run.room_seen != room:
+                run.room_seen = room  # one odd read is not a move: look again
+                return STEP
+            old = run.room
+            if old is not None and room == old + 1 and self._room_done(run, tower, old):
+                self._passed(run, tower, old)
+            elif old is not None:
+                self._note(run, "info", f"從第 {old} 房移到第 {room} 房")
             with run.lock:
                 run.room, run.killed, run.kills = room, set(), 0
                 run.room_started = self._wall()
@@ -677,11 +978,13 @@ class TowerManager:
                 run.rot = Rotation(margins=run.rot.margins)  # margins are per skill, not per room
                 run.force_exit = False
                 run.hits, run.hit_skills = {}, {}
+                run.exit_try, run.exit_closed_at, run.exit_leave = 0, None, None
             try:
                 run.learned = self._read_locked(pid, read_learned) or run.learned
             except Exception:
                 pass
             self._note(run, "info", f"第 {tower.floor(room)} 層（第 {room} 房）")
+        run.room_seen = None  # this read agrees with the room (or moved it)
         ids = tower.monsters.get(room, frozenset())
         mine = [o for o in objs if o.get("id") in ids]
         with run.lock:
@@ -809,57 +1112,85 @@ class TowerManager:
     def _finish_room(
         self, pid: int, run: _Run, tower: TowerStage, room: int, bodies: bool
     ) -> float:
+        """One step toward the next room a tick: stand off, wait out the bodies,
+        then one bump on the exit. The tick in between reads where we are, so a
+        teleport is seen whether or not its dialog was."""
         if not run.staged:
             run.staged = True
             self._set_step(run, "全部擊倒，等屍體消失")
             self._walk(pid, run, tower.staging(room), wait=False)
         if bodies:
             return WAIT_BODIES
+        now = self._clock()
+        if run.exit_closed_at is not None:
+            if now - run.exit_closed_at < EXIT_SETTLE:
+                return WAIT_MAP  # the dialog went through: the teleport shows next
+            run.exit_closed_at = None
         floor = tower.floor(room)
-        leave = run.config.stop_floor is not None and floor >= run.config.stop_floor
-        short = self._short_of_potions(pid, run, "leave")
-        if short:
-            leave = True
-            self._note(run, "info", f"{short}，過完這層就離開塔")
+        if run.exit_leave is None:
+            leave = run.config.stop_floor is not None and floor >= run.config.stop_floor
+            short = self._short_of_potions(pid, run, "leave")
+            if short:
+                leave = True
+                self._note(run, "info", f"{short}，過完這層就離開塔")
+            run.exit_leave = (leave, short)
+        leave, short = run.exit_leave
         self._set_step(run, "走向出口")
         r = self._bump_exit(pid, run, tower, room, leave)
+        if r == "closed" and not leave and room < ROOMS:
+            run.exit_closed_at = now
+            return WAIT_MAP
         if r in ("closed", "map", "left"):
-            secs = self._wall() - (run.room_started or self._wall())
-            with run.lock:
-                run.floors.append(TowerFloor(floor=floor, secs=round(secs, 1)))
-                run.cleared = True
-                run.room_open = False  # the next room is read from where we land
-            self._note(
-                run, "confirmed", f"第 {floor} 層通過（{int(secs) // 60}:{int(secs) % 60:02d}）"
-            )
+            # Logged now: past room 10 (a new 關) or out of the tower, the
+            # next tick reads another map and the room is gone.
+            self._passed(run, tower, room)
+            if r == "closed" and leave:
+                r = "left"
             if r == "left":
                 if short:
-                    raise _Done(f"打到第 {floor} 層，{short}，離開塔")
-                raise _Done(f"打到第 {floor} 層，照設定離開塔")
+                    # Not the day's end: restock and the tower picks up from here.
+                    raise _Done(f"打到第 {floor} 層，{short}，離開塔補給")
+                raise _Done(f"打到第 {floor} 層，照設定離開塔", complete=True)
             if r == "map" and room < ROOMS:
-                raise _Done(f"第 {floor} 層之後被送出塔（等級不夠進下一層？）")
+                raise _Done(f"第 {floor} 層之後被送出塔（等級不夠進下一層？）", complete=True)
             return WAIT_MAP
         if r == "low":
-            raise _Done(f"第 {floor} 層之後等級不夠進下一層")
+            raise _Done(f"第 {floor} 層之後等級不夠進下一層", complete=True)
         if r == "no-choice":
             raise _Done("出口對話沒有選項：背包滿或超重，清出空間後再開始", "error")
         if r == "stuck":
             raise _Done("出口對話的選項認不得，先停下來", "error")
-        self._note(run, "unconfirmed", "出口沒有反應，再試一次")
-        run.staged = run.force_exit = False
+        run.exit_try += 1
+        if run.exit_try % EXIT_TRIES == 0:
+            self._note(run, "unconfirmed", "出口沒有反應，再試一次")
+            run.staged = run.force_exit = False
         return STEP
 
+    def _room_done(self, run: _Run, tower: TowerStage, room: int) -> bool:
+        return (
+            run.kills >= tower.expect.get(room, 0)
+            or run.force_exit
+            or run.exit_closed_at is not None
+        )
+
+    def _passed(self, run: _Run, tower: TowerStage, room: int) -> None:
+        """Room `room` is behind us: log its floor."""
+        floor = tower.floor(room)
+        secs = self._wall() - (run.room_started or self._wall())
+        with run.lock:
+            run.floors.append(TowerFloor(floor=floor, secs=round(secs, 1)))
+            run.cleared = True
+        self._note(run, "confirmed", f"第 {floor} 層通過（{int(secs) // 60}:{int(secs) % 60:02d}）")
+
     def _bump_exit(self, pid: int, run: _Run, tower: TowerStage, room: int, leave: bool) -> str:
-        """Stand off, step onto each exit tile in turn; give each touch time to open the dialog."""
-        stand = tower.staging(room)
+        """Step onto one exit tile (the next one each try) and give it time to
+        open the dialog; back to the stand-off tile when it did not."""
         tiles = tower.exit_tiles(room)
-        for attempt in range(EXIT_TRIES):
-            self._walk(pid, run, tiles[attempt % len(tiles)])
-            r = self._dialog(pid, run, (), frozenset({LEAVE}), EXIT_DIALOG, leave=leave)
-            if r != "none":
-                return r
-            self._walk(pid, run, stand)
-        return "none"
+        self._walk(pid, run, tiles[run.exit_try % len(tiles)])
+        r = self._dialog(pid, run, (), frozenset({LEAVE}), EXIT_DIALOG, leave=leave)
+        if r == "none":
+            self._walk(pid, run, tower.staging(room))
+        return r
 
     # -- moving and talking ------------------------------------------------------------
 
@@ -881,16 +1212,32 @@ class TowerManager:
             if abs(t[0] - tile[0]) <= 1 and abs(t[1] - tile[1]) <= 1:
                 return
 
-    def _talk(self, pid: int, run: _Run, npc: dict, want, avoid) -> str:
+    def _talk(self, pid: int, run: _Run, npc: dict, want, avoid, **kw) -> str:
         self._cmd(pid, run, f"talk {npc['h']}")
-        return self._dialog(pid, run, want, avoid, TALK_WAIT)
+        return self._dialog(pid, run, want, avoid, TALK_WAIT, **kw)
 
-    def _dialog(self, pid: int, run: _Run, want, avoid, timeout: float, leave: bool = False) -> str:
-        """Drive the dialog by jump id. map / closed / no-choice / low / stuck / none / timeout."""
+    def _dialog(
+        self,
+        pid: int,
+        run: _Run,
+        want,
+        avoid,
+        timeout: float,
+        leave: bool = False,
+        once: bool = False,
+        fallback: tuple[int, ...] = (),
+    ) -> str:
+        """Drive the dialog by jump id. map / closed / no-choice / low / stuck / none / timeout.
+
+        `once`: each wanted id is chosen at most once; when the dialog offers
+        one again (it looped back), only `fallback` ids are chosen from then on.
+        """
         st = self._cmd(pid, run, "status")
         me0 = st.get("self")
         end = self._clock() + timeout
         seen = chose = False
+        picked: set[int] = set()
+        fell_back = False
         while self._clock() < end:
             self._wait(run, 0.2)
             st = self._cmd(pid, run, "status")
@@ -911,9 +1258,15 @@ class TowerManager:
                     self._cmd(pid, run, f"option {options.index(LEAVE)}")
                     self._wait(run, 2.0)
                     return "left"
-                i = pick_option(options, want, avoid)
+                if once:
+                    if not fell_back and any(o in picked for o in options):
+                        want, fell_back = fallback, True  # looped back: refused
+                    i = next((options.index(w) for w in want if w in options), None)
+                else:
+                    i = pick_option(options, want, avoid)
                 if i is None:
                     return "stuck"
+                picked.add(options[i])
                 self._cmd(pid, run, f"option {i}")
                 chose = True
                 continue

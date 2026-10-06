@@ -668,6 +668,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** View */
+        get: operations["view_api_characters__pid__daily_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/daily/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Queue */
+        put: operations["put_queue_api_characters__pid__daily_queue_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/daily/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_characters__pid__daily_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/daily/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__daily_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/daily/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Batch
+         * @description Start the ticked characters' queues, all at once.
+         *
+         *     Each start asks its hook pipe for `caps`; off the event loop and side by
+         *     side, so one wedged pipe neither stalls the world tick nor the others.
+         */
+        post: operations["start_batch_api_daily_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/daily/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop All */
+        post: operations["stop_all_api_daily_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/walk": {
         parameters: {
             query?: never;
@@ -1505,6 +1613,11 @@ export interface components {
             target: "self" | "ally" | "group";
             /** Active */
             active: boolean;
+            /**
+             * Superseded
+             * @default false
+             */
+            superseded: boolean;
             /** Expires At */
             expires_at?: number | null;
             /** Icon Url */
@@ -1609,6 +1722,12 @@ export interface components {
             last_error?: components["schemas"]["ErrorInfo"] | null;
             hook?: components["schemas"]["HookInfo"] | null;
             family?: components["schemas"]["FamilyInfo"] | null;
+            daily?: components["schemas"]["DailyStatus"] | null;
+            /**
+             * Features
+             * @default []
+             */
+            features: string[];
         };
         /** CharacterStats */
         CharacterStats: {
@@ -1768,6 +1887,125 @@ export interface components {
         CreateAccountRequest: {
             /** Name */
             name: string;
+        };
+        /** DailyBatchRequest */
+        DailyBatchRequest: {
+            /** Pids */
+            pids: number[];
+        };
+        /** DailyMetric */
+        DailyMetric: {
+            /** Label */
+            label: string;
+            /** Value */
+            value?: string | null;
+            /** Since */
+            since?: number | null;
+            /**
+             * Highlight
+             * @default false
+             */
+            highlight: boolean;
+        };
+        /** DailyModuleInfo */
+        DailyModuleInfo: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * DailyQueueConfig
+         * @description A character's 日常 list, in run order (module keys).
+         */
+        DailyQueueConfig: {
+            /**
+             * Modules
+             * @default [
+             *       "tower"
+             *     ]
+             */
+            modules: string[];
+        };
+        /** DailyQueueItem */
+        DailyQueueItem: {
+            /** Module */
+            module: string;
+            /** Title */
+            title: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "moving" | "running" | "done" | "skipped" | "error" | "halted";
+            /** Result */
+            result?: string | null;
+        };
+        /** DailyStartResult */
+        DailyStartResult: {
+            /** Pid */
+            pid: number;
+            /** Ok */
+            ok: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** DailyStatus */
+        DailyStatus: {
+            /** Running */
+            running: boolean;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["DailyQueueItem"][];
+            card: components["schemas"]["DailySummary"];
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * DailySummary
+         * @description What one module (or the whole queue) reports for the overview card.
+         *
+         *     The overview renders only this shape and knows no module.
+         */
+        DailySummary: {
+            /** Module */
+            module?: string | null;
+            /** Title */
+            title: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "moving" | "running" | "done" | "stopped" | "done_today";
+            /** Headline */
+            headline?: string | null;
+            /** Where */
+            where?: string | null;
+            /**
+             * Segments
+             * @default []
+             */
+            segments: ("empty" | "done" | "skipped" | "current" | "target" | "error")[];
+            /** Step */
+            step?: string | null;
+            /** Metrics */
+            metrics?: components["schemas"]["DailyMetric"][];
+            /** Result */
+            result?: string | null;
+            /**
+             * Done Today
+             * @default false
+             */
+            done_today: boolean;
+        };
+        /** DailyView */
+        DailyView: {
+            config: components["schemas"]["DailyQueueConfig"];
+            /** Modules */
+            modules: components["schemas"]["DailyModuleInfo"][];
+            status: components["schemas"]["DailyStatus"];
         };
         /** DamageBuff */
         DamageBuff: {
@@ -2121,6 +2359,11 @@ export interface components {
              * @default false
              */
             hero: boolean;
+            /**
+             * Travel
+             * @default false
+             */
+            travel: boolean;
         };
         /**
          * GuardConfig
@@ -2143,7 +2386,8 @@ export interface components {
             /**
              * @default {
              *       "skills": [],
-             *       "hero": false
+             *       "hero": false,
+             *       "travel": false
              *     }
              */
             buff: components["schemas"]["GuardBuffRule"];
@@ -2287,7 +2531,8 @@ export interface components {
              *       },
              *       "buff": {
              *         "hero": false,
-             *         "skills": []
+             *         "skills": [],
+             *         "travel": false
              *       }
              *     }
              */
@@ -3154,6 +3399,8 @@ export interface components {
             logout_hp_at: number;
             /** Logout Mp At */
             logout_mp_at?: number | null;
+            /** Skip To */
+            skip_to?: number | null;
         };
         /**
          * TowerEstimate
@@ -3195,6 +3442,11 @@ export interface components {
             floor: number;
             /** Secs */
             secs: number;
+            /**
+             * Skipped
+             * @default false
+             */
+            skipped: boolean;
         };
         /** TowerLogEntry */
         TowerLogEntry: {
@@ -3225,6 +3477,13 @@ export interface components {
             top_floor: number;
             /** Ended */
             ended?: string | null;
+            /** Done */
+            done?: boolean | null;
+            /**
+             * Skipped To
+             * @default 0
+             */
+            skipped_to: number;
         };
         /** TowerSettings */
         TowerSettings: {
@@ -3295,7 +3554,8 @@ export interface components {
             config: components["schemas"]["TowerConfig"];
             /**
              * @default {
-             *       "top_floor": 0
+             *       "top_floor": 0,
+             *       "skipped_to": 0
              *     }
              */
             record: components["schemas"]["TowerRecord"];
@@ -4672,6 +4932,187 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_api_characters__pid__daily_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_queue_api_characters__pid__daily_queue_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailyQueueConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyQueueConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_characters__pid__daily_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__daily_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_batch_api_daily_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DailyBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyStartResult"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_all_api_daily_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
                 };
             };
         };

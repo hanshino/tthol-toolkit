@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import type { CharacterRow } from '../../api/types';
-import { isStopped, isUnlocated, type CharTab, type GlobalView } from '../../nav';
+import { can, isStopped, isUnlocated, type CharTab, type GlobalView } from '../../nav';
 import { AutoClickTab } from './AutoClickTab';
 import { GuardPanel } from './GuardPanel';
 import { BodyTab } from './BodyTab';
@@ -23,10 +23,13 @@ const TABS: { k: CharTab; n: string; s: string }[] = [
   { k: 'market', n: '市集', s: '攤位調查' },
   { k: 'damage', n: '戰錄', s: '傷害 · DPS' },
   { k: 'assist', n: '輔助', s: '守護 · 英雄培養' },
-  { k: 'daily', n: '日常', s: '玄天塔' },
 ];
-// Only for a client whose hook pipe is connected.
-const CHAT_TAB = { k: 'chat' as const, n: '傳音', s: '聊天' };
+// Only when the client's hook allows the feature (see `can`): 日常 walks,
+// fights and talks through hook commands, 傳音 reads its chat packets.
+const HOOK_TABS: { k: CharTab; n: string; s: string; feature: string }[] = [
+  { k: 'daily', n: '日常', s: '玄天塔', feature: 'daily.' },
+  { k: 'chat', n: '傳音', s: '聊天', feature: 'chat' },
+];
 
 export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
   char: CharacterRow; goneSince: number | null; tab: CharTab;
@@ -43,7 +46,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
   const visited = useRef(new Set<CharTab>());
   visited.current.add(tab);
   // Once opened it stays even if the hook drops, so it does not vanish under the user.
-  const tabs = char.hook || visited.current.has('chat') ? [...TABS, CHAT_TAB] : TABS;
+  const tabs = [...TABS, ...HOOK_TABS.filter(t => can(char, t.feature) || visited.current.has(t.k))];
 
   return (
     <div className="ws">

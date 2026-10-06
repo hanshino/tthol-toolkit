@@ -12,6 +12,7 @@ from services.api import autoclick as autoclick_module
 from services.api import guard as guard_module
 from services.api import item_rules as item_rules_module
 from services.api import tower as tower_module
+from services.api import daily as daily_module
 from services.api import walk as walk_module
 from services.api import backup as backup_module
 from services.api import characters as characters_module
@@ -128,6 +129,7 @@ def build_app(services: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(guard_module.router)
     app.include_router(item_rules_module.router)
     app.include_router(tower_module.router)
+    app.include_router(daily_module.router)
     app.include_router(walk_module.router)
     app.include_router(keep_active_module.router)
     app.include_router(damage_module.router)

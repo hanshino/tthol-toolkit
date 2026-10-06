@@ -19,7 +19,7 @@ type Rule = {
   hp_pct: number; mp_pct: number; hp_items: number[]; mp_items: number[];
   pet_refill: boolean; refill_below: number; refill_summon: boolean; refill_qty: number;
 };
-type Cfg = { potion: Rule; buff: { skills: number[]; hero: boolean } };
+type Cfg = { potion: Rule; buff: { skills: number[]; hero: boolean; travel: boolean } };
 
 const toCfg = (c?: GuardConfig): Cfg => ({
   potion: {
@@ -32,7 +32,7 @@ const toCfg = (c?: GuardConfig): Cfg => ({
     refill_summon: c?.potion.refill_summon ?? true,
     refill_qty: c?.potion.refill_qty ?? 200,
   },
-  buff: { skills: c?.buff?.skills ?? [], hero: c?.buff?.hero ?? false },
+  buff: { skills: c?.buff?.skills ?? [], hero: c?.buff?.hero ?? false, travel: c?.buff?.travel ?? false },
 });
 
 // This run's counts for the log header; only what happened, so it stays short.
@@ -216,6 +216,8 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
         onSkills={next => update({ ...cfg, buff: { ...cfg.buff, skills: next } })}
         hero={cfg.buff.hero}
         onHero={on => update({ ...cfg, buff: { ...cfg.buff, hero: on } })}
+        travel={cfg.buff.travel}
+        onTravel={on => update({ ...cfg, buff: { ...cfg.buff, travel: on } })}
       />
 
       <section className="gd-panel">
@@ -318,13 +320,33 @@ const TARGET_LABEL: Record<BuffSkillCandidate['target'], string> = { self: '自�
 
 // buff 維持: tick the learned buff skills to keep up. A ticked skill is cast
 // on the character when its buff is gone or about to end.
-function BuffSection({ skills, candidates, onSkills, hero, onHero }: {
+// 趕路 buff (無名島), cast in this order while a module walks the character
+// (services/guard.TRAVEL_SKILLS): 黯影 below Lv7 ends when the character moves.
+const TRAVEL_SKILLS = [
+  { id: 269, min: 1 }, // 疾風身法
+  { id: 270, min: 7 }, // 黯影
+];
+
+function BuffSection({ skills, candidates, onSkills, hero, onHero, travel, onTravel }: {
   skills: number[];
   candidates: BuffSkillCandidate[];
   onSkills: (v: number[]) => void;
   hero: boolean;
   onHero: (on: boolean) => void;
+  travel: boolean;
+  onTravel: (on: boolean) => void;
 }) {
+  const [showOld, setShowOld] = useState(false);
+  const learnedTravel = TRAVEL_SKILLS.flatMap(t => {
+    const c = candidates.find(x => x.magic_id === t.id);
+    return c ? [{ ...t, c }] : [];
+  });
+  const usable = learnedTravel.filter(t => t.c.level >= t.min);
+  const tooLow = learnedTravel.filter(t => t.c.level < t.min);
+  // A lower tier of a learned skill (冰心訣 under 冰心靈訣) is folded away
+  // unless it is ticked.
+  const folded = candidates.filter(c => c.superseded && !skills.includes(c.magic_id));
+  const shown = showOld ? candidates : candidates.filter(c => !folded.includes(c));
   const now = Date.now() / 1000;
   const toggle = (id: number, on: boolean) =>
     onSkills(on ? [...skills, id] : skills.filter(x => x !== id));
@@ -342,7 +364,7 @@ function BuffSection({ skills, candidates, onSkills, hero, onHero }: {
         <div className="gd-dim">讀不到角色的技能，或沒有可以對自己施放的 buff 技能。</div>
       ) : (
         <ul className="gd-cures">
-          {candidates.map(c => {
+          {shown.map(c => {
             const on = skills.includes(c.magic_id);
             const id = `gd-buff-${c.magic_id}`;
             const left = c.expires_at != null ? Math.max(0, Math.round(c.expires_at - now)) : null;
@@ -365,6 +387,11 @@ function BuffSection({ skills, candidates, onSkills, hero, onHero }: {
           })}
         </ul>
       )}
+      {folded.length > 0 && (
+        <button type="button" className="gd-add" aria-expanded={showOld} onClick={() => setShowOld(v => !v)}>
+          {showOld ? '收起低階技能' : `顯示 ${folded.length} 個已被高階取代的技能`}
+        </button>
+      )}
       <ul className="gd-cures gd-hero">
         <li>
           <input id="gd-hero" type="checkbox" checked={hero} onChange={e => onHero(e.target.checked)} />
@@ -373,6 +400,28 @@ function BuffSection({ skills, candidates, onSkills, hero, onHero }: {
             <span className="gd-cure-st">英雄變身結束就再開（不提前續）</span>
           </label>
         </li>
+        {learnedTravel.length > 0 && (
+          <li className={usable.length ? undefined : 'is-out'}>
+            <input
+              id="gd-travel"
+              type="checkbox"
+              checked={travel && usable.length > 0}
+              disabled={usable.length === 0}
+              onChange={e => onTravel(e.target.checked)}
+            />
+            <label
+              htmlFor="gd-travel"
+              title="日常模組跨地圖走路時，其他 buff 和變身都不放，只補趕路 buff；藥水照喝。施放任何技能都會解除黯影，所以疾風身法到期重放後會再補黯影"
+            >
+              <span className="gd-name">導航時開趕路 buff</span>
+              <span className="gd-cure-st">
+                {usable.length > 0 && `依序補 ${usable.map(t => t.c.name).join(' → ')}`}
+                {usable.length > 0 && tooLow.length > 0 && '；'}
+                {tooLow.map(t => `${t.c.name} Lv${t.min} 起才能邊走邊用（目前 Lv${t.c.level}）`).join('；')}
+              </span>
+            </label>
+          </li>
+        )}
       </ul>
       <div className="gd-fixed">
         <span>每次施放至少間隔 2 秒</span>

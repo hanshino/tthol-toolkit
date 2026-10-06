@@ -66,3 +66,104 @@ def test_rescan_rejects_dead_pid(mock_find):
     result = wm.rescan(9999)
     assert result.ok is False
     assert "not running" in (result.error or "").lower()
+
+
+class _Keep:
+    def __init__(self):
+        self.started, self.stopped = [], []
+
+    def start(self, pid):
+        self.started.append(pid)
+
+    def stop(self, pid):
+        self.stopped.append(pid)
+
+
+@patch("services.worker_manager.threading.Thread")
+@patch("services.worker_manager.CharSession")
+@patch("services.worker_manager.find_tthol_processes")
+def test_keep_active_starts_once_when_located_and_stops_when_gone(
+    mock_find, mock_sess_cls, mock_thread
+):
+    # Run the "background" start inline.
+    mock_thread.side_effect = lambda target, args, **_: type(
+        "T", (), {"start": lambda self: target(*args)}
+    )()
+    mock_find.return_value = [{"pid": 7}]
+    sess = mock_sess_cls.return_value
+    sess.row.return_value = None
+    sess.link, sess.last_error, sess.name = "weak", None, ""
+    wm = WorkerManager()
+    keep = _Keep()
+    wm.set_keep_active(keep)
+    wm.world_snapshot()
+    assert keep.started == []  # not located yet: no window to keep
+    sess.name = "寒江孤影"
+    wm.world_snapshot()
+    wm.world_snapshot()
+    assert keep.started == [7]  # once: a manual stop afterwards sticks
+    mock_find.return_value = []
+    wm.world_snapshot()
+    assert keep.stopped == [7]
+
+
+@patch("services.worker_manager.CharSession")
+@patch("services.worker_manager.find_tthol_processes")
+def test_another_character_on_the_window_makes_modules_forget(mock_find, mock_sess_cls):
+    mock_find.return_value = [{"pid": 7}]
+    sess = mock_sess_cls.return_value
+    sess.row.return_value = None
+    sess.link, sess.last_error, sess.name = "weak", None, "寒江孤影"
+    wm = WorkerManager()
+    forgot = []
+    wm.add_forget(forgot.append)
+    wm.world_snapshot()
+    sess.name = ""  # logged out, at the character select: no switch yet
+    wm.world_snapshot()
+    sess.name = "寒江孤影"  # the same one back: nothing to forget
+    wm.world_snapshot()
+    sess.name = ";w9w"  # one garbage read mid-login
+    wm.world_snapshot()
+    sess.name = "寒江孤影"
+    wm.world_snapshot()
+    assert forgot == []
+    sess.name = "赫斯提雅"
+    wm.world_snapshot()
+    wm.world_snapshot()
+    assert forgot == [7]
+    mock_find.return_value = []  # the window closes
+    wm.world_snapshot()
+    assert forgot == [7, 7]
+
+
+@patch("services.worker_manager.threading.Thread")
+@patch("services.worker_manager.CharSession")
+@patch("services.worker_manager.find_tthol_processes")
+def test_family_is_asked_once_per_login_where_the_hook_has_it(
+    mock_find, mock_sess_cls, mock_thread
+):
+    mock_thread.side_effect = lambda target, args, **_: type(
+        "T", (), {"start": lambda self: target(*args)}
+    )()
+    mock_find.return_value = [{"pid": 7}]
+    sess = mock_sess_cls.return_value
+    sess.row.return_value = None
+    sess.link, sess.last_error, sess.name = "weak", None, ""
+    feats = {"now": ["chat"]}
+    caps = type("C", (), {"features": lambda self, pid: feats["now"]})()
+    asked = []
+    wm = WorkerManager()
+    wm.set_hook_caps(caps)
+    wm.set_family_query(lambda pid: asked.append(pid) or {"ok": True})
+    wm.world_snapshot()
+    sess.name = "寒江孤影"
+    wm.world_snapshot()
+    assert asked == []  # this hook has no `family`
+    feats["now"] = ["chat", "family"]
+    wm.world_snapshot()
+    wm.world_snapshot()
+    assert asked == [7]  # once, not polled
+    sess.name = "赫斯提雅"
+    wm.world_snapshot()
+    wm.world_snapshot()  # a new name is trusted on its second read
+    assert asked == [7, 7]  # a new login on the window

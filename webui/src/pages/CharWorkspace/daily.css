@@ -22,7 +22,7 @@ button.dl-btn:focus-visible { outline: 1px solid var(--tt-accent); outline-offse
 
 .dl-combat { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; }
 .dl-check { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
-.dl-check input { margin: 0; width: 15px; height: 15px; accent-color: var(--tt-accent); cursor: pointer; }
+.dl-check input { margin: 0; width: 15px; height: 15px; cursor: pointer; }
 .dl-pick { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--tt-line-soft); align-items: end; }
 .dl-check.dl-check-inline { grid-column: auto; min-height: 32px; }
 .dl-field { display: grid; gap: 4px; min-width: 0; font-size: 12px; color: var(--tt-mute); }
@@ -40,3 +40,21 @@ button.dl-btn.dl-btn-sm { min-height: 32px; padding: 4px 12px; font-size: 12.5px
 .dl-estimate { margin-top: 8px; padding: 8px 12px; border-left: 2px solid var(--tt-accent); background: rgba(90, 136, 152, 0.08); font-size: 12.5px; line-height: 1.6; color: var(--tt-text); }
 .dl-estimate.is-warn { border-left-color: var(--tt-warn); background: rgba(212, 176, 114, 0.06); }
 
+
+.dl-queue { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.dl-queue li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 10px; border: 1px solid var(--tt-line-soft); background: var(--tt-bg); font-size: 13px; }
+.dl-queue li.gd-dim { display: block; }
+.dl-queue-n { font-family: var(--tt-font-mono); color: var(--tt-mute); }
+.dl-queue-t { font-family: var(--tt-font-serif); letter-spacing: 2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-queue-s { font-size: 12px; color: var(--tt-dim); white-space: nowrap; }
+.dl-queue-a { display: inline-flex; gap: 4px; }
+.dl-queue li[data-s="running"], .dl-queue li[data-s="moving"] { border-color: var(--tt-gold); }
+.dl-queue li[data-s="running"] .dl-queue-s, .dl-queue li[data-s="moving"] .dl-queue-s { color: var(--tt-gold); }
+.dl-queue li[data-s="done"] .dl-queue-s, .dl-queue li[data-s="skipped"] .dl-queue-s { color: var(--tt-ok); }
+.dl-queue li[data-s="error"] { border-color: var(--tt-bad); }
+.dl-queue li[data-s="error"] .dl-queue-s { color: var(--tt-bad); }
+.dl-queue li[data-s="halted"] { border-style: dashed; }
+.dl-select { font: inherit; font-size: 12.5px; min-height: 32px; background: var(--tt-bg); color: var(--tt-text); border: 1px solid var(--tt-line); padding: 4px 8px; }
+.dl-ladder li.is-skip { border-color: var(--tt-accent-dim); border-style: dashed; background: rgba(90, 136, 152, 0.05); }
+.dl-ladder li.is-skip b { color: var(--tt-accent); }
+.dl-skip { margin-top: 10px; }

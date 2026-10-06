@@ -20,7 +20,9 @@ from services import diagnostics
 from services import item_catalog, skill_catalog, window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
+from services.daily import DailyQueueManager
 from services.family import FAMILY_PACKET, FamilyTracker
+from services.hook_caps import HookCaps
 from services.navigator import Navigator
 from services.damage_capture import DamageRecorderManager
 from services.guard import (
@@ -62,6 +64,9 @@ def _build_services(dev: bool) -> dict:
     # One command channel: its per-pid lock keeps the guard and the buff
     # tracker from racing for the single pipe instance.
     channel = CommandChannel()
+    # One `caps` manifest per client for every module; dropped on hook hello / close.
+    hook_caps = HookCaps(channel, connected=lambda pid: hook.status(pid) is not None)
+    hook.add_link_listener(hook_caps.invalidate)
     buffs = BuffTracker(
         connected=lambda pid: hook.status(pid) is not None,
         pids=hook.connected_pids,
@@ -74,6 +79,8 @@ def _build_services(dev: bool) -> dict:
     )
     family = FamilyTracker(character_name=wm.character_name, db=db)
     wm.set_family_tracker(family)
+    wm.set_keep_active(keep_active)
+    wm.set_hook_caps(hook_caps)
     hook.add_packet_listener(FAMILY_PACKET, family.on_packet)
     # Shout / system-line templates come from game memory, through the worker's lock.
     hook.set_strings(lambda pid: wm.read_locked(pid, read_templates))
@@ -86,6 +93,7 @@ def _build_services(dev: bool) -> dict:
         store=GuardStore(db),
         buffs=buffs.buffs,
         skill_icon=lambda mid, level: skill_catalog.icon_path(mid, level),
+        hook_caps=hook_caps,
         icon_url=lambda item_id: (
             item_catalog.icon_path(item_id) if item_catalog.icon_url(item_id) else None
         ),
@@ -100,7 +108,14 @@ def _build_services(dev: bool) -> dict:
         info = family.get(wm.character_name(pid))
         return info.manor_id if info else None
 
-    navigator = Navigator(channel, wm.read_locked, read_stage_id, manor=manor)
+    def ask_family(pid: int) -> dict | None:
+        if "family" not in hook_caps.features(pid):
+            return None
+        return channel.send(pid, "family")
+
+    navigator = Navigator(
+        channel, wm.read_locked, read_stage_id, manor=manor, ask_family=ask_family
+    )
     tower = TowerManager(
         guard=guard,
         read_locked=wm.read_locked,
@@ -108,9 +123,16 @@ def _build_services(dev: bool) -> dict:
         channel=channel,
         store=GuardStore(db),
         navigator=navigator,
+        hook_caps=hook_caps,
     )
     hook.add_packet_listener(ATTACK_PACKET, tower.on_attack_packet)
     hook.add_packet_listener(CAST_START_PACKET, tower.on_cast_packet)
+    daily = DailyQueueManager([tower], character_name=wm.character_name, store=GuardStore(db))
+    wm.set_daily_queue(daily)
+    wm.set_family_query(lambda pid: channel.send(pid, "family"))
+    # Another character on the same game window starts clean (queue first: it stops the tower).
+    for forget in (daily.forget, tower.forget, guard.forget):
+        wm.add_forget(forget)
     market_db = MarketDB()
     market = MarketSurveyManager(live=wm.live_handle, pids=wm.live_pids, db=market_db)
     market.start()
@@ -126,6 +148,7 @@ def _build_services(dev: bool) -> dict:
         "keep_active_manager": keep_active,
         "guard_manager": guard,
         "tower_manager": tower,
+        "daily_manager": daily,
         "buff_tracker": buffs,
     }
 
@@ -266,6 +289,7 @@ def main() -> int:
         # Recorder threads hold timeBeginPeriod(1); stop them so it is released.
         services["damage_manager"].shutdown()
         services["hook_hub"].shutdown()
+        services["daily_manager"].shutdown()
         services["tower_manager"].shutdown()
         services["guard_manager"].shutdown()
         services["buff_tracker"].shutdown()

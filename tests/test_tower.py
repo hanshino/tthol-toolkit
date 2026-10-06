@@ -28,6 +28,11 @@ def test_load_tower_rooms_from_the_game_db():
 def test_room_of_and_staging():
     t = load_tower(FIRST_STAGE)
     assert t.room_of((10, 12)) == 1 and t.room_of((55, 70)) == 7
+    # By region: every exit tile is its own room's, even where the next start is near.
+    assert t.area is not None
+    for room in range(1, 11):
+        assert {t.room_of(x) for x in t.exits[room]} == {room}
+    assert load_tower(1707).room_of((9, 36)) == 2  # floor 32's start (live 2026-10-06)
     sx, sy = t.staging(1)
     zx, zy = t.exits[1][len(t.exits[1]) // 2]  # the zone's middle tile
     assert 3 <= ((sx - zx) ** 2 + (sy - zy) ** 2) ** 0.5 <= 4.5  # rounded to a tile
