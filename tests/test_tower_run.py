@@ -964,3 +964,43 @@ def test_forget_stops_the_climb_and_drops_its_log():
     mgr.forget(1)
     assert run.stop.is_set() and 1 not in mgr._runs
     assert not mgr.status(1).running and mgr.status(1).log == []
+
+
+class ToughGame(FakeGame):
+    """Hits do not kill: the monster stays alive in view."""
+
+    def send(self, pid, line, priority=0):
+        if line.split()[0] in ("attack", "cast"):
+            self.sent.append(line)
+            return {"ok": True}
+        return super().send(pid, line, priority)
+
+
+def test_a_monster_seen_after_the_empty_sweep_is_fought_not_waited_on():
+    mgr, run, game, _ = make(game=ToughGame())
+    ticks(mgr, run, 1)  # into room 1
+    run.force_exit = True  # the sweep found nothing (8 / 9 on floor 33, live)
+    ticks(mgr, run, 1)
+    assert not run.force_exit and run.step.startswith("清怪中")
+    assert any("又看到怪了" in line.text for line in run.log)
+
+
+class LingeringBodyGame(FakeGame):
+    """The body never fades from `near`."""
+
+    def send(self, pid, line, priority=0):
+        self.fade = 99
+        return super().send(pid, line, priority)
+
+
+def test_a_body_that_never_fades_is_not_waited_on_forever():
+    mgr, run, game, _ = make(game=LingeringBodyGame())
+    exit_x = (100 + 20) * 40 + 20
+    clock = mgr._clock
+    t = {"extra": 0.0}
+    mgr._clock = lambda: clock() + t["extra"]
+    for _ in range(200):
+        t["extra"] += mgr._tick(1, run) or 0.0
+        if any(line.startswith(f"walk {exit_x} ") for line in game.sent):
+            break
+    assert any(line.startswith(f"walk {exit_x} ") for line in game.sent)
