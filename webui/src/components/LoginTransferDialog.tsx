@@ -56,7 +56,7 @@ export function LoginTransferDialog({ mode, onClose, onDone }: {
       } else {
         const data = await file!.text();
         const r = await post<LoginImportResult>('/api/logins/import', { data, passphrase: pass, overwrite });
-        setResult(`匯入完成：新增 ${r.added} 隻、更新 ${r.updated} 隻、略過 ${r.skipped} 隻。`);
+        setResult(`匯入完成：新增 ${r.added} 隻、更新 ${r.updated} 隻、略過 ${r.skipped} 隻；${r.settings} 隻帶入了日常、玄天、補品等設定。`);
         onDone();
       }
     } catch (e) {
@@ -122,8 +122,8 @@ export function LoginTransferDialog({ mode, onClose, onDone }: {
               )}
               <p className="lg-note">
                 {exporting
-                  ? '檔案含所有角色的帳號、密碼和保護密碼，用這組匯出密碼加密；沒有它就打不開。匯出密碼不會存下來，忘了就只能重新匯出。'
-                  : '匯入後的密碼改用這台電腦的 Windows 加密保存。'}
+                  ? '檔案含所有角色的帳號、密碼、保護密碼，以及日常、玄天、補品、Buff、物品規則等設定，用這組匯出密碼加密；沒有它就打不開。匯出密碼不會存下來，忘了就只能重新匯出。'
+                  : '匯入後的密碼改用這台電腦的 Windows 加密保存。角色設定只補這台還沒有的；勾選覆蓋才會整個蓋掉。'}
               </p>
             </>
           )}

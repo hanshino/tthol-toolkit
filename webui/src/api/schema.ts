@@ -3138,6 +3138,11 @@ export interface components {
              * @default 0
              */
             skipped: number;
+            /**
+             * Settings
+             * @default 0
+             */
+            settings: number;
         };
         /** MapInfo */
         MapInfo: {
