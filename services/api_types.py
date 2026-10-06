@@ -282,6 +282,90 @@ class ChatLog(_Base):
     messages: list[ChatMessage] = []
 
 
+# ---- 日常 (daily modules and the per-character queue) ---------------------
+
+
+# idle 未開始 / moving 前往中 / running 進行中 / done 完成 / stopped 停下 /
+# done_today 今日已做: the same set for every module.
+DailyState = Literal["idle", "moving", "running", "done", "stopped", "done_today"]
+# One progress cell: cleared / being worked on / the planned last one / where it stopped.
+DailySegment = Literal["empty", "done", "skipped", "current", "target", "error"]
+
+
+class DailyMetric(_Base):
+    label: str
+    value: str | None = None
+    # A timer: unix seconds it counts up from (the client ticks it; the overview
+    # only refreshes every few seconds). Set instead of `value`.
+    since: float | None = None
+    highlight: bool = False
+
+
+class DailySummary(_Base):
+    """What one module (or the whole queue) reports for the overview card.
+
+    The overview renders only this shape and knows no module.
+    """
+
+    module: str | None = None  # None: a summary of the whole queue
+    title: str
+    state: DailyState
+    headline: str | None = None  # e.g. 第 14 層
+    where: str | None = None  # e.g. 太白關 · 第 4 房
+    segments: list[DailySegment] = []
+    step: str | None = None  # what it is doing now, or why it stopped
+    metrics: list[DailyMetric] = Field(default_factory=list, max_length=3)
+    result: str | None = None  # short, for the queue chip (16 層)
+    done_today: bool = False
+
+
+# pending 未開始 / skipped 今日已做 / halted (an earlier item stopped the queue)
+DailyItemState = Literal["pending", "moving", "running", "done", "skipped", "error", "halted"]
+
+
+class DailyQueueItem(_Base):
+    module: str
+    title: str
+    state: DailyItemState
+    result: str | None = None
+
+
+class DailyStatus(_Base):
+    running: bool
+    items: list[DailyQueueItem] = []
+    card: DailySummary
+    # Set while the queue (or a module started from the 日常 tab) is stopped
+    # on an error, for the 警示 bar: "<module> 停下：<reason>".
+    error: str | None = None
+
+
+class DailyQueueConfig(_Base):
+    """A character's 日常 list, in run order (module keys)."""
+
+    modules: list[str] = ["tower"]
+
+
+class DailyModuleInfo(_Base):
+    key: str
+    title: str
+
+
+class DailyView(_Base):
+    config: DailyQueueConfig
+    modules: list[DailyModuleInfo]  # every module the toolkit has
+    status: DailyStatus
+
+
+class DailyBatchRequest(_Base):
+    pids: list[int]
+
+
+class DailyStartResult(_Base):
+    pid: int
+    ok: bool
+    reason: str | None = None
+
+
 class CharacterRow(_Base):
     """Used inside WorldSnapshot — stats summary per char."""
 
@@ -298,6 +382,10 @@ class CharacterRow(_Base):
     last_error: ErrorInfo | None = None
     hook: HookInfo | None = None  # set only while a hook pipe is connected for this pid
     family: FamilyInfo | None = None  # last 0x31 seen for this character, kept across restarts
+    daily: DailyStatus | None = None  # the 日常 queue and its card; None until located
+    # Hook features this client allows now (services/hook_caps.FEATURES): the UI
+    # shows a hook feature only when its name is here.
+    features: list[str] = []
 
 
 class CharacterDetail(_Base):
@@ -1004,6 +1092,9 @@ class TowerConfig(_Base):
     logout: bool = False
     logout_hp_at: int = Field(0, ge=0, le=100000)
     logout_mp_at: int | None = Field(None, ge=0, le=100000)
+    # 狐光靈珠: before the day's first entry, skip 關 1..skip_to (1 辰星 ... 6
+    # 冽星), as far as level and orbs allow; None = do not use the orbs.
+    skip_to: int | None = Field(None, ge=1, le=6)
 
 
 class TowerRecord(_Base):
@@ -1013,11 +1104,17 @@ class TowerRecord(_Base):
     date: str | None = None  # local YYYY-MM-DD the run started
     top_floor: int = 0  # highest floor cleared that day
     ended: str | None = None  # why it stopped
+    # A run that day ended the normal way (stop floor, sent out). An error or a
+    # potion stop is not done: the tower picks up where it left off. None:
+    # written before this field, read as "cleared any floor".
+    done: bool | None = None
+    skipped_to: int = 0  # highest floor passed with 狐光靈珠 that day
 
 
 class TowerFloor(_Base):
     floor: int
     secs: float
+    skipped: bool = False  # passed with a 狐光靈珠, not fought
 
 
 class TowerLogEntry(_Base):
@@ -1078,6 +1175,9 @@ class GuardBuffRule(_Base):
     skills: list[int] = []
     # 自動變身: press the hero transform whenever 英雄無雙 is not on the character.
     hero: bool = False
+    # 無名島 黯影 while a module walks the character across maps (the other
+    # buffs are held off then): monsters that cannot see it leave it alone.
+    stealth: bool = False
 
 
 class GuardConfig(_Base):

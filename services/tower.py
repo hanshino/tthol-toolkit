@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,6 +35,29 @@ FOX_STAGE = {7603: 1704, 7604: 1705, 7605: 1706, 7606: 1707, 7607: 1708, 7608: 1
 YAN_WANT = (65846, 65847, 65851)  # enter; 65847 also declines the 狐光靈珠 skip
 YAN_AVOID = frozenset({65852})
 FOX_AVOID = frozenset({65862})  # decline
+# 狐光靈珠 (item 24420): with one in the bag, 燕飄風's "challenge" (65846) asks
+# first whether to use it (65805: 65807 use / 65847 enter as usual). One 關 is
+# skipped per talk, in order, before that 關 is started today: 65807 lists the
+# 關, 65808 + 3k asks to confirm 關 k (0 = 辰星), 65809 + 3k checks and, when it
+# passes, takes the orbs and gives that 關's box and exp, then the dialog ends.
+# Conditions: level, the 關 before done, 1 free bag slot and 5 weight left.
+ORB = 24420
+YAN_CHALLENGE = 65846
+SKIP_OFFER = 65807
+SKIP_BACK = 65805  # "reconsider" on a confirm goes back to the use-the-orb question
+ENTER = 65847  # "no, let me in": the normal entry
+SKIP_LEVEL = (80, 100, 120, 140, 160, 180)  # 辰星 ... 冽星; 颶星 cannot be skipped
+SKIP_ORBS = (1, 1, 1, 1, 1, 2)
+
+
+def skip_pick(k: int) -> int:
+    return 65808 + 3 * k
+
+
+def skip_confirm(k: int) -> int:
+    return 65809 + 3 * k
+
+
 LEAVE = 65873  # the room exit's "leave the tower" option
 TOO_LOW = 65874  # the next floor needs a higher level
 STAGING = 4  # stand this many tiles off the exit: stepping on it from closer does not fire
@@ -52,6 +76,11 @@ class TowerStage:
     npc_dodge: dict[int, int] = field(default_factory=dict)  # monster npc id -> base_dodge
     npc_name: dict[int, str] = field(default_factory=dict)
     elites: frozenset[int] = frozenset()  # npc ids that are alone in their room
+    # tile -> room by walkable region: every room is its own closed region in
+    # the DB (all ten 關 checked 2026-10-06), so where the character stands
+    # tells the room even by an exit. 0 = not a room (the fox's 關 start);
+    # None = not known here (no walkability data): nearest start then.
+    area: Callable[[tuple[int, int]], int | None] | None = None
 
     def strength(self) -> dict[int, tuple[int, int]]:
         """npc id -> (elite, base HP): what "weakest first" sorts by."""
@@ -63,8 +92,11 @@ class TowerStage:
         return self.stage_id - FIRST_STAGE
 
     def at_start(self, tile: tuple[int, int]) -> bool:
-        """At the 關 start (by the fox) rather than in a room: nearer the fox
-        than any room start. Works before `near` lists anything after a map change."""
+        """At the 關 start (by the fox) rather than in a room: outside every room's
+        region, or nearer the fox than any room start when regions are unknown."""
+        known = self.area(tile) if self.area is not None else None
+        if known is not None:
+            return known == 0 and self.fox is not None
         if self.fox is None:
             return False
         to_room = min(math.dist(tile, s) for s in self.starts.values())
@@ -74,7 +106,10 @@ class TowerStage:
         return self.index * ROOMS + room
 
     def room_of(self, tile: tuple[int, int]) -> int:
-        """The room whose start is nearest (rooms are far apart on one map)."""
+        """The room whose region holds `tile`; else the room whose start is nearest."""
+        known = self.area(tile) if self.area is not None else None
+        if known:
+            return known
         return min(self.starts, key=lambda r: math.dist(self.starts[r], tile))
 
     def staging(self, room: int, dist: int = STAGING) -> tuple[int, int]:
@@ -149,6 +184,7 @@ def load_tower(stage_id: int, db_path: Path | None = None) -> TowerStage | None:
     if not (rooms <= starts.keys() and rooms <= exits.keys() and rooms <= expect.keys()):
         return None
     return TowerStage(
+        area=_room_area(stage_id, starts, db_path),
         stage_id=stage_id,
         starts=starts,
         exits=exits,
@@ -162,6 +198,25 @@ def load_tower(stage_id: int, db_path: Path | None = None) -> TowerStage | None:
         npc_name={r[0]: r[3] for r in npc_rows},
         elites=frozenset(elites),
     )
+
+
+def _room_area(
+    stage_id: int, starts: dict[int, tuple[int, int]], db_path: Path | None
+) -> Callable[[tuple[int, int]], int | None] | None:
+    """tile -> room by walkable region, or None when the regions do not
+    separate the rooms (no walkability data for this map)."""
+    from services.route_plan import _regions
+
+    regions = _regions(db_path)
+    by_region = {regions(stage_id, s, "sestage"): r for r, s in starts.items()}
+    if None in by_region or len(by_region) != len(starts):
+        return None
+
+    def area(tile: tuple[int, int]) -> int | None:
+        region = regions(stage_id, tile, "sestage")
+        return None if region is None else by_region.get(region, 0)
+
+    return area
 
 
 def pick_option(options: list[int], want: tuple[int, ...], avoid: frozenset[int]) -> int | None:

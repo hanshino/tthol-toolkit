@@ -1,3 +1,4 @@
+import contextlib
 from services.api_types import CombatRule, GuardConfig, GuardPotionRule, TowerConfig
 from services.combat import AttackSkill, Rotation, cast_sent, next_skill, retarget
 from services.guard import GuardStore, read_holdings, read_learned, read_stage_id
@@ -181,6 +182,15 @@ class FakeGuard:
         self.started = False
         self.casts = 0
         self.pending = False
+        self.quiet_now = False
+
+    @contextlib.contextmanager
+    def quiet(self, pid):
+        self.quiet_now = True
+        try:
+            yield
+        finally:
+            self.quiet_now = False
 
     def buffs_pending(self, pid):
         return self.pending
@@ -418,10 +428,62 @@ def test_room_holds_while_standing_by_its_exit():
     assert run.room == 1
     tower = make_tower()
     tower.starts[5] = (125, 10)  # nearer room 1's exit than room 1's start
+    tower.area = lambda tile: tile[0] // 100  # the walls: x 100-199 is room 1
     mgr._towers[1704] = tower
     game.tile = (121, 10)
+    ticks(mgr, run, 3)
+    assert run.room == 1
+
+
+def test_one_odd_read_does_not_change_the_room():
+    mgr, run, game, _ = make()
     mgr._tick(1, run)
     assert run.room == 1
+    game.mob_dead, game.fade = False, 99  # keep the fight going
+    real = game.send
+    reads = {"n": 0}
+
+    def send(pid, line, priority=0):
+        r = real(pid, line, priority)
+        if line == "near":
+            reads["n"] += 1
+            if reads["n"] in (1, 3):  # room 3, now and then, never twice in a row
+                r["objects"][0] = dict(r["objects"][0], x=300 * 40)
+        return r
+
+    game.send = send
+    for _ in range(4):
+        mgr._tick(1, run)
+    assert run.room == 1 and not run.floors
+
+
+class SilentExitGame(FakeGame):
+    """The exit takes us on without its dialog ever being seen (floor 31, live)."""
+
+    def send(self, pid, line, priority=0):
+        cmd, *args = line.split()
+        if cmd == "walk" and int(args[0]) // 40 // 100 != self.room:
+            self.sent.append(line)
+            return {"ok": True, "path": False}  # rooms are walled off from each other
+        r = super().send(pid, line, priority)
+        if self.dialog_open:
+            self.dialog_open = False
+            self.room += 1
+            self.stale = self.tile  # status keeps the old tile, like the client
+            self.tile = (self.room * 100, 10)
+            self.mob_dead, self.fade = False, 2
+        return r
+
+
+def test_an_exit_that_went_through_unseen_moves_on_to_the_next_room():
+    mgr, run, game, _ = make(game=SilentExitGame())
+    for _ in range(40):
+        mgr._tick(1, run)
+        if run.room == 2:
+            break
+    assert run.room == 2 and [f.floor for f in run.floors] == [1]
+    ticks(mgr, run, 3)
+    assert any(line.startswith("attack 52") for line in game.sent)  # fights room 2
 
 
 class SurvivingGame(FakeGame):
@@ -628,9 +690,11 @@ class FakeNavigator:
     def __init__(self, game, ok=True, detail=""):
         self.game, self.ok, self.detail = game, ok, detail
         self.calls = []
+        self.guard = None
 
     def go(self, pid, dest, goal=None, stop=None, note=None):
         self.calls.append(dest)
+        self.quiet = self.guard.quiet_now if self.guard else None
         if note:
             note("走出口到杭州城")
         if self.ok:
@@ -639,12 +703,14 @@ class FakeNavigator:
 
 
 def test_started_elsewhere_walks_to_the_lobby_first():
-    mgr, run, game, _ = make()
+    mgr, run, game, guard = make()
     outside(mgr, game)
     nav = FakeNavigator(game)
+    nav.guard = guard
     mgr._navigator = nav
     mgr._tick(1, run)
     assert nav.calls == [LOBBY_STAGE]
+    assert nav.quiet and not guard.quiet_now  # no buff casts while walking
     assert game.stage == LOBBY_STAGE
     assert any("導航到玄天之境" in line.text for line in run.log)
     with pytest.raises(_Done, match="不在玄天之境或玄天塔裡"):
@@ -667,3 +733,234 @@ def test_outside_after_floors_is_not_walked_back():
     mgr._navigator = FakeNavigator(game)
     with pytest.raises(_Done, match="不在玄天之境或玄天塔裡"):
         mgr._tick(1, run)
+
+
+# ---- 日常 module: outcome, done today, overview summary ------------------------
+
+
+def run_loop(mgr, run):
+    run.run_started = 1000.0
+    mgr._loop(1, run)
+
+
+def test_an_error_ends_as_error_and_is_not_done_today():
+    mgr, run, game, _ = make()
+    game.hp = 0
+    run_loop(mgr, run)
+    assert mgr.outcome(1) == ("error", "角色死亡")
+    assert not mgr.done_today(1)
+    s = mgr.summary(1)
+    assert s.state == "stopped" and s.step == "角色死亡" and s.module == "tower"
+
+
+def test_stop_floor_ends_as_done_for_the_day():
+    mgr, run, game, _ = make(config=TowerConfig(stop_floor=1))
+    run_loop(mgr, run)
+    assert mgr.outcome(1)[0] == "done"
+    assert mgr.done_today(1)
+    s = mgr.summary(1)
+    assert s.state == "done" and s.result == "1 層" and s.headline == "第 1 層"
+    assert s.segments[0] == "done" and len(s.segments) == ROOMS
+
+
+def test_leaving_short_of_potions_is_picked_up_again_not_done():
+    mgr, run, game, _ = make(config=TowerConfig(leave_hp_below=600))
+    run_loop(mgr, run)
+    kind, reason = mgr.outcome(1)
+    assert kind == "error" and "補給" in reason
+    assert not mgr.done_today(1)
+    s = mgr.summary(1)
+    assert s.segments[:2] == ["done", "error"]
+
+
+def test_a_stop_by_hand_is_user():
+    mgr, run, game, _ = make()
+    mgr.stop(1)
+    run_loop(mgr, run)
+    assert mgr.outcome(1) == ("user", "已停止")
+    assert mgr.summary(1).state == "idle"
+
+
+class _Alive:
+    def is_alive(self):
+        return True
+
+
+def test_live_summary_shows_the_floor_room_and_timer():
+    mgr, run, game, _ = make(config=TowerConfig(stop_floor=8))
+    run.run_started = 1000.0
+    ticks(mgr, run, 1)
+    run.thread = _Alive()
+    s = mgr.summary(1)
+    assert s.state == "running"
+    assert s.headline == "第 1 層" and s.where == "辰星關 · 第 1 房"
+    assert s.segments[0] == "current" and s.segments[7] == "target"
+    assert [m.label for m in s.metrics] == ["擊倒", "這一房", "通過 / 目標"]
+    assert s.metrics[1].since is not None and s.metrics[2].value == "0 / 8"
+    run.moving = True
+    assert mgr.summary(1).state == "moving"
+
+
+def test_old_records_without_done_count_any_cleared_floor():
+    from services.api_types import TowerRecord
+    from services.tower_run import RECORD_SECTION
+    import time as _time
+
+    mgr, run, game, _ = make()
+    today = _time.strftime("%Y-%m-%d", _time.localtime(1000.0))
+    mgr._store.save_section("寒江孤影", RECORD_SECTION, TowerRecord(date=today, top_floor=3))
+    assert mgr.done_today(1)
+    assert mgr.summary(1).state == "done_today"
+
+
+# ---- 狐光靈珠 skips at 燕飄風 ----------------------------------------------------
+
+
+class YanGame(FakeGame):
+    """燕飄風's dialog as the DB has it (65805 / 65807 / 65808+3k / 65809+3k)."""
+
+    def __init__(self, orbs=0, level=200, done=0):
+        super().__init__(stage=LOBBY_STAGE)
+        from services.tower import ORB
+
+        self.bag[ORB] = orbs
+        self.orb = ORB
+        self.level = level
+        self.done = done  # 關 already passed today, as the game knows it
+        self.state = None
+        self.me = 1
+        self.chosen = []
+
+    def options(self):
+        if self.state == "root":
+            return [65835, 65846]
+        if self.state == "offer":
+            return [65807, 65847]
+        if self.state == "list":
+            return [65808 + 3 * k for k in range(6)]
+        if isinstance(self.state, int):
+            return [65809 + 3 * self.state, 65805]
+        return None
+
+    def send(self, pid, line, priority=0):
+        from services.tower import SKIP_LEVEL, SKIP_ORBS
+
+        cmd, *args = line.split()
+        if cmd == "status":
+            r = super().send(pid, line, priority)
+            return {**r, "self": self.me} if r.get("ok") else r
+        if self.stage != LOBBY_STAGE or cmd not in ("talk", "dialog", "option"):
+            return super().send(pid, line, priority)
+        self.sent.append(line)
+        if cmd == "talk":
+            self.state = "root"
+            return {"ok": True}
+        if cmd == "dialog":
+            opts = self.options()
+            if opts is None:
+                return {"ok": True, "open": False}
+            return {"ok": True, "open": True, "waiting": False, "options": opts}
+        pick = self.options()[int(args[0])]
+        self.chosen.append(pick)
+        if pick == 65846:
+            self.state = "offer" if self.bag[self.orb] else self.enter()
+        elif pick == 65807:
+            self.state = "list"
+        elif 65808 <= pick <= 65823 and (pick - 65808) % 3 == 0:
+            self.state = (pick - 65808) // 3
+        elif pick == 65805:
+            self.state = "offer"
+        elif pick == 65847:
+            self.state = self.enter()
+        else:  # a confirm: 65809 + 3k
+            k = (pick - 65809) // 3
+            if k < self.done:
+                self.state = "list"  # 65803: already done, choose again
+            elif (
+                k == self.done
+                and self.level >= SKIP_LEVEL[k]
+                and self.bag[self.orb] >= SKIP_ORBS[k]
+            ):
+                self.bag[self.orb] -= SKIP_ORBS[k]
+                self.done += 1
+                self.state = None
+            else:
+                self.state = None  # the "level needed" line, then closed
+        return {"ok": True}
+
+    def enter(self):
+        self.stage = 1704 + self.done
+        self.me += 1
+        return None
+
+
+def make_yan(game, skip_to, level=200):
+    from services.tower_run import read_hit_level
+
+    mgr, run, game, guard = make(game=game, config=TowerConfig(skip_to=skip_to))
+    inner = mgr._read_locked
+
+    def read_locked(pid, fn):
+        if fn is read_hit_level:
+            return (999, level)
+        return inner(pid, fn)
+
+    mgr._read_locked = read_locked
+    return mgr, run
+
+
+def test_orbs_skip_up_to_the_set_stage_then_enter():
+    game = YanGame(orbs=3)
+    mgr, run = make_yan(game, skip_to=2)
+    mgr._tick(1, run)
+    assert game.stage == 1706 and game.bag[game.orb] == 1  # 辰星 and 太白 skipped
+    assert [f.floor for f in run.floors if f.skipped] == list(range(1, 21))
+    assert any("略過太白關（第 11–20 層）" in line.text for line in run.log)
+
+
+def test_short_of_orbs_skips_what_it_can():
+    game = YanGame(orbs=1)
+    mgr, run = make_yan(game, skip_to=4)
+    mgr._tick(1, run)
+    assert game.stage == 1705
+    assert any("狐光靈珠剩 0 顆" in line.text for line in run.log)
+
+
+def test_level_stops_the_skips():
+    game = YanGame(orbs=5)
+    mgr, run = make_yan(game, skip_to=4, level=110)
+    mgr._tick(1, run)
+    assert game.stage == 1706  # 辰星 (80) and 太白 (100), not 熒惑 (120)
+    assert any("不到 120" in line.text for line in run.log)
+
+
+def test_a_refused_skip_backs_out_and_enters():
+    game = YanGame(orbs=3, done=1)  # the game has 辰星 done; the toolkit did not know
+    mgr, run = make_yan(game, skip_to=1)
+    mgr._tick(1, run)
+    assert game.stage == 1705 and game.bag[game.orb] == 3
+    assert game.chosen[-2:] == [65805, 65847]  # reconsider, then go in
+    assert not [f for f in run.floors if f.skipped]
+
+
+def test_no_skip_once_a_stage_is_started_today():
+    import time as _time
+
+    from services.api_types import TowerRecord
+    from services.tower_run import RECORD_SECTION
+
+    game = YanGame(orbs=3)
+    mgr, run = make_yan(game, skip_to=3)
+    today = _time.strftime("%Y-%m-%d", _time.localtime(1000.0))
+    mgr._store.save_section("寒江孤影", RECORD_SECTION, TowerRecord(date=today, top_floor=5))
+    mgr._tick(1, run)
+    assert 65807 not in game.chosen and game.stage == 1704
+
+
+def test_forget_stops_the_climb_and_drops_its_log():
+    mgr, run, game, _ = make()
+    with mgr._lock:
+        mgr._runs[1] = run
+    mgr.forget(1)
+    assert run.stop.is_set() and 1 not in mgr._runs
+    assert not mgr.status(1).running and mgr.status(1).log == []

@@ -91,7 +91,7 @@ def make(
         wall=lambda: 1000.0 + clock["t"],
     )
     mgr._item_name = lambda i: NAMES.get(i, str(i))
-    mgr._caps[1] = frozenset(caps)
+    mgr._hook_caps.put(1, frozenset(caps))
     run = _Run("寒江孤影", mgr.config(1))
     with mgr._lock:
         mgr._runs[1] = run

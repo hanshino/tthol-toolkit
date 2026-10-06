@@ -184,6 +184,7 @@ class HookHub:
         self._stop = threading.Event()
         self._scanner: threading.Thread | None = None
         self._vitals_listeners: list[Callable[[int, int, int], None]] = []
+        self._link_listeners: list[Callable[[int], None]] = []
         self._packet_listeners: dict[
             int, list[Callable[[int, bytes, float, bytes | None], None]]
         ] = {}
@@ -198,6 +199,17 @@ class HookHub:
     def add_vitals_listener(self, listener: Callable[[int, int, int], None]) -> None:
         """listener(pid, hp, mp) on every own 0x06, on the pipe reader thread: keep it quick."""
         self._vitals_listeners.append(listener)
+
+    def add_link_listener(self, listener: Callable[[int], None]) -> None:
+        """listener(pid) when a hook pipe says hello or closes (a new or gone hook build)."""
+        self._link_listeners.append(listener)
+
+    def _link_changed(self, pid: int) -> None:
+        for listener in self._link_listeners:
+            try:
+                listener(pid)
+            except Exception:  # pragma: no cover
+                log.exception("hook link listener failed", extra={"cat": "hook"})
 
     def add_packet_listener(
         self, sub_type: int, listener: Callable[[int, bytes, float, bytes | None], None]
@@ -310,12 +322,14 @@ class HookHub:
             pass
         finally:
             self._feed(pid).proto = None
+            self._link_changed(pid)
             log.info("hook pipe closed pid=%d", pid, extra={"cat": "hook"})
 
     def _ingest(self, pid: int, ev: dict) -> None:
         t = ev.get("t")
         if t == "hello":
             self._feed(pid).proto = int(ev.get("v") or 0)
+            self._link_changed(pid)
             return
         if t != "msg" or ev.get("type") != GAME_PACKET:
             return

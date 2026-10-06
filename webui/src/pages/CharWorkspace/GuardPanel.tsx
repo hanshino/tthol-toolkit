@@ -19,7 +19,7 @@ type Rule = {
   hp_pct: number; mp_pct: number; hp_items: number[]; mp_items: number[];
   pet_refill: boolean; refill_below: number; refill_summon: boolean; refill_qty: number;
 };
-type Cfg = { potion: Rule; buff: { skills: number[]; hero: boolean } };
+type Cfg = { potion: Rule; buff: { skills: number[]; hero: boolean; stealth: boolean } };
 
 const toCfg = (c?: GuardConfig): Cfg => ({
   potion: {
@@ -32,7 +32,7 @@ const toCfg = (c?: GuardConfig): Cfg => ({
     refill_summon: c?.potion.refill_summon ?? true,
     refill_qty: c?.potion.refill_qty ?? 200,
   },
-  buff: { skills: c?.buff?.skills ?? [], hero: c?.buff?.hero ?? false },
+  buff: { skills: c?.buff?.skills ?? [], hero: c?.buff?.hero ?? false, stealth: c?.buff?.stealth ?? false },
 });
 
 // This run's counts for the log header; only what happened, so it stays short.
@@ -216,6 +216,8 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
         onSkills={next => update({ ...cfg, buff: { ...cfg.buff, skills: next } })}
         hero={cfg.buff.hero}
         onHero={on => update({ ...cfg, buff: { ...cfg.buff, hero: on } })}
+        stealth={cfg.buff.stealth}
+        onStealth={on => update({ ...cfg, buff: { ...cfg.buff, stealth: on } })}
       />
 
       <section className="gd-panel">
@@ -318,13 +320,21 @@ const TARGET_LABEL: Record<BuffSkillCandidate['target'], string> = { self: '自�
 
 // buff 維持: tick the learned buff skills to keep up. A ticked skill is cast
 // on the character when its buff is gone or about to end.
-function BuffSection({ skills, candidates, onSkills, hero, onHero }: {
+// 黯影 (無名島): below Lv7 moving ends the stealth, so it cannot cover a walk.
+const STEALTH_SKILL = 270;
+const STEALTH_MIN_LEVEL = 7;
+
+function BuffSection({ skills, candidates, onSkills, hero, onHero, stealth, onStealth }: {
   skills: number[];
   candidates: BuffSkillCandidate[];
   onSkills: (v: number[]) => void;
   hero: boolean;
   onHero: (on: boolean) => void;
+  stealth: boolean;
+  onStealth: (on: boolean) => void;
 }) {
+  const shadow = candidates.find(c => c.magic_id === STEALTH_SKILL);
+  const shadowOk = shadow != null && shadow.level >= STEALTH_MIN_LEVEL;
   const now = Date.now() / 1000;
   const toggle = (id: number, on: boolean) =>
     onSkills(on ? [...skills, id] : skills.filter(x => x !== id));
@@ -373,6 +383,25 @@ function BuffSection({ skills, candidates, onSkills, hero, onHero }: {
             <span className="gd-cure-st">英雄變身結束就再開（不提前續）</span>
           </label>
         </li>
+        {shadow && (
+          <li className={shadowOk ? undefined : 'is-out'}>
+            <input
+              id="gd-stealth"
+              type="checkbox"
+              checked={stealth && shadowOk}
+              disabled={!shadowOk}
+              onChange={e => onStealth(e.target.checked)}
+            />
+            <label htmlFor="gd-stealth" title="日常模組跨地圖走路時，其他 buff 和變身都不放；藥水照喝">
+              <span className="gd-name">導航時用黯影隱身</span>
+              <span className="gd-cure-st">
+                {shadowOk
+                  ? '跨地圖走路時只補黯影，其他 buff 暫停'
+                  : `黯影 Lv${STEALTH_MIN_LEVEL} 起才能邊走邊隱身（目前 Lv${shadow.level}）`}
+              </span>
+            </label>
+          </li>
+        )}
       </ul>
       <div className="gd-fixed">
         <span>每次施放至少間隔 2 秒</span>

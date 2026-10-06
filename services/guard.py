@@ -42,6 +42,7 @@ import struct
 import threading
 import time
 from collections import deque
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -71,6 +72,7 @@ from services.item_rules import (
     ItemFact,
     load_item_facts,
 )
+from services.hook_caps import FEATURES, HookCaps
 from services.hook_cmd import (
     CommandChannel,
     NoReply,
@@ -88,11 +90,15 @@ EMPTY_SKIP = 5.0  # after "item not in bag", try the next potion for this long
 LIVE_FRESH = 1.0  # a 0x06 value newer than this beats the memory read
 CONFIRM_WINDOW = 2.0  # how long a drink may take to show up in the bag (log only)
 LOG_KEEP = 100
-GUARD_COMMANDS = ("use",)  # what the guard needs from the hook's `caps` manifest
+GUARD_COMMANDS = FEATURES["guard"]  # what the guard needs from the hook's `caps` manifest
 BUFF_COMMANDS = ("cast", "status")  # what keeping buffs up needs on top
 HERO_COMMANDS = ("hero",)  # what 自動變身 needs on top
 CAPS_RETRY = 2.0  # re-read a dropped manifest at most this often
 HERO_CODE = 30295  # 英雄無雙: the `buffs` code of a hero transform
+# 黯影 (無名島): invisible to monsters. Below Lv7 moving ends it (magic.help),
+# so only Lv7+ is cast while walking.
+STEALTH_SKILL = 270
+STEALTH_MIN_LEVEL = 7
 REFILL_COMMANDS = ("pettake",)  # what 寵物取水 needs on top
 REFILL_STACK = 200  # one stack of a potion (what the pet bag holds per slot)
 SUMMON_COMMANDS = ("pet", "petsummon", "petdismiss")  # auto summon for a take
@@ -909,6 +915,7 @@ class GuardManager:
         pipe_present: Callable[[int], bool] = cmd_pipe_present,
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
+        hook_caps: HookCaps | None = None,  # shared with the other modules
     ) -> None:
         self._read_locked = read_locked
         self._character_name = character_name
@@ -927,17 +934,39 @@ class GuardManager:
         self._pet_items: frozenset[int] | None = None
         self._buffs = buffs
         self._skill_icon = skill_icon
-        # pid -> the hook's command names from `caps`; read on start
-        self._caps: dict[int, frozenset[str]] = {}
+        # the hook's command names from `caps` (shared with the other modules); read on start
+        self._hook_caps = hook_caps or HookCaps(self._channel, clock)
         self._caps_retry: dict[int, float] = {}  # pid -> clock of the last re-read
         self._icon_url = icon_url
         self._pipe_present = pipe_present
         self._clock = clock
         self._wall = wall
         self._runs: dict[int, _Run] = {}
+        self._quiet: dict[int, int] = {}  # pid -> modules holding casts off
         self._lock = threading.Lock()
 
     # -- API -----------------------------------------------------------------
+
+    @contextmanager
+    def quiet(self, pid: int):
+        """No skill casts or hero presses for `pid` inside this block (potions,
+        cures and items go on): a cast stops the character mid-walk, so a
+        module that is moving the character (the navigator) holds them off."""
+        with self._lock:
+            self._quiet[pid] = self._quiet.get(pid, 0) + 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                left = self._quiet.get(pid, 1) - 1
+                if left > 0:
+                    self._quiet[pid] = left
+                else:
+                    self._quiet.pop(pid, None)
+
+    def _is_quiet(self, pid: int) -> bool:
+        with self._lock:
+            return pid in self._quiet
 
     def start(self, pid: int) -> GuardStartResult:
         if os.environ.get("TTHOL_NO_HOOK") == "1":
@@ -968,28 +997,23 @@ class GuardManager:
     def _check_caps(self, pid: int) -> str | None:
         """Read the hook's manifest; why the guard cannot run on it, or None."""
         try:
-            reply = self._channel.send(pid, "caps")
+            names = self._hook_caps.read(pid)
         except PipeGone:
             return "找不到 hook 指令通道（遊戲關了，或 hook 沒有注入）"
         except PipeBusy:
             return "指令通道正被其他程式使用，請稍後再試"
         except NoReply:
             return "hook 沒有回應指令清單，請稍後再試"
-        commands = reply.get("commands") if reply.get("ok") else None
-        if not isinstance(commands, list):
+        if names is None:
             # An older hook answers `caps` with a usage error: it has no manifest.
             return "這個 hook 版本沒有指令清單（caps），請先更新 hook"
-        names = frozenset(c.get("cmd") for c in commands if isinstance(c, dict))
-        with self._lock:
-            self._caps[pid] = names
         missing = [c for c in GUARD_COMMANDS if c not in names]
         if missing:
             return f"這個 hook 沒有守護要用的指令：{'、'.join(missing)}"
         return None
 
     def _has_commands(self, pid: int, commands: tuple[str, ...]) -> bool:
-        with self._lock:
-            names = self._caps.get(pid)
+        names = self._hook_caps.cached(pid)
         if names is None:
             # Dropped after a PipeGone, which also happens for a moment while
             # the hook serves another client: read the manifest again rather
@@ -998,15 +1022,13 @@ class GuardManager:
             if now - self._caps_retry.get(pid, -CAPS_RETRY) >= CAPS_RETRY:
                 self._caps_retry[pid] = now
                 self._check_caps(pid)
-                with self._lock:
-                    names = self._caps.get(pid)
+                names = self._hook_caps.cached(pid)
         return names is not None and all(c in names for c in commands)
 
     def _hook_ready(self, pid: int) -> bool:
         if not self._pipe_present(pid):
             return False
-        with self._lock:
-            names = self._caps.get(pid)
+        names = self._hook_caps.cached(pid)
         return names is None or all(c in names for c in GUARD_COMMANDS)
 
     def running(self, pid: int) -> bool:
@@ -1094,6 +1116,13 @@ class GuardManager:
         if run is not None:
             run.stop.set()
             run.wake.set()
+
+    def forget(self, pid: int) -> None:
+        """Another character on this window: its rules and log are not this one's."""
+        self.stop(pid)
+        with self._lock:
+            self._runs.pop(pid, None)
+            self._quiet.pop(pid, None)
 
     def shutdown(self) -> None:
         with self._lock:
@@ -1414,8 +1443,11 @@ class GuardManager:
                 self._cure(pid, run, sample.debuffs, bag, now)
                 self._drink_up(pid, run, "mp", mp, rule.mp_pct, rule.mp_items, maxes, bag, now)
                 self._refill(pid, run, bag, now)
-                self._keep_buffs(pid, run, mp, now)
-                self._keep_hero(pid, run, now)
+                if not self._is_quiet(pid):
+                    self._keep_buffs(pid, run, mp, now)
+                    self._keep_hero(pid, run, now)
+                elif run.config.buff.stealth:
+                    self._keep_buffs(pid, run, mp, now, stealth=True)
                 self._keep_items(pid, run, bag, now)
         except _Stop as stop:
             return stop.wait
@@ -1487,8 +1519,7 @@ class GuardManager:
         try:
             reply = self._channel.send(pid, f"use {item_id}")
         except PipeGone:
-            with self._lock:
-                self._caps.pop(pid, None)  # the next hook may be another build
+            self._hook_caps.invalidate(pid)  # the next hook may be another build
             self._set_problem(run, "找不到 hook 指令通道（遊戲關了，或 hook 沒有注入）")
             raise _Stop(WAIT_NO_PIPE)
         except PipeBusy:
@@ -1563,9 +1594,10 @@ class GuardManager:
                     f" ×{tried[0]}" if tried and tried[0] > 1 else ""
                 )
 
-    def _keep_buffs(self, pid: int, run: _Run, mp: int, now: float) -> None:
-        """Cast one ticked self buff that is missing or about to end."""
-        ticked = run.config.buff.skills
+    def _keep_buffs(self, pid: int, run: _Run, mp: int, now: float, stealth: bool = False) -> None:
+        """Cast one ticked self buff that is missing or about to end; with
+        `stealth` (a module is walking the character), only 黯影 Lv7+."""
+        ticked = [STEALTH_SKILL] if stealth else run.config.buff.skills
         if not ticked:
             return
         buffs = self._buffs(pid)
@@ -1600,6 +1632,8 @@ class GuardManager:
                 if line is not None:
                     line.phase = "confirmed"
                     line.text += "（已生效）"
+        if stealth and run.learned.get(STEALTH_SKILL, 0) < STEALTH_MIN_LEVEL:
+            return  # below Lv7 the walk itself ends it
         defs = self._self_buff_defs()
         pick = next_cast(ticked, run.learned, defs, active, mp, run.buff_state, now, wall)
         if pick is None:

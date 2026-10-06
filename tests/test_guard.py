@@ -647,6 +647,6 @@ def test_start_with_use_in_the_manifest(tmp_path, monkeypatch):
 
 def test_pipe_gone_forgets_the_manifest(tmp_path):
     mgr, run, _ = make_manager(tmp_path, [sample(hp=100)], replies=[PipeGone("x")])
-    mgr._caps[1] = frozenset({"pos"})
+    mgr._hook_caps.put(1, frozenset({"pos"}))
     mgr._tick(1, run)
-    assert 1 not in mgr._caps
+    assert mgr._hook_caps.cached(1) is None

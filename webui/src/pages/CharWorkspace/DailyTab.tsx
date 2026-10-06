@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, put } from '../../api/client';
-import type { AttackSkillCandidate, CombatRule, GuardStartResult, TowerConfig, TowerEstimate, TowerStatus, TowerView } from '../../api/types';
+import type { AttackSkillCandidate, CombatRule, DailyQueueItem, DailyView, GuardStartResult, TowerConfig, TowerEstimate, TowerStatus, TowerView } from '../../api/types';
 import { reportClientError } from '../../diag/report';
 import './guard.css';
 import './daily.css';
@@ -12,6 +12,8 @@ const POLL_MS = 1000;
 const SAVE_DELAY_MS = 400;
 // missions 18913-18919 (神武玄天塔-辰星關 ...): sestage 1704-1710 in order.
 const STAGES = ['辰星關', '太白關', '熒惑關', '歲星關', '鎮星關', '冽星關', '颶星關'];
+// 狐光靈珠 skips at 燕飄風 (services/tower.py SKIP_LEVEL): 辰星 ... 冽星.
+const SKIPS = [80, 100, 120, 140, 160, 180].map((level, i) => ({ name: STAGES[i], level }));
 const PHASE_LABEL: Record<TowerStatus['log'][number]['phase'], string> = {
   sent: '送出', confirmed: '完成', unconfirmed: '未確認', error: '錯誤', info: '',
 };
@@ -121,10 +123,15 @@ export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
   if (!view || !settings) return <section className="gd-panel gd-dim">讀取日常課題…</section>;
   const st = view.status;
   const running = st.running;
-  const doneToday = view.record.date === today() && view.record.top_floor > 0;
+  const today_ = view.record.date === today() ? view.record : null;
+  // done: false = stopped mid-climb (error, potions); the tower picks up from there.
+  const doneToday = !!today_ && (today_.done ?? today_.top_floor > 0);
+  const resumable = !!today_ && !doneToday && today_.top_floor > 0;
 
   return (
     <div className="gd">
+      <QueueSection pid={pid} active={active} />
+
       <section className="gd-panel gd-strip" aria-label="日常課題執行">
         <span className={`gd-state${running ? ' is-on' : ''}${running && st.problem ? ' is-warn' : ''}`}>
           <i />{running ? (st.problem ? '等待中' : '執行中') : '已停止'}
@@ -155,7 +162,9 @@ export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
         <div className="dl-today">
           {doneToday
             ? <span>今天已挑戰，最高打到 <b className="dl-num">第 {view.record.top_floor} 層</b></span>
-            : <span className="gd-dim">今天還沒有用工具登塔</span>}
+            : resumable
+              ? <span>今天打到 <b className="dl-num">第 {view.record.top_floor} 層</b>，還沒打完，再按開始會接續</span>
+              : <span className="gd-dim">今天還沒有用工具登塔</span>}
           {view.record.ended && <span className="gd-dim">上次結束：{view.record.ended}</span>}
         </div>
       </section>
@@ -182,6 +191,20 @@ export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
           </button>
         </div>
         {estimateText && <div className={`dl-estimate${estimateWarn ? ' is-warn' : ''}`} role="status">{estimateText}</div>}
+        <div className="dl-row dl-skip">
+          <label htmlFor="dl-skip">狐光靈珠</label>
+          <select id="dl-skip" className="dl-select" value={settings.config.skip_to ?? ''}
+            onChange={e => update({
+              ...settings,
+              config: { ...settings.config, skip_to: e.target.value ? Number(e.target.value) : null },
+            })}>
+            <option value="">不使用</option>
+            {SKIPS.map((s, i) => (
+              <option key={s.name} value={i + 1}>略過到{s.name}（第 {i * 10 + 10} 層，LV{s.level}）</option>
+            ))}
+          </select>
+          <span>每天第一次進塔前，依序一關一關略過；等級或靈珠不夠就略過到能略過的那關</span>
+        </div>
         <PotionFloors config={settings.config} onChange={config => update({ ...settings, config })} />
         <div className="gd-fixed">
           <span>層數是全塔編號：辰星關 1–10、太白關 11–20…</span>
@@ -189,6 +212,7 @@ export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
           <span>估算：命中要 ≥ 該房怪物最高迴避（依 10/05 實測校正），也看等級門檻</span>
           <span>出口對話依選項的 jump id 選，不靠位置</span>
           <span>死亡、背包滿或超重、等級不夠就停</span>
+          <span>狐光靈珠：每關 1 顆（冽星關 2 顆），要 1 格背包空位、負重剩 5；略過的關給該關寶箱與經驗；颶星關不能略過</span>
         </div>
       </section>
 
@@ -220,7 +244,7 @@ function Progress({ st }: { st: TowerStatus }) {
   }
   const base = st.floor != null && st.room != null ? st.floor - st.room : (st.floors.at(-1)?.floor ?? 1) - 1;
   const index = Math.floor(base / 10);
-  const cleared = new Map(st.floors.map(f => [f.floor, f.secs]));
+  const cleared = new Map(st.floors.map(f => [f.floor, f]));
   const roomSecs = st.room_started != null ? Math.max(0, now / 1000 - st.room_started) : null;
   return (
     <section className="gd-panel">
@@ -231,13 +255,14 @@ function Progress({ st }: { st: TowerStatus }) {
       <ol className="dl-ladder" aria-label="這一關的層數進度">
         {Array.from({ length: 10 }, (_, i) => {
           const floor = base + 1 + i;
-          const secs = cleared.get(floor);
+          const f = cleared.get(floor);
           const cur = st.running && floor === st.floor;
+          const note = f?.skipped ? '略過' : f ? mmss(f.secs) : cur ? '進行中' : '';
           return (
-            <li key={floor} className={secs != null ? 'is-done' : cur ? 'is-cur' : ''}
-              aria-label={`第 ${floor} 層${secs != null ? `，${mmss(secs)} 通過` : cur ? '，進行中' : ''}`}>
+            <li key={floor} className={f?.skipped ? 'is-skip' : f ? 'is-done' : cur ? 'is-cur' : ''}
+              aria-label={`第 ${floor} 層${f?.skipped ? '，用狐光靈珠略過' : f ? `，${mmss(f.secs)} 通過` : cur ? '，進行中' : ''}`}>
               <b>{floor}</b>
-              <span>{secs != null ? mmss(secs) : cur ? '進行中' : ''}</span>
+              <span>{note}</span>
             </li>
           );
         })}
@@ -365,3 +390,122 @@ function PotionFloors({ config, onChange }: { config: TowerConfig; onChange: (c:
   );
 }
 
+
+const ITEM_NOTE: Record<DailyQueueItem['state'], string> = {
+  pending: '', moving: '前往中', running: '進行中', done: '完成', skipped: '今日已做', error: '停下', halted: '停住',
+};
+
+// This character's 日常 list: run order, add / remove, and running it in one go
+// (the 總覽 page starts several characters' lists at once).
+function QueueSection({ pid, active }: { pid: number; active: boolean }) {
+  const [view, setView] = useState<DailyView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [adding, setAdding] = useState('');
+
+  const refresh = useCallback(async () => {
+    try {
+      setView(await get<DailyView>(`/api/characters/${pid}/daily`));
+    } catch (e) {
+      reportClientError(e, { component: 'DailyTab.queue.refresh', silent: true });
+    }
+  }, [pid]);
+
+  useEffect(() => {
+    if (!active) return;
+    refresh();
+    const t = window.setInterval(refresh, POLL_MS);
+    return () => window.clearInterval(t);
+  }, [active, refresh]);
+
+  if (!view) return null;
+  const keys = view.config.modules;
+  const running = view.status.running;
+  const titles = new Map(view.modules.map(m => [m.key, m.title]));
+  const items = view.status.items;
+  const left = view.modules.filter(m => !keys.includes(m.key));
+
+  const save = async (next: string[]) => {
+    setView({ ...view, config: { modules: next } });
+    try {
+      await put(`/api/characters/${pid}/daily/queue`, { modules: next });
+      setNotice(null);
+      await refresh();
+    } catch (e) {
+      setNotice('清單沒有存到：角色可能還沒定位');
+      reportClientError(e, { component: 'DailyTab.queue.save', silent: true });
+    }
+  };
+  const move = (i: number, d: -1 | 1) => {
+    const next = [...keys];
+    [next[i], next[i + d]] = [next[i + d], next[i]];
+    save(next);
+  };
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      if (running) {
+        await post(`/api/characters/${pid}/daily/stop`);
+      } else {
+        const r = await post<GuardStartResult>(`/api/characters/${pid}/daily/start`);
+        setNotice(r.ok ? null : r.reason ?? '無法開始');
+      }
+      await refresh();
+    } catch (e) {
+      reportClientError(e, { component: 'DailyTab.queue.toggle' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="gd-panel" aria-label="日常清單">
+      <header className="gd-head">
+        <h3>日常清單</h3>
+        <span className="gd-dim">照順序一項一項跑；今天做過的略過，一項出錯就停住整串，再按開始從停下的那項接著跑</span>
+      </header>
+      <ol className="dl-queue">
+        {keys.map((k, i) => {
+          const item = items.find(it => it.module === k);
+          return (
+            <li key={k} data-s={item?.state ?? 'pending'}>
+              <span className="dl-queue-n">{i + 1}</span>
+              <span className="dl-queue-t">{titles.get(k) ?? k}</span>
+              <span className="dl-queue-s">
+                {item ? (item.state === 'done' && item.result ? `完成 · ${item.result}` : ITEM_NOTE[item.state]) : ''}
+              </span>
+              <span className="dl-queue-a">
+                <button type="button" className="dl-btn dl-btn-sm" disabled={running || i === 0}
+                  onClick={() => move(i, -1)} aria-label={`${titles.get(k)} 往前`}>↑</button>
+                <button type="button" className="dl-btn dl-btn-sm" disabled={running || i === keys.length - 1}
+                  onClick={() => move(i, 1)} aria-label={`${titles.get(k)} 往後`}>↓</button>
+                <button type="button" className="dl-btn dl-btn-sm" disabled={running}
+                  onClick={() => save(keys.filter(x => x !== k))} aria-label={`從清單移除 ${titles.get(k)}`}>移除</button>
+              </span>
+            </li>
+          );
+        })}
+        {keys.length === 0 && <li className="gd-dim">清單是空的，從下面加入要跑的項目。</li>}
+      </ol>
+      <div className="dl-row" style={{ marginTop: 10 }}>
+        {left.length > 0 && (
+          <>
+            <label htmlFor="dl-add">加入</label>
+            <select id="dl-add" className="dl-select" value={adding} disabled={running}
+              onChange={e => setAdding(e.target.value)}>
+              <option value="">選一個日常…</option>
+              {left.map(m => <option key={m.key} value={m.key}>{m.title}</option>)}
+            </select>
+            <button type="button" className="dl-btn dl-btn-sm" disabled={running || !adding}
+              onClick={() => { save([...keys, adding]); setAdding(''); }}>加到最後</button>
+          </>
+        )}
+        <button type="button" className={`dl-btn${running ? ' is-stop' : ''}`} style={{ marginLeft: 'auto' }}
+          onClick={toggle} disabled={busy || (!running && keys.length === 0)}>
+          {running ? '停止清單' : '開始清單'}
+        </button>
+      </div>
+      {notice && <div className="gd-notice" role="status" style={{ marginTop: 8 }}>{notice}</div>}
+    </section>
+  );
+}
