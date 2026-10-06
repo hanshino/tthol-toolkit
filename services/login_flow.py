@@ -35,6 +35,11 @@ RESCAN_EVERY = 8.0
 BOX_TRIES = 4
 TYPE_TRIES = 2
 LOGOUT_WAIT = 20.0
+# A message box in game: 確定 on a dropped connection (連接伺服器失敗。) goes
+# back to 帳密 in ~2.5 s (live 2026-10-07); any other box just closes. Its
+# text sits at no fixed place, so the screen that follows tells them apart.
+BOX_SETTLE = 5.0
+MAX_DROPS = 1  # disconnects one login may recover from
 
 
 @dataclass(frozen=True)
@@ -84,6 +89,15 @@ class LoginFlow:
             log.info("login pid=%d %s: %s", pid, s.reason, s.detail, extra={"cat": "login"})
             return LoginResult(False, s.reason, s.detail)
 
+    def dismiss(self, pid: int, stop: threading.Event | None = None) -> str:
+        """A message box over the game: close it. "disconnected" when that went
+        back to 帳密, "closed" for any other box, "none" without one."""
+        run = _Run(self, pid, None, stop, lambda _t: None)
+        try:
+            return run.close_game_box(run.read())
+        except _Stop:
+            return "none"
+
     def logout(self, pid: int, stop: threading.Event | None = None) -> bool:
         """Back to the 帳密 screen from in game or 選擇角色. True when it is there."""
         run = _Run(self, pid, None, stop, lambda _t: None)
@@ -103,6 +117,7 @@ class _Run:
         self.submitted = False  # the login button was pressed once
         self.started = False  # 開始遊戲 was pressed (one entry per login)
         self.protect_sent = False
+        self.drops = 0  # disconnects recovered from
 
     # -- plumbing ----------------------------------------------------------------------
 
@@ -134,6 +149,10 @@ class _Run:
         end = self.f._clock() + DEADLINE
         while self.f._clock() < end:
             s = self.read()
+            if s.kind == "game" and s.box is not None:
+                if self.close_game_box(s) == "disconnected":
+                    self.dropped()
+                continue
             if s.kind == "game":
                 if self.in_game():
                     return
@@ -147,6 +166,27 @@ class _Run:
             else:
                 self.wait(POLL)  # loading, or a screen in between
         raise _Stop("timeout", "登入花太久，停止")
+
+    def close_game_box(self, s: Screen) -> str:
+        box = s.box
+        if s.kind != "game" or box is None:
+            return "none"
+        self.click(box.center)
+        after = self.wait_change({"login"}, BOX_SETTLE)
+        if after.kind == "login":
+            log.info(
+                "login pid=%d disconnected (message box -> 帳密)", self.pid, extra={"cat": "login"}
+            )
+            return "disconnected"
+        return "closed"
+
+    def dropped(self) -> None:
+        """Back at 帳密 after a disconnect: the login starts over, once."""
+        self.drops += 1
+        if self.drops > MAX_DROPS:
+            raise _Stop("disconnected", "連線一直中斷（連接伺服器失敗）")
+        self.note("連線中斷，重新登入")
+        self.submitted = self.started = self.protect_sent = False
 
     def on_login(self, s: Screen) -> None:
         who = self.who
@@ -302,6 +342,11 @@ class _Run:
         s = self.read()
         if s.kind == "login":
             return True
+        if s.kind == "game" and s.box is not None:
+            # A box takes the Esc menu's clicks; on a disconnect it is the way out.
+            if self.close_game_box(s) == "disconnected":
+                return True
+            s = self.read()
         if s.kind == "select":
             self.leave_select(s)
         elif s.kind == "game":

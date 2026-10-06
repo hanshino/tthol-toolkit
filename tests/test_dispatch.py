@@ -35,6 +35,9 @@ class Flow:
         self.logouts = []
         self.lock = threading.Lock()
         self.overlap = []
+        self.drops = {}
+        self.dropped = []
+        self.daily_running = lambda pid: True
 
     def login(self, pid, who, stop, note):
         if stop.is_set():
@@ -51,6 +54,17 @@ class Flow:
         with self.lock:
             self.on[pid] = who.character
         return LoginResult(True, "ok", "")
+
+    def dismiss(self, pid, stop=None):
+        # drops: character -> how many disconnects its 日常 still meets
+        name = self.on.get(pid)
+        if self.drops.get(name, 0) > 0 and self.daily_running(pid):
+            self.drops[name] -= 1
+            with self.lock:
+                self.on.pop(pid, None)  # back at 帳密
+            self.dropped.append(name)
+            return "disconnected"
+        return "none"
 
     def logout(self, pid, stop=None):
         time.sleep(0.02)  # a logout takes time: the account is still on until it ends
@@ -353,3 +367,30 @@ def test_an_unreachable_pipe():
     clock, sleep = clocked()
     send = hook({"status": [OSError("gone")]})
     assert hook_problem(send, NEED, clock, sleep) == "連不到這個視窗的 hook"
+
+
+def test_a_disconnect_logs_the_same_character_in_again_and_resumes():
+    flow = Flow()
+    flow.drops = {"甲": 1}
+    daily = Daily(flow, ticks=3)
+    flow.daily_running = lambda pid: daily.left.get(pid, 0) > 0
+    mgr, flow, daily, _ = make(ROWS, flow, daily)
+    mgr.start(["甲", "乙"], [1])
+    out = finish(mgr)
+    assert out["甲"][0] == "done" and out["乙"][0] == "done"
+    assert flow.dropped == ["甲"]
+    assert [c for _, c in flow.logins] == ["甲", "甲", "乙"]  # 甲 again, then the next
+    assert daily.started.count("甲") == 2 and 1 in daily.stopped
+
+
+def test_two_disconnects_fail_the_character_and_move_on():
+    flow = Flow()
+    flow.drops = {"甲": 5}
+    daily = Daily(flow, ticks=3)
+    flow.daily_running = lambda pid: daily.left.get(pid, 0) > 0
+    mgr, flow, daily, _ = make(ROWS, flow, daily)
+    mgr.start(["甲", "乙"], [1])
+    out = finish(mgr)
+    assert out["甲"][0] == "failed" and "連線中斷" in out["甲"][1]
+    assert out["乙"][0] == "done"
+    assert [c for _, c in flow.logins].count("甲") == 2

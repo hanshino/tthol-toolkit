@@ -27,6 +27,8 @@ log = logging.getLogger("tthol.dispatch")
 POLL = 2.0  # while a character's 日常 runs
 STOP_WAIT = 30.0  # for the 日常 to wind down after a stop
 HOOK_WAIT = 10.0  # after a login, for the hook to start answering commands
+MAX_RUN_DROPS = 1  # disconnects while a character's 日常 runs before it counts as failed
+DROPPED = object()  # _attempt: the connection dropped, log the same character in again
 
 
 def hook_problem(
@@ -347,12 +349,37 @@ class DispatchManager:
             return any(r.state == "pending" for r in self._rows)
 
     def _one(self, w: _Window, row: DispatchRow) -> bool:
-        """One character on this window; False: the window takes no more."""
-        name = row.character
-        who = self._logins.secrets(name)
+        """One character on this window; False: the window takes no more.
+
+        A disconnect while its 日常 runs logs the same character in again and
+        the 日常 picks up where it stopped (the tower resumes its floor), once.
+        """
+        who = self._logins.secrets(row.character)
         if who is None:
             self._end(w, row, "failed", "讀不到密碼")
             return True
+        drops = 0
+        while True:
+            result = self._attempt(w, row, who)
+            if result is not DROPPED:
+                return result
+            drops += 1
+            if drops > MAX_RUN_DROPS:
+                self._end(w, row, "failed", "連線中斷兩次，換下一隻")
+                return True  # the disconnect left the window at 帳密
+            log.info(
+                "dispatch pid=%d %s: disconnected, logging in again",
+                w.pid,
+                row.character,
+                extra={"cat": "dispatch"},
+            )
+            with self._lock:
+                row.state = "login"
+            self._set_step(w, "連線中斷，重新登入")
+
+    def _attempt(self, w: _Window, row: DispatchRow, who):
+        """Log in and run the 日常: True / False as _one, or DROPPED."""
+        name = row.character
         result = self._flow.login(w.pid, who, self._stop, note=lambda t: self._set_step(w, t))
         if not result.ok:
             if result.reason == "stopped":
@@ -390,12 +417,14 @@ class DispatchManager:
         self._set_step(w, "跑日常")
         while self._daily.status(w.pid).running:
             if self._wait(self._stop, POLL):
-                self._daily.stop(w.pid)
-                end = self._wall() + STOP_WAIT
-                while self._daily.status(w.pid).running and self._wall() < end:
-                    self._wait(threading.Event(), 0.5)
+                self._stop_daily(w)
                 self._end(w, row, "stopped", "手動停下")
                 return False  # leave the character where it is
+            if self._flow.dismiss(w.pid, self._stop) == "disconnected":
+                self._stop_daily(w)
+                return DROPPED
+        if self._flow.dismiss(w.pid, self._stop) == "disconnected":
+            return DROPPED  # the 日常 ended on the dropped connection
         st = self._daily.status(w.pid)
         states = {i.state for i in st.items}
         if st.error or "error" in states:
@@ -405,6 +434,12 @@ class DispatchManager:
         else:
             self._end(w, row, "stopped", "日常沒有跑完")
         return self._logout(w)
+
+    def _stop_daily(self, w: _Window) -> None:
+        self._daily.stop(w.pid)
+        end = self._wall() + STOP_WAIT
+        while self._daily.status(w.pid).running and self._wall() < end:
+            self._wait(threading.Event(), 0.5)
 
     def _logout(self, w: _Window) -> bool:
         self._set_step(w, "登出")

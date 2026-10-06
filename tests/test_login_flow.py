@@ -46,6 +46,8 @@ class FakeClient:
         self.clicks = []
         self.typed = []
         self.rescans = 0
+        self.game_box = None  # "drop" (a disconnect) or "info" over the game
+        self.drops_on_enter = 0  # disconnects that hit right after entering
         if kind == "select" and self.user is None:
             self.user = next(iter(accounts))
 
@@ -96,6 +98,9 @@ class FakeClient:
             return Screen(classify(ws, False), ws)
         if self.kind == "game":
             ws = [Widget(840, "CWndStatic", (452, 583, 503, 597), "個人狀態")]
+            if self.game_box:
+                ws.append(Widget(MSGBOX, "CWndMsgBox", (296, 240, 503, 359)))
+                ws.append(Widget(MSGBOX_OK, "CWndButton", (423, 323, 470, 342)))
             return Screen(classify(ws, True), ws)
         return Screen("unknown")
 
@@ -119,6 +124,11 @@ class FakeClient:
                 return True
         w = self._hit(point)
         if w is None:
+            return True
+        if w.wid == MSGBOX_OK and self.kind == "game" and self.game_box:
+            if self.game_box == "drop":  # 連接伺服器失敗。 -> back to 帳密
+                self.kind, self.name, self.located, self.slot = "login", None, False, None
+            self.game_box = None
             return True
         if w.wid == MSGBOX_OK and self.box:
             self.box = False
@@ -163,6 +173,9 @@ class FakeClient:
 
     def enter(self):
         self.kind = "game"
+        if self.drops_on_enter:
+            self.drops_on_enter -= 1
+            self.game_box = "drop"
         self.name = self.accounts[self.user][2][self.slot]
         self.located = False  # the worker has to be rescanned
 
@@ -180,6 +193,8 @@ class FakeClient:
         return True
 
     def logout(self, pid):
+        if self.game_box:
+            return True  # the Esc menu's clicks land on the box: nothing happens
         self.kind, self.name, self.located = "login", None, False
         return True
 
@@ -310,3 +325,35 @@ def test_stop_ends_the_login():
     stop.set()
     r = flow_for(client).login(1, secrets(), stop=stop)
     assert not r.ok and r.reason == "stopped"
+
+
+def test_a_disconnect_right_after_entering_logs_in_again():
+    client = FakeClient(ACCOUNTS)
+    client.drops_on_enter = 1
+    notes = []
+    r = flow_for(client).login(1, secrets(), note=notes.append)
+    assert r.ok, r
+    assert "連線中斷，重新登入" in notes and client.character_name(1) == "債務居士"
+
+
+def test_disconnects_beyond_one_fail_the_login():
+    client = FakeClient(ACCOUNTS)
+    client.drops_on_enter = 5
+    r = flow_for(client).login(1, secrets())
+    assert not r.ok and r.reason == "disconnected"
+
+
+def test_an_ordinary_box_in_game_is_just_closed():
+    client = FakeClient(ACCOUNTS, kind="game", in_game_as="債務居士")
+    client.game_box = "info"
+    flow = flow_for(client)
+    assert flow.dismiss(1) == "closed" and client.kind == "game"
+    assert flow.dismiss(1) == "none"
+    client.game_box = "drop"
+    assert flow.dismiss(1) == "disconnected" and client.kind == "login"
+
+
+def test_logout_under_a_disconnect_box():
+    client = FakeClient(ACCOUNTS, kind="game", in_game_as="債務居士")
+    client.game_box = "drop"
+    assert flow_for(client).logout(1) and client.kind == "login"
