@@ -304,15 +304,27 @@ class TowerManager:
                 run.combat, run.config = settings.combat, settings.config
         return settings
 
+    def config_problem(self, name: str) -> str | None:
+        """Why `name`'s saved settings cannot climb, or None (no game needed:
+        the batch dispatch asks before logging the character in)."""
+        combat = self._store.load_section(name, COMBAT_SECTION, CombatRule)
+        if not combat.basic and not combat.opener and not combat.rotation:
+            return "還沒設定攻擊方式：勾普攻，或選至少一個技能"
+        if not self._store.load(name).potion.hp_items:
+            return "補水的體力白名單是空的：塔裡不能回城，先在「輔助」設定補水"
+        return None
+
+    def done_for(self, name: str) -> bool:
+        """`name` finished today's tower (done_today by name)."""
+        return self._done_today(self._today_record(name))
+
     def start(self, pid: int) -> tuple[bool, str | None]:
         name = self._character_name(pid)
         if not name:
             return False, "角色還沒定位"
-        combat = self._store.load_section(name, COMBAT_SECTION, CombatRule)
-        if not combat.basic and not combat.opener and not combat.rotation:
-            return False, "還沒設定攻擊方式：勾普攻，或選至少一個技能"
-        if not self._store.load(name).potion.hp_items:
-            return False, "補水的體力白名單是空的：塔裡不能回城，先在「輔助」設定補水"
+        problem = self.config_problem(name)
+        if problem:
+            return False, problem
         try:
             missing = self._missing_commands(pid)
         except PipeGone:
@@ -329,7 +341,11 @@ class TowerManager:
                 if not run.stop.is_set():
                     return True, None
                 run.thread.join(timeout=2.0)
-            run = _Run(name, combat, self._store.load_section(name, TOWER_SECTION, TowerConfig))
+            run = _Run(
+                name,
+                self._store.load_section(name, COMBAT_SECTION, CombatRule),
+                self._store.load_section(name, TOWER_SECTION, TowerConfig),
+            )
             run.run_started = self._wall()
             self._runs[pid] = run
             run.thread = threading.Thread(
@@ -480,7 +496,7 @@ class TowerManager:
 
     def done_today(self, pid: int) -> bool:
         name = self._character_name(pid)
-        return bool(name) and self._done_today(self._today_record(name))
+        return bool(name) and self.done_for(name)
 
     def _today(self) -> str:
         return time.strftime("%Y-%m-%d", time.localtime(self._wall()))

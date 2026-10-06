@@ -139,6 +139,26 @@ def test_another_character_on_the_window_makes_modules_forget(mock_find, mock_se
 @patch("services.worker_manager.threading.Thread")
 @patch("services.worker_manager.CharSession")
 @patch("services.worker_manager.find_tthol_processes")
+def test_a_dispatch_confirmed_switch_is_not_forgotten_again(mock_find, mock_sess_cls, _thread):
+    mock_find.return_value = [{"pid": 7}]
+    sess = mock_sess_cls.return_value
+    sess.row.return_value = None
+    sess.link, sess.last_error, sess.name = "weak", None, "寒江孤影"
+    wm = WorkerManager()
+    forgot = []
+    wm.add_forget(forgot.append)
+    wm.world_snapshot()
+    sess.name = "赫斯提雅"
+    wm.confirm_character(7, "赫斯提雅")  # the dispatch logged it in
+    assert forgot == [7]
+    wm.world_snapshot()
+    wm.world_snapshot()
+    assert forgot == [7]  # the snapshot does not stop what the dispatch started
+
+
+@patch("services.worker_manager.threading.Thread")
+@patch("services.worker_manager.CharSession")
+@patch("services.worker_manager.find_tthol_processes")
 def test_family_is_asked_once_per_login_where_the_hook_has_it(
     mock_find, mock_sess_cls, mock_thread
 ):

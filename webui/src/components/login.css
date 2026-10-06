@@ -1,0 +1,49 @@
+/* 加入自動登入 dialog */
+.lg-backdrop {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px;
+  background: rgba(6, 9, 12, 0.72);
+}
+.lg-dialog {
+  width: min(420px, 100%); background: var(--tt-panel); border: 1px solid var(--tt-line);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+.lg-head { display: flex; align-items: baseline; gap: 12px; padding: 14px 18px 10px; border-bottom: 1px solid var(--tt-line-soft); }
+.lg-head h2 { margin: 0; font-family: var(--tt-font-serif); font-size: 15px; letter-spacing: 3px; font-weight: 600; color: var(--tt-text); }
+.lg-char { font-family: var(--tt-font-serif); font-size: 14px; letter-spacing: 2px; color: var(--tt-gold); }
+.lg-form { display: grid; gap: 10px; padding: 14px 18px 16px; }
+.lg-field { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 10px; font-size: 13px; color: var(--tt-dim); }
+.lg-field input, .lg-field select {
+  min-height: 32px; padding: 4px 8px; font-size: 13px; color: var(--tt-text);
+  background: var(--tt-bg); border: 1px solid var(--tt-line);
+}
+.lg-field input::placeholder { color: var(--tt-mute); }
+.lg-field input:disabled, .lg-field select:disabled { opacity: 0.55; }
+.lg-options { display: flex; flex-wrap: wrap; gap: 6px 18px; padding-left: 82px; }
+.lg-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-dim); cursor: pointer; }
+.lg-note { margin: 2px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--tt-mute); }
+.lg-error { margin: 0; font-size: 12px; color: var(--tt-bad); }
+.lg-actions { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.lg-spacer { flex: 1; }
+button.lg-btn {
+  min-height: 32px; padding: 4px 14px; font-size: 12.5px; letter-spacing: 1px; cursor: pointer;
+  color: var(--tt-dim); background: var(--tt-bg); border: 1px solid var(--tt-line);
+  transition: color 150ms ease, border-color 150ms ease;
+}
+button.lg-btn:hover:not(:disabled) { color: var(--tt-text); border-color: var(--tt-accent); }
+button.lg-primary { color: var(--tt-text); border-color: var(--tt-accent); background: var(--tt-accent-dim); }
+button.lg-remove { color: var(--tt-bad); border-color: transparent; background: none; padding-left: 0; }
+button.lg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.lg-field input:focus-visible, .lg-field select:focus-visible, button.lg-btn:focus-visible, .lg-check input:focus-visible {
+  outline: 1px solid var(--tt-gold); outline-offset: 1px;
+}
+/* The header entry point, beside the character name. */
+button.ws-login {
+  flex: none; margin-left: 4px; padding: 1px 8px; min-height: 22px; font-family: var(--tt-font); font-size: 11px;
+  letter-spacing: 1px; color: var(--tt-dim); background: none; border: 1px solid var(--tt-line); cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+button.ws-login:hover { color: var(--tt-text); border-color: var(--tt-accent); }
+button.ws-login[data-on] { color: var(--tt-ok); border-color: #3f6a5e; }
+button.ws-login:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: 1px; }
+.lg-done { margin: 0; font-size: 13px; line-height: 1.7; color: var(--tt-ok); }
+.lg-field input[type="file"] { padding: 4px; font-size: 12px; }

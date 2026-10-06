@@ -58,6 +58,16 @@ export async function del<T>(path: string): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+// POST JSON, the reply as a file (a body that must not go in a GET link,
+// e.g. the 帳號匯出 passphrase).
+export async function postBlob(path: string, body: unknown): Promise<Blob> {
+  const r = await fetch(`${base}${path}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!r.ok) return fail(path, r);
+  return r.blob();
+}
+
 export async function upload<T>(path: string, file: File): Promise<T> {
   // Multipart upload; let the browser set the boundary content-type itself.
   const form = new FormData();

@@ -11,7 +11,7 @@
 .ws-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .ws-id-text { display: grid; gap: 2px; min-width: 0; }
 .ws-name { display: flex; align-items: center; gap: 8px; font-family: var(--tt-font-serif); font-size: 18px; letter-spacing: 3px; min-width: 0; }
-.ws-name > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-name > .ws-name-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-sub { font-size: 12px; color: var(--tt-dim); }
 /* The hook pipe is connected for this client (傳音 tab shows). */
 .ws-hook {

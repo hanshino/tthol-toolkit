@@ -19,6 +19,7 @@ class FakeModule:
         self.live = False
         self.result = None
         self.end = threading.Event()
+        self.problem = None
 
     def start(self, pid):
         self.started += 1
@@ -46,6 +47,12 @@ class FakeModule:
 
     def done_today(self, pid):
         return self.today
+
+    def done_for(self, name):
+        return self.today
+
+    def config_problem(self, name):
+        return self.problem
 
     def summary(self, pid):
         if self.live:
@@ -209,3 +216,15 @@ def test_forget_ends_the_pass_and_drops_it():
     assert ok
     mgr.forget(1)
     assert a.stopped >= 1 and 1 not in mgr._passes
+
+
+def test_precheck_by_name_before_a_login():
+    tower, other = FakeModule("tower", "神武玄天塔"), FakeModule("x", "別的")
+    mgr, _ = make(tower, other)
+    assert mgr.precheck(NAME) == ("run", None)
+    tower.problem = "還沒設定攻擊方式"
+    assert mgr.precheck(NAME) == ("blocked", "神武玄天塔：還沒設定攻擊方式")
+    tower.today = True  # done: its settings no longer matter
+    assert mgr.precheck(NAME) == ("run", None)
+    other.today = True
+    assert mgr.precheck(NAME) == ("done", "今日都做完了")
