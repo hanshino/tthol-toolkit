@@ -93,7 +93,7 @@ def test_export_import_round_trip_to_another_store():
 
     _db2, there = make()
     counts = there.import_rows(open_sealed(raw, "a long passphrase"), overwrite=False)
-    assert counts == {"added": 2, "updated": 0, "skipped": 0}
+    assert counts == {"added": 2, "updated": 0, "skipped": 0, "settings": 0}
     assert there.secrets("阿克婭").protect == "pp" and there.secrets("債務居士").password == "pw9"
 
 
@@ -127,3 +127,58 @@ def test_wrong_passphrase_tampering_and_short_passphrase():
         open_sealed(b'{"format": "something else"}', "a long passphrase")
     with pytest.raises(TransferError, match="short"):
         seal([], "short")
+
+
+def test_export_carries_character_settings_but_not_tower_progress():
+    from services.login_transfer import open_sealed, seal
+
+    db, here = make()
+    here.save(entry(password="pw"))
+    db.set_setting("阿克婭", "daily.queue", {"tasks": ["tower"]})
+    db.set_setting("阿克婭", "tower", {"stop_floor": 40})
+    db.set_setting("阿克婭", "tower.record", {"date": "2026-10-07"})
+    raw = seal(here.export_rows(), "a long passphrase")
+
+    db2, there = make()
+    counts = there.import_rows(open_sealed(raw, "a long passphrase"), overwrite=False)
+    assert counts["added"] == 1 and counts["settings"] == 1
+    assert db2.get_setting("阿克婭", "daily.queue") == {"tasks": ["tower"]}
+    assert db2.get_setting("阿克婭", "tower") == {"stop_floor": 40}
+    assert db2.get_setting("阿克婭", "tower.record") is None
+
+
+def test_import_fills_missing_settings_and_replaces_only_with_overwrite():
+    from services.login_transfer import open_sealed, seal
+
+    db, here = make()
+    here.save(entry(password="pw"))
+    db.set_setting("阿克婭", "tower", {"stop_floor": 40})
+    db.set_setting("阿克婭", "combat", {"skill": 1})
+    raw = seal(here.export_rows(), "a long passphrase")
+
+    # Already listed here (an older import without settings) and has its own tower.
+    db2, there = make()
+    there.save(entry(password="pw"))
+    db2.set_setting("阿克婭", "tower", {"stop_floor": 20})
+    counts = there.import_rows(open_sealed(raw, "a long passphrase"), overwrite=False)
+    assert counts["skipped"] == 1 and counts["settings"] == 1
+    assert db2.get_setting("阿克婭", "tower") == {"stop_floor": 20}  # kept
+    assert db2.get_setting("阿克婭", "combat") == {"skill": 1}  # filled in
+    there.import_rows(open_sealed(raw, "a long passphrase"), overwrite=True)
+    assert db2.get_setting("阿克婭", "tower") == {"stop_floor": 40}
+
+
+def test_transfer_sections_match_the_stores():
+    from services import daily, family, guard, item_rules, tower_run
+    from services.login_store import TRANSFER_SECTIONS
+
+    assert set(TRANSFER_SECTIONS) == {
+        daily.QUEUE_SECTION,
+        tower_run.TOWER_SECTION,
+        tower_run.COMBAT_SECTION,
+        guard.POTION_SECTION,
+        guard.BUFF_SECTION,
+        item_rules.ITEMS_SECTION,
+        family.SECTION,
+    }
+    assert tower_run.RECORD_SECTION not in TRANSFER_SECTIONS

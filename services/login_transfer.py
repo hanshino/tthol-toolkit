@@ -32,7 +32,7 @@ def _key(passphrase: str, salt: bytes, n: int, r: int, p: int) -> bytes:
 
 
 def seal(entries: list[dict], passphrase: str) -> bytes:
-    """entries: [{character, username, server, password, protect, enabled, sort}]."""
+    """entries: [{character, username, server, password, protect, enabled, sort, settings}]."""
     if len(passphrase) < MIN_PASSPHRASE:
         raise TransferError("passphrase too short")
     salt, nonce = os.urandom(16), os.urandom(12)

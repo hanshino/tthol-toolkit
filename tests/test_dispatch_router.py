@@ -102,7 +102,7 @@ async def test_export_then_import_with_the_passphrase(client):
     same = await client.post(
         "/api/logins/import", json={"data": r.text, "passphrase": "a long passphrase"}
     )
-    assert same.json() == {"added": 0, "updated": 0, "skipped": 1}  # already here
+    assert same.json() == {"added": 0, "updated": 0, "skipped": 1, "settings": 0}  # already here
     short = await client.post("/api/logins/export", json={"passphrase": "short"})
     assert short.status_code == 422
 

@@ -435,6 +435,7 @@ class LoginImportResult(_Base):
     added: int = 0
     updated: int = 0
     skipped: int = 0
+    settings: int = 0  # characters that took 日常 / tower / guard settings from the file
 
 
 DispatchVerdict = Literal["run", "done", "blocked", "no-login"]

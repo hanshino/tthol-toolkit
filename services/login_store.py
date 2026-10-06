@@ -12,6 +12,19 @@ from dataclasses import dataclass
 from services import secret_box
 from services.api_types import LoginEntry, LoginEntryIn
 
+# Per-character settings an export carries along (character_settings
+# sections), so the other computer can run the dispatch straight away.
+# tower.record (today's tower progress) stays behind.
+TRANSFER_SECTIONS = (
+    "daily.queue",
+    "tower",
+    "combat",
+    "guard.potion",
+    "guard.buff",
+    "items",
+    "family",
+)
+
 
 @dataclass(frozen=True)
 class LoginSecrets:
@@ -83,14 +96,26 @@ class LoginStore:
                     "protect": self._unprotect(r["protect"]) if r["protect"] else None,
                     "enabled": bool(r["enabled"]),
                     "sort": r["sort"],
+                    "settings": self._settings(r["character"]),
                 }
             )
         return out
 
+    def _settings(self, character: str) -> dict[str, dict]:
+        out = {}
+        for section in TRANSFER_SECTIONS:
+            data = self._db.get_setting(character, section)
+            if data is not None:
+                out[section] = data
+        return out
+
     def import_rows(self, rows: list[dict], overwrite: bool) -> dict[str, int]:
         """Rows from an export. A character already here is replaced only with
-        `overwrite`. Returns {added, updated, skipped}."""
-        counts = {"added": 0, "updated": 0, "skipped": 0}
+        `overwrite`. The settings the file carries go in the same way, per
+        section: without `overwrite` only the sections this computer lacks.
+        Returns {added, updated, skipped, settings}; settings counts the
+        characters that took any section."""
+        counts = {"added": 0, "updated": 0, "skipped": 0, "settings": 0}
         start = len(self._db.login_rows())
         for r in rows:
             try:
@@ -107,6 +132,8 @@ class LoginStore:
             except (KeyError, TypeError, ValueError):
                 counts["skipped"] += 1
                 continue
+            if self._import_settings(entry.character, r.get("settings"), overwrite):
+                counts["settings"] += 1
             known = self.get(entry.character) is not None
             if known and not overwrite:
                 counts["skipped"] += 1
@@ -116,6 +143,19 @@ class LoginStore:
             self.save(entry)
             counts["updated" if known else "added"] += 1
         return counts
+
+    def _import_settings(self, character: str, settings: object, overwrite: bool) -> bool:
+        if not isinstance(settings, dict):
+            return False
+        took = False
+        for section in TRANSFER_SECTIONS:
+            data = settings.get(section)
+            if not isinstance(data, dict):
+                continue
+            if overwrite or self._db.get_setting(character, section) is None:
+                self._db.set_setting(character, section, data)
+                took = True
+        return took
 
     def secrets(self, character: str) -> LoginSecrets | None:
         """Decrypted, for the login flow only. None when the row or its password is missing."""
