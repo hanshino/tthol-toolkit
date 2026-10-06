@@ -6,7 +6,7 @@ to produce webui/src/api/types.ts. Do not hand-edit the TS file.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _Base(BaseModel):
@@ -1175,9 +1175,19 @@ class GuardBuffRule(_Base):
     skills: list[int] = []
     # 自動變身: press the hero transform whenever 英雄無雙 is not on the character.
     hero: bool = False
-    # 無名島 黯影 while a module walks the character across maps (the other
-    # buffs are held off then): monsters that cannot see it leave it alone.
-    stealth: bool = False
+    # 趕路 buff while a module walks the character across maps (the other
+    # buffs are held off then): 無名島 疾風身法, then 黯影 Lv7+.
+    travel: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _stealth_is_travel(cls, data):
+        # Saved before 2026-10-06 as `stealth` (黯影 only).
+        if isinstance(data, dict) and "stealth" in data:
+            data = dict(data)
+            stealth = data.pop("stealth")
+            data.setdefault("travel", stealth)
+        return data
 
 
 class GuardConfig(_Base):
@@ -1251,6 +1261,9 @@ class BuffSkillCandidate(_Base):
     duration_s: int
     target: Literal["self", "ally", "group"]
     active: bool  # the buff is on the character now (from the hook)
+    # A newer skill of the same status group is learned too: they overwrite
+    # each other, so the picker folds this one away (冰心訣 under 冰心靈訣).
+    superseded: bool = False
     expires_at: float | None = None  # unix seconds, when known
     icon_url: str | None = None
 

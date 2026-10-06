@@ -15,6 +15,7 @@ from services.guard import (
     SelfBuff,
     _Run,
     active_skills,
+    newest_in_group,
     next_cast,
     read_learned,
     read_stage_id,
@@ -29,6 +30,8 @@ DEFS = {
     (SHIELD, 5): SelfBuff("冰霜烈炎盾", 51, "護體", 55, 300000, "self"),
     (270, 9): SelfBuff("黯影", 24, "隱形", 63, 120000, "self"),
     (270, 6): SelfBuff("黯影", 24, "隱形", 46, 100000, "self"),
+    (269, 8): SelfBuff("疾風身法", 4, "疾風", 90, 90000, "self"),
+    (119, 10): SelfBuff("冰心訣", 2, "冰心", 100, 300000, "self"),
 }
 LEARNED = {ICE: 20, BAGUA: 5, SHIELD: 5, 1: 1}
 WALL0 = 1000.0
@@ -149,7 +152,7 @@ def make(
     channel=None,
     caps=("use", "cast", "status"),
     hero=False,
-    stealth=False,
+    travel=False,
     learned=None,
 ):
     clock = {"t": 100.0}
@@ -158,7 +161,7 @@ def make(
         "寒江孤影",
         GuardConfig(
             potion=GuardPotionRule(hp_items=[], mp_items=[]),
-            buff=GuardBuffRule(skills=skills, hero=hero, stealth=stealth),
+            buff=GuardBuffRule(skills=skills, hero=hero, travel=travel),
         ),
     )
     state = {"buffs": buffs, "stage": (1, "莫愁谷入口")}
@@ -503,7 +506,7 @@ def test_forget_drops_the_run_and_its_log(tmp_path):
 
 def test_walking_quiet_casts_only_stealth_lv7_up(tmp_path):
     mgr, run, clock, state = make(
-        tmp_path, [ICE], buffs=[], stealth=True, learned={**LEARNED, 270: 9}
+        tmp_path, [ICE], buffs=[], travel=True, learned={**LEARNED, 270: 9}
     )
     with mgr.quiet(1):
         mgr._tick(1, run)
@@ -512,11 +515,45 @@ def test_walking_quiet_casts_only_stealth_lv7_up(tmp_path):
 
 def test_stealth_below_lv7_is_not_cast_while_walking(tmp_path):
     mgr, run, clock, state = make(
-        tmp_path, [ICE], buffs=[], stealth=True, learned={**LEARNED, 270: 6}
+        tmp_path, [ICE], buffs=[], travel=True, learned={**LEARNED, 270: 6}
     )
     with mgr.quiet(1):
         mgr._tick(1, run)
     assert casts(mgr) == []
+
+
+def test_travel_casts_haste_first_then_stealth(tmp_path):
+    mgr, run, clock, state = make(
+        tmp_path, [ICE], buffs=[], travel=True, learned={**LEARNED, 269: 8, 270: 9}
+    )
+    with mgr.quiet(1):
+        mgr._tick(1, run)
+        assert casts(mgr) == ["cast 26908 27395721"]  # 疾風身法: casting would end 黯影
+        state["buffs"] = [skill_buff(269, 8, WALL0 + 90)]
+        clock["t"] += CAST_GAP
+        mgr._tick(1, run)
+    assert casts(mgr) == ["cast 26908 27395721", "cast 27009 27395721"]
+
+
+def test_travel_with_low_stealth_still_casts_haste(tmp_path):
+    mgr, run, clock, state = make(
+        tmp_path, [ICE], buffs=[], travel=True, learned={**LEARNED, 269: 8, 270: 6}
+    )
+    with mgr.quiet(1):
+        mgr._tick(1, run)
+        state["buffs"] = [skill_buff(269, 8, WALL0 + 90)]
+        clock["t"] += CAST_GAP
+        mgr._tick(1, run)
+    assert casts(mgr) == ["cast 26908 27395721"]
+
+
+def test_saved_stealth_reads_as_travel():
+    assert GuardBuffRule.model_validate({"skills": [], "stealth": True}).travel is True
+
+
+def test_newest_in_group_marks_the_later_tier():
+    learned = {119: 10, ICE: 20, SHIELD: 5}
+    assert newest_in_group(learned, DEFS) == {2: ICE, 51: SHIELD}
 
 
 def test_stealth_off_casts_nothing_while_walking(tmp_path):

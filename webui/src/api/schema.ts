@@ -1613,6 +1613,11 @@ export interface components {
             target: "self" | "ally" | "group";
             /** Active */
             active: boolean;
+            /**
+             * Superseded
+             * @default false
+             */
+            superseded: boolean;
             /** Expires At */
             expires_at?: number | null;
             /** Icon Url */
@@ -2355,10 +2360,10 @@ export interface components {
              */
             hero: boolean;
             /**
-             * Stealth
+             * Travel
              * @default false
              */
-            stealth: boolean;
+            travel: boolean;
         };
         /**
          * GuardConfig
@@ -2382,7 +2387,7 @@ export interface components {
              * @default {
              *       "skills": [],
              *       "hero": false,
-             *       "stealth": false
+             *       "travel": false
              *     }
              */
             buff: components["schemas"]["GuardBuffRule"];
@@ -2527,7 +2532,7 @@ export interface components {
              *       "buff": {
              *         "hero": false,
              *         "skills": [],
-             *         "stealth": false
+             *         "travel": false
              *       }
              *     }
              */

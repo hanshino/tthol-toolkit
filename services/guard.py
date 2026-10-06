@@ -95,10 +95,11 @@ BUFF_COMMANDS = ("cast", "status")  # what keeping buffs up needs on top
 HERO_COMMANDS = ("hero",)  # what 自動變身 needs on top
 CAPS_RETRY = 2.0  # re-read a dropped manifest at most this often
 HERO_CODE = 30295  # 英雄無雙: the `buffs` code of a hero transform
-# 黯影 (無名島): invisible to monsters. Below Lv7 moving ends it (magic.help),
-# so only Lv7+ is cast while walking.
-STEALTH_SKILL = 270
-STEALTH_MIN_LEVEL = 7
+# 趕路 buff (無名島), cast in this order while a module walks the character:
+# 疾風身法 speeds the walk; 黯影 hides it from monsters, but below Lv7 moving
+# ends it (magic.help). Casting any skill ends 黯影 too, so 疾風身法 goes
+# first and 黯影 is put back after each 疾風身法 recast.
+TRAVEL_SKILLS = ((269, 1), (270, 7))  # (magic id, lowest usable level)
 REFILL_COMMANDS = ("pettake",)  # what 寵物取水 needs on top
 REFILL_STACK = 200  # one stack of a potion (what the pet bag holds per slot)
 SUMMON_COMMANDS = ("pet", "petsummon", "petdismiss")  # auto summon for a take
@@ -567,6 +568,19 @@ def active_skills(buffs: list[BuffInfo]) -> dict[int, float | None]:
     for b in buffs:
         if b.code is not None and b.level is not None:  # level set = a skill code
             out[b.code // 100] = b.expires_at
+    return out
+
+
+def newest_in_group(
+    learned: dict[int, int], defs: dict[tuple[int, int], SelfBuff]
+) -> dict[int, int]:
+    """status group -> the learned buff skill that stands for it: the highest
+    magic id, as each clan's later tier is (冰心訣 119 < 冰心真訣 354 < 冰心靈訣 713)."""
+    out: dict[int, int] = {}
+    for mid, level in learned.items():
+        d = defs.get((mid, level))
+        if d is not None and mid > out.get(d.group, 0):
+            out[d.group] = mid
     return out
 
 
@@ -1300,6 +1314,7 @@ class GuardManager:
             return []
         defs = self._self_buff_defs()
         active = active_skills(self._buffs(pid) or [])
+        newest = newest_in_group(learned, defs)
         out = []
         for mid, level in sorted(learned.items()):
             d = defs.get((mid, level))
@@ -1318,6 +1333,7 @@ class GuardManager:
                     active=mid in active,
                     expires_at=active.get(mid),
                     icon_url=self._skill_icon(mid, level),
+                    superseded=newest[d.group] != mid,
                 )
             )
         return out
@@ -1446,8 +1462,8 @@ class GuardManager:
                 if not self._is_quiet(pid):
                     self._keep_buffs(pid, run, mp, now)
                     self._keep_hero(pid, run, now)
-                elif run.config.buff.stealth:
-                    self._keep_buffs(pid, run, mp, now, stealth=True)
+                elif run.config.buff.travel:
+                    self._keep_buffs(pid, run, mp, now, travel=True)
                 self._keep_items(pid, run, bag, now)
         except _Stop as stop:
             return stop.wait
@@ -1594,10 +1610,10 @@ class GuardManager:
                     f" ×{tried[0]}" if tried and tried[0] > 1 else ""
                 )
 
-    def _keep_buffs(self, pid: int, run: _Run, mp: int, now: float, stealth: bool = False) -> None:
+    def _keep_buffs(self, pid: int, run: _Run, mp: int, now: float, travel: bool = False) -> None:
         """Cast one ticked self buff that is missing or about to end; with
-        `stealth` (a module is walking the character), only 黯影 Lv7+."""
-        ticked = [STEALTH_SKILL] if stealth else run.config.buff.skills
+        `travel` (a module is walking the character), only the 趕路 buffs."""
+        ticked = [mid for mid, _ in TRAVEL_SKILLS] if travel else run.config.buff.skills
         if not ticked:
             return
         buffs = self._buffs(pid)
@@ -1632,8 +1648,8 @@ class GuardManager:
                 if line is not None:
                     line.phase = "confirmed"
                     line.text += "（已生效）"
-        if stealth and run.learned.get(STEALTH_SKILL, 0) < STEALTH_MIN_LEVEL:
-            return  # below Lv7 the walk itself ends it
+        if travel:
+            ticked = [m for m, low in TRAVEL_SKILLS if run.learned.get(m, 0) >= low]
         defs = self._self_buff_defs()
         pick = next_cast(ticked, run.learned, defs, active, mp, run.buff_state, now, wall)
         if pick is None:
