@@ -168,9 +168,10 @@ def _build_services(dev: bool) -> dict:
         row = db.get_character_account(name)
         return row["id"] if row else None
 
-    def item_info(item_id: int) -> tuple[str, bool, bool] | None:
+    def item_info(item_id: int) -> tuple[str, bool, bool, str] | None:
         meta = item_catalog.lookup([item_id])
-        return (meta[0].name, meta[0].no_trade, meta[0].no_store) if meta else None
+        m = meta[0] if meta else None
+        return (m.name, m.no_trade, m.no_store, m.category) if m else None
 
     stage_names = stage_names_by_id()
     handoff = HandoffManager(

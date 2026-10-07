@@ -1665,6 +1665,7 @@ class HandoffBagItem(_Base):
     stacks: int
     no_trade: bool = False
     no_store: bool = False
+    category: Literal["potion", "gear", "book", "pet", "event", "misc"] = "misc"
 
 
 class HandoffView(_Base):
@@ -1675,6 +1676,9 @@ class HandoffView(_Base):
     plan: list[HandoffPlanRow] = []  # what the viewer's bag would send
     bag: list[HandoffBagItem] = []
     bag_used: int | None = None
+    # The warehouse as the hook last saw it open (kept after closing, until the
+    # game restarts); empty when it was not opened this session.
+    warehouse: list[HandoffBagItem] = []
 
 
 class HandoffStart(_Base):

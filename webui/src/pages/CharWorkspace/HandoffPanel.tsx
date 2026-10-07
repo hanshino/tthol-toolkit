@@ -141,7 +141,7 @@ export function HandoffPanel({ pid, active }: { pid: number; active: boolean }) 
       {running && status?.step && <div className="sp-step" role="status">{status.step}</div>}
 
       {shown === 'receive'
-        ? <Receiver pid={pid} view={view} cfg={cfg} status={status} metas={metas} onChange={update} />
+        ? <Receiver view={view} cfg={cfg} status={status} metas={metas} onChange={update} />
         : <Sender view={view} cfg={cfg} status={status} onChange={update} />}
 
       <section className="gd-panel">
@@ -167,16 +167,16 @@ export function HandoffPanel({ pid, active }: { pid: number; active: boolean }) 
   );
 }
 
-function Receiver({ pid, view, cfg, status, metas, onChange }: {
-  pid: number; view: HandoffView; cfg: HandoffConfig; status: HandoffStatus | null;
+function Receiver({ view, cfg, status, metas, onChange }: {
+  view: HandoffView; cfg: HandoffConfig; status: HandoffStatus | null;
   metas: Map<number, ItemMeta>; onChange: (c: HandoffConfig) => void;
 }) {
   const running = !!status?.running;
   const used = view.bag_used;
   const free = used == null ? null : cfg.bag_slots - used;
   const setItems = (items: HandoffConfig['items']) => onChange({ ...cfg, items });
-  const taken = cfg.items.map(i => i.item_id);
-  const bagNames = new Map(view.bag.map(b => [b.item_id, b.name]));
+  const taken = new Set(cfg.items.map(i => i.item_id));
+  const names = new Map([...view.bag, ...(view.warehouse ?? [])].map(b => [b.item_id, b.name]));
 
   return (
     <>
@@ -208,61 +208,12 @@ function Receiver({ pid, view, cfg, status, metas, onChange }: {
           <span className="gd-dim">送貨方只會交出名單上的東西；「馬上存倉」的每收一輪就存掉</span>
         </header>
         {cfg.items.length === 0 ? (
-          <div className="gd-dim ho-empty">還沒有道具。用下面的搜尋或從背包挑。</div>
+          <div className="gd-dim ho-empty">還沒有道具。從下面搜尋、背包或倉庫挑。</div>
         ) : (
-          <div className="sp-scroll">
-            <table className="sp-table ho-table">
-              <thead>
-                <tr><th>道具</th><th>收到後</th><th aria-label="移除" /></tr>
-              </thead>
-              <tbody>
-                {cfg.items.map((it, i) => {
-                  const m = metas.get(it.item_id);
-                  const name = m?.name ?? bagNames.get(it.item_id) ?? `#${it.item_id}`;
-                  const set = (store: boolean) =>
-                    setItems(cfg.items.map((x, k) => (k === i ? { ...x, store } : x)));
-                  return (
-                    <tr key={it.item_id}>
-                      <td>
-                        <div className="sp-item">
-                          {m?.icon_url ? <img src={m.icon_url} alt="" width={24} height={24} /> : <span className="sp-noicon" />}
-                          <div>
-                            <b>{name}</b>
-                            <small>
-                              {m?.type_label}
-                              {m?.no_trade && <span className="ho-bad">　不能交易</span>}
-                              {it.store && m?.no_store && <span className="ho-bad">　不能存倉</span>}
-                            </small>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="sp-radio" role="radiogroup" aria-label={`${name} 收到後`}>
-                          <button type="button" role="radio" aria-checked={!it.store}
-                            className={!it.store ? 'is-active ho-keep' : ''} onClick={() => set(false)}>留在身上</button>
-                          <button type="button" role="radio" aria-checked={it.store}
-                            className={it.store ? 'is-active' : ''} onClick={() => set(true)}>馬上存倉</button>
-                        </span>
-                      </td>
-                      <td className="r">
-                        <button type="button" className="ho-x" aria-label={`移除 ${name}`}
-                          onClick={() => setItems(cfg.items.filter((_, k) => k !== i))}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                            <path d="M18 6 6 18M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Whitelist cfg={cfg} metas={metas} names={names} onChange={setItems} />
         )}
-        <div className="ho-add">
-          <SearchPicker pid={pid} taken={taken} onAdd={id => setItems([...cfg.items, { item_id: id, store: true }])} />
-          <BagPicker view={view} taken={taken} onAdd={id => setItems([...cfg.items, { item_id: id, store: true }])} />
-        </div>
+        <Picker view={view} taken={taken} onAdd={(ids, store) =>
+          setItems([...cfg.items, ...ids.filter(id => !taken.has(id)).map(id => ({ item_id: id, store }))])} />
       </section>
 
       {status?.moved.length ? (
@@ -287,77 +238,168 @@ function Receiver({ pid, view, cfg, status, metas, onChange }: {
   );
 }
 
-function SearchPicker({ pid, taken, onAdd }: { pid: number; taken: number[]; onAdd: (id: number) => void }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const [hits, setHits] = useState<ItemMeta[]>([]);
+type Category = ItemMeta['category'];
+const CATEGORIES: [Category | '', string][] = [
+  ['', '全部類別'], ['book', '技能書'], ['gear', '裝備'], ['potion', '藥品'],
+  ['event', '活動'], ['pet', '寵物'], ['misc', '其他'],
+];
+type Source = 'search' | 'bag' | 'warehouse';
+type Pick = { item_id: number; name: string; note: string; no_store: boolean };
 
-  useEffect(() => {
-    if (!open || !q.trim()) { setHits([]); return; }
-    const t = window.setTimeout(async () => {
-      try {
-        setHits(await get<ItemMeta[]>(`/api/items/search?tradable=true&q=${encodeURIComponent(q)}`));
-      } catch (e) {
-        reportClientError(e, { component: 'HandoffPanel.search', silent: true });
-      }
-    }, 200);
-    return () => window.clearTimeout(t);
-  }, [open, q, pid]);
-
-  if (!open) return <button type="button" className="gd-add" onClick={() => setOpen(true)}>＋ 搜尋道具</button>;
-  const shown = hits.filter(h => !taken.includes(h.item_id));
-  return (
-    <div className="gd-picker">
-      <div className="gd-picker-head">
-        <label className="sp-search">
-          <span>道具名稱</span>
-          <input type="text" value={q} autoFocus placeholder="例如 醉月劍法" onChange={e => setQ(e.target.value)} />
-        </label>
-        <span>不能交易的道具不會列出</span>
-        <button type="button" onClick={() => setOpen(false)}>關閉</button>
+function Whitelist({ cfg, metas, names, onChange }: {
+  cfg: HandoffConfig; metas: Map<number, ItemMeta>; names: Map<number, string>;
+  onChange: (items: HandoffConfig['items']) => void;
+}) {
+  const [filter, setFilter] = useState('');
+  const nameOf = (id: number) => metas.get(id)?.name ?? names.get(id) ?? `#${id}`;
+  const f = filter.trim();
+  const shown = cfg.items.filter(it => !f || nameOf(it.item_id).includes(f));
+  const flip = (id: number) => onChange(cfg.items.map(x => (x.item_id === id ? { ...x, store: !x.store } : x)));
+  const drop = (id: number) => onChange(cfg.items.filter(x => x.item_id !== id));
+  const column = (store: boolean) => {
+    const list = shown.filter(it => it.store === store);
+    const all = cfg.items.filter(it => it.store === store).length;
+    return (
+      <div className={`ho-col ${store ? 'is-store' : 'is-keep'}`}>
+        <div className="ho-col-head">
+          <b>{store ? '馬上存倉' : '留在身上'}</b>
+          <span className="gd-dim">{f ? `${list.length} / ${all}` : all} 項</span>
+          {list.length > 0 && (
+            <button type="button" className="ho-mini" onClick={() =>
+              onChange(cfg.items.map(x => (list.some(l => l.item_id === x.item_id) ? { ...x, store: !store } : x)))}>
+              {f ? '這些' : '全部'}移到{store ? '留在身上' : '馬上存倉'}
+            </button>
+          )}
+        </div>
+        {list.length === 0 ? (
+          <div className="gd-dim ho-empty">{f ? '沒有符合的。' : '沒有。'}</div>
+        ) : (
+          <ul className="ho-chips">
+            {list.map(it => {
+              const m = metas.get(it.item_id);
+              const name = nameOf(it.item_id);
+              const warn = m?.no_trade ? '不能交易' : store && m?.no_store ? '不能存倉' : null;
+              return (
+                <li key={it.item_id} className={warn ? 'is-warn' : undefined} title={warn ?? m?.type_label ?? ''}>
+                  <span className="ho-chip-name">{name}</span>
+                  <button type="button" className="ho-chip-btn" aria-label={`${name} 改成${store ? '留在身上' : '馬上存倉'}`}
+                    title={store ? '改成留在身上' : '改成馬上存倉'} onClick={() => flip(it.item_id)}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <path d="M7 7h11l-3-3M17 17H6l3 3" />
+                    </svg>
+                  </button>
+                  <button type="button" className="ho-chip-btn is-x" aria-label={`移除 ${name}`} title="移除" onClick={() => drop(it.item_id)}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
-      {!q.trim() ? (
-        <div className="gd-dim gd-pad">輸入道具名稱的一部分。</div>
-      ) : shown.length === 0 ? (
-        <div className="gd-dim gd-pad">沒有符合的道具。</div>
-      ) : (
-        <ul role="listbox" aria-label="加入收貨道具">
-          {shown.map(h => (
-            <li key={h.item_id}>
-              <button type="button" role="option" aria-selected={false} onClick={() => onAdd(h.item_id)}>
-                <span>{h.name}</span>
-                <span className="gd-dim">{h.type_label}</span>
-                <span className="gd-dim">{h.no_store ? '不能存倉' : ''}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+    );
+  };
+  return (
+    <>
+      {cfg.items.length > 8 && (
+        <label className="sp-search ho-filter">
+          <span>篩選名單</span>
+          <input type="text" value={filter} placeholder="例如 11級" onChange={e => setFilter(e.target.value)} />
+        </label>
       )}
-    </div>
+      <div className="ho-board">
+        {column(true)}
+        {column(false)}
+      </div>
+    </>
   );
 }
 
-function BagPicker({ view, taken, onAdd }: { view: HandoffView; taken: number[]; onAdd: (id: number) => void }) {
-  const [open, setOpen] = useState(false);
-  if (!open) return <button type="button" className="gd-add" onClick={() => setOpen(true)}>＋ 從背包挑</button>;
-  const shown = view.bag.filter(b => !b.no_trade && !taken.includes(b.item_id));
-  return (
-    <div className="gd-picker">
-      <div className="gd-picker-head">
-        <span>這隻角色背包裡能交易的道具</span>
-        <button type="button" onClick={() => setOpen(false)}>關閉</button>
+function Picker({ view, taken, onAdd }: {
+  view: HandoffView; taken: Set<number>; onAdd: (ids: number[], store: boolean) => void;
+}) {
+  const [source, setSource] = useState<Source | null>(null);
+  const [q, setQ] = useState('');
+  const [cat, setCat] = useState<Category | ''>('book');
+  const [hits, setHits] = useState<ItemMeta[]>([]);
+
+  useEffect(() => {
+    if (source !== 'search' || (!q.trim() && !cat)) { setHits([]); return; }
+    const t = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ tradable: 'true', limit: '1000', q: q.trim() });
+        if (cat) params.set('category', cat);
+        setHits(await get<ItemMeta[]>(`/api/items/search?${params}`));
+      } catch (e) {
+        reportClientError(e, { component: 'HandoffPanel.search', silent: true });
+      }
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [source, q, cat]);
+
+  const SOURCES: [Source, string][] = [['search', '搜尋道具'], ['bag', `從背包挑（${view.bag.length}）`], ['warehouse', `從倉庫挑（${(view.warehouse ?? []).length}）`]];
+  if (source === null) {
+    return (
+      <div className="ho-add">
+        {SOURCES.map(([s, label]) => (
+          <button key={s} type="button" className="gd-add" onClick={() => setSource(s)}>＋ {label}</button>
+        ))}
       </div>
-      {shown.length === 0 ? (
-        <div className="gd-dim gd-pad">背包裡沒有可以加的道具。</div>
+    );
+  }
+  const f = q.trim();
+  const fromHeld = (rows: HandoffView['bag']): Pick[] => rows
+    .filter(r => !r.no_trade && (!cat || r.category === cat) && (!f || r.name.includes(f)))
+    .map(r => ({ item_id: r.item_id, name: r.name, note: `${fmt(r.count)}（${r.stacks} 格）`, no_store: r.no_store }));
+  const rows: Pick[] = source === 'search'
+    ? hits.map(h => ({ item_id: h.item_id, name: h.name, note: h.type_label, no_store: h.no_store }))
+    : fromHeld(source === 'bag' ? view.bag : (view.warehouse ?? []));
+  const fresh = rows.filter(r => !taken.has(r.item_id));
+  const empty = source === 'search' && !f && !cat ? '輸入名稱，或選一個類別。'
+    : source === 'warehouse' && (view.warehouse ?? []).length === 0 ? '還沒讀到倉庫：在遊戲裡打開一次這隻角色的倉庫（看一眼就好），再回來這裡。'
+    : '沒有符合、還沒加入的道具。';
+  return (
+    <div className="gd-picker ho-picker">
+      <div className="gd-picker-head ho-picker-head">
+        <span className="sp-radio" role="radiogroup" aria-label="從哪裡挑">
+          {SOURCES.map(([s, label]) => (
+            <button key={s} type="button" role="radio" aria-checked={source === s}
+              className={source === s ? 'is-active' : ''} onClick={() => setSource(s)}>{label}</button>
+          ))}
+        </span>
+        <button type="button" onClick={() => setSource(null)}>關閉</button>
+      </div>
+      <div className="ho-picker-tools">
+        <label className="sp-search">
+          <span>名稱</span>
+          <input type="text" value={q} autoFocus placeholder="例如 刀、11級" onChange={e => setQ(e.target.value)} />
+        </label>
+        <label className="sp-search">
+          <span>類別</span>
+          <select className="dl-select" value={cat} onChange={e => setCat(e.target.value as Category | '')}>
+            {CATEGORIES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          </select>
+        </label>
+        <span className="gd-dim">{fresh.length} 項可加入{rows.length > fresh.length ? `（另有 ${rows.length - fresh.length} 項已在名單）` : ''}</span>
+        {fresh.length > 0 && (
+          <span className="ho-bulk">
+            <button type="button" onClick={() => onAdd(fresh.map(r => r.item_id), true)}>全部加入 → 存倉</button>
+            <button type="button" className="ho-keep" onClick={() => onAdd(fresh.map(r => r.item_id), false)}>全部加入 → 留身上</button>
+          </span>
+        )}
+      </div>
+      {fresh.length === 0 ? (
+        <div className="gd-dim gd-pad">{empty}</div>
       ) : (
-        <ul role="listbox" aria-label="從背包加入收貨道具">
-          {shown.map(b => (
-            <li key={b.item_id}>
-              <button type="button" role="option" aria-selected={false} onClick={() => onAdd(b.item_id)}>
-                <span>{b.name}</span>
-                <span className="gd-cnt">{fmt(b.count)}</span>
-                <span className="gd-dim">{b.stacks} 格</span>
-              </button>
+        <ul className="ho-pick-list" aria-label="可加入的道具">
+          {fresh.map(r => (
+            <li key={r.item_id}>
+              <span className="ho-chip-name">{r.name}</span>
+              <span className="gd-dim">{r.note}{r.no_store ? '　不能存倉' : ''}</span>
+              <button type="button" className="ho-mini" onClick={() => onAdd([r.item_id], true)}>存倉</button>
+              <button type="button" className="ho-mini ho-keep" onClick={() => onAdd([r.item_id], false)}>留身上</button>
             </li>
           ))}
         </ul>

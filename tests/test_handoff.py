@@ -70,6 +70,9 @@ class World:
             }
         if verb == "closepanel":
             return {"ok": True}
+        if verb == "warehouse":
+            vault = self.vaults.get(pid, [])
+            return {"ok": True, "open": False, "items": [{"item": i, "count": n} for i, n in vault]}
         if verb == "tradeinvite":
             target = int(args[0]) - 100
             if self.drop_invites:
@@ -249,7 +252,7 @@ def setup(accounts=None):
         read_stage=lambda _pid: 7,
         stage_name=lambda _sid: "杭州城",
         account_of=accounts.get,
-        item_info=lambda i: (NAMES.get(i, f"#{i}"), i == D, False),
+        item_info=lambda i: (NAMES.get(i, f"#{i}"), i == D, False, "book"),
         timing=FAST,
     )
     world.mgr = mgr
@@ -532,3 +535,14 @@ def test_without_from_warehouse_only_the_bag_goes():
     assert finish(mgr, 2).ended == "全部交完"
     assert supply.withdraws == [] and world.vaults[2] == [[A, 2]]
     mgr.stop(1)
+
+
+def test_the_view_lists_the_bag_and_the_last_seen_warehouse_for_the_pickers():
+    world, _store, _supply, _nav, mgr = setup()
+    world.add(1, "倉庫", [(A, 1), (A, 2), (C, 1)])
+    world.vaults[1] = [[B, 3], [B, 4]]
+    view = mgr.view(1)
+    assert {(r.item_id, r.count, r.stacks) for r in view.bag} == {(A, 3, 2), (C, 1, 1)}
+    assert [(r.item_id, r.count, r.stacks, r.category) for r in view.warehouse] == [
+        (B, 7, 2, "book")
+    ]

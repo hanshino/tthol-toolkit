@@ -158,15 +158,21 @@ class ItemCatalog:
         items = self._ensure()
         return [items[i] for i in dict.fromkeys(ids) if i in items]
 
-    def search(self, q: str, limit: int = 30, tradable: bool = False) -> list[ItemMeta]:
-        """Items whose name holds `q`, shortest names first."""
+    def search(
+        self, q: str, limit: int = 30, tradable: bool = False, category: str | None = None
+    ) -> list[ItemMeta]:
+        """Items whose name holds `q` (any name with a `category`), shortest
+        names first."""
         q = q.strip()
-        if not q:
+        if not q and not category:
             return []
         hits = [
             m
             for m in self._ensure().values()
-            if q in m.name and m.name and not (tradable and m.no_trade)
+            if m.name
+            and q in m.name
+            and (category is None or m.category == category)
+            and not (tradable and m.no_trade)
         ]
         hits.sort(key=lambda m: (len(m.name), m.item_id))
         return hits[:limit]
@@ -188,5 +194,7 @@ def icon_url(item_id: int) -> str | None:
     return _catalog.icon_url(item_id)
 
 
-def search(q: str, limit: int = 30, tradable: bool = False) -> list[ItemMeta]:
-    return _catalog.search(q, limit, tradable)
+def search(
+    q: str, limit: int = 30, tradable: bool = False, category: str | None = None
+) -> list[ItemMeta]:
+    return _catalog.search(q, limit, tradable, category)

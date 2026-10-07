@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
@@ -26,10 +28,14 @@ def items_by_id(ids: str = Query(..., description="Comma-separated item ids")) -
 
 @router.get("/search", response_model=list[ItemMeta])
 def search_items(
-    q: str = Query(..., min_length=1), tradable: bool = False, limit: int = Query(30, ge=1, le=100)
+    q: str = "",
+    tradable: bool = False,
+    category: Literal["potion", "gear", "book", "pet", "event", "misc"] | None = None,
+    limit: int = Query(30, ge=1, le=1000),
 ) -> list[ItemMeta]:
-    """Items by name substring; `tradable` leaves out no_trade ones."""
-    return item_catalog.search(q, limit, tradable)
+    """Items by name substring and / or category (q may be empty with a
+    category); `tradable` leaves out no_trade ones."""
+    return item_catalog.search(q, limit, tradable, category)
 
 
 @router.get(

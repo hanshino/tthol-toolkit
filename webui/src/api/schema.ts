@@ -1619,7 +1619,8 @@ export interface paths {
         };
         /**
          * Search Items
-         * @description Items by name substring; `tradable` leaves out no_trade ones.
+         * @description Items by name substring and / or category (q may be empty with a
+         *     category); `tradable` leaves out no_trade ones.
          */
         get: operations["search_items_api_items_search_get"];
         put?: never;
@@ -3102,6 +3103,12 @@ export interface components {
              * @default false
              */
             no_store: boolean;
+            /**
+             * Category
+             * @default misc
+             * @enum {string}
+             */
+            category: "potion" | "gear" | "book" | "pet" | "event" | "misc";
         };
         /**
          * HandoffConfig
@@ -3278,6 +3285,11 @@ export interface components {
             bag: components["schemas"]["HandoffBagItem"][];
             /** Bag Used */
             bag_used?: number | null;
+            /**
+             * Warehouse
+             * @default []
+             */
+            warehouse: components["schemas"]["HandoffBagItem"][];
         };
         /**
          * HookInfo
@@ -7914,9 +7926,10 @@ export interface operations {
     };
     search_items_api_items_search_get: {
         parameters: {
-            query: {
-                q: string;
+            query?: {
+                q?: string;
                 tradable?: boolean;
+                category?: ("potion" | "gear" | "book" | "pet" | "event" | "misc") | null;
                 limit?: number;
             };
             header?: never;

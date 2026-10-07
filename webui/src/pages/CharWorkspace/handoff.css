@@ -19,7 +19,7 @@
 .ho-table td { vertical-align: middle; }
 button.ho-x { width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; background: none; border: 1px solid transparent; color: var(--tt-mute); cursor: pointer; transition: color 0.15s, border-color 0.15s; }
 button.ho-x:hover { color: var(--tt-bad); border-color: var(--tt-line); }
-.ho-add { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; align-items: start; }
+.ho-add { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; align-items: start; }
 .ho-rules { line-height: 1.7; }
 
 .ho-moved { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 12.5px; }
@@ -42,8 +42,41 @@ button.ho-x:hover { color: var(--tt-bad); border-color: var(--tt-line); }
 .ho-wh-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
-button.ho-x:focus-visible, .ho-slots input:focus-visible { outline: 1px solid var(--tt-accent); outline-offset: 2px; }
+/* the whitelist: two columns of chips */
+.ho-filter { margin-bottom: 8px; }
+.ho-filter input { width: 200px; }
+.ho-board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ho-col { min-width: 0; border: 1px solid var(--tt-line-soft); background: var(--tt-bg); padding: 8px 10px 10px; display: grid; gap: 8px; align-content: start; }
+.ho-col.is-store { border-top: 2px solid var(--tt-live-player); }
+.ho-col.is-keep { border-top: 2px solid var(--tt-gold); }
+.ho-col-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.ho-col.is-store .ho-col-head b { color: var(--tt-live-player); }
+.ho-col.is-keep .ho-col-head b { color: var(--tt-gold); }
+.ho-col-head b { font-family: var(--tt-font-serif); letter-spacing: 2px; font-size: 13.5px; }
+.ho-col-head .ho-mini { margin-left: auto; }
+.ho-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; max-height: 360px; overflow-y: auto; }
+.ho-chips li { display: inline-flex; align-items: center; gap: 2px; padding: 2px 2px 2px 8px; border: 1px solid var(--tt-line); background: var(--tt-panel); font-size: 12.5px; max-width: 100%; }
+.ho-chips li.is-warn { border-color: var(--tt-bad); }
+.ho-chips li.is-warn .ho-chip-name { color: var(--tt-bad); }
+.ho-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.ho-chip-btn { width: 26px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; color: var(--tt-mute); cursor: pointer; transition: color 0.15s; }
+button.ho-chip-btn:hover { color: var(--tt-text); }
+button.ho-chip-btn.is-x:hover { color: var(--tt-bad); }
+button.ho-mini { padding: 2px 8px; font-size: 11.5px; letter-spacing: 0; }
+button.ho-mini.ho-keep, .ho-bulk button.ho-keep { color: var(--tt-gold); border-color: var(--tt-gold); }
+
+/* the picker */
+.ho-picker { margin-top: 10px; }
+.ho-picker-head { flex-wrap: wrap; }
+.ho-picker-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px; border-bottom: 1px solid var(--tt-line); font-size: 12px; }
+.ho-picker-tools select { min-height: 26px; padding: 2px 6px; font-size: 12px; }
+.ho-bulk { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.ho-bulk button { padding: 3px 10px; font-size: 12px; }
+.ho-pick-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ho-pick-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--tt-line-soft); font-size: 12.5px; min-width: 0; }
+
+button.ho-x:focus-visible, .ho-slots input:focus-visible, button.ho-chip-btn:focus-visible, button.ho-mini:focus-visible, .ho-bulk button:focus-visible, .ho-filter input:focus-visible { outline: 1px solid var(--tt-accent); outline-offset: 2px; }
 
 @media (max-width: 720px) {
-  .ho-stats, .ho-recv, .ho-add { grid-template-columns: 1fr; }
+  .ho-stats, .ho-recv, .ho-add, .ho-board, .ho-pick-list { grid-template-columns: 1fr; }
 }
