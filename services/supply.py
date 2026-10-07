@@ -87,6 +87,12 @@ MAX_ROUNDS = 60  # buys + puts for one row (a 9999 target is 50 stacks)
 OPEN_WAIT = 20.0  # talk -> shop window
 CONFIRM_WAIT = 3.0  # a sale / buy / put showing up in the bag
 POLL = 0.25
+# A summoned pet takes a moment to come out; a put sent before it is out is
+# dropped (2026-10-07: a put 1.3 s after petsummon never landed, the same put
+# with the pet out landed within 0.5 s). Wait for it in the pet bar, then a beat.
+SUMMON_WAIT = 6.0
+SUMMON_SETTLE = 1.0
+PUT_TRIES = 2  # an unconfirmed put is sent once more before the pet bag is given up
 PIPE_RETRIES = 6
 NPC_REACH = 4  # tiles: talk from this close (the game walks the rest)
 TILE_PX = 40
@@ -1329,8 +1335,20 @@ class _Trip:
             self.line("error", f"召喚 {self.name(item)} 沒送出：{r.get('error') or '不明原因'}")
             return False
         self.summoned = item
+        entry = self.line("sent", f"召喚 {self.name(item)}（放完收回）")
+        end = self.m._clock() + SUMMON_WAIT
+        while True:
+            slots = self.cmd("pet").get("slots")
+            if isinstance(slots, list) and any(slots):
+                break
+            if self.m._clock() >= end:
+                entry.phase = "unconfirmed"
+                entry.text += "（寵物沒有出來，寵物背包的目標先不補）"
+                return False
+            self.wait(POLL)
+        self.wait(SUMMON_SETTLE)
+        entry.phase = "confirmed"
         self.pet_out = True
-        self.line("sent", f"召喚 {self.name(item)}（放完收回）")
         return True
 
     def put_pet(self, item_id: int, qty: int) -> bool:
@@ -1338,18 +1356,23 @@ class _Trip:
         self.step(f"放 {name} ×{qty} 進寵物背包")
         _bag, pet = self.held()
         before = pet.get(item_id, 0)
-        r = self.cmd(f"petput {item_id} {qty}")
-        if not r.get("ok"):
-            self.line("error", f"放 {name} 進寵物背包沒送出：{r.get('error') or '不明原因'}")
-            self.pet_out = False
-            return False
-        entry = self.line("sent", f"放 {name} ×{qty} 進寵物背包")
-        if self.confirm(lambda _b, p: p.get(item_id, 0) >= before + qty):
-            entry.phase = "confirmed"
-            self.put += qty
-            return True
+        entry = None
+        for _ in range(PUT_TRIES):
+            r = self.cmd(f"petput {item_id} {qty}")
+            if not r.get("ok"):
+                self.line("error", f"放 {name} 進寵物背包沒送出：{r.get('error') or '不明原因'}")
+                self.pet_out = False
+                return False
+            if entry is None:
+                entry = self.line("sent", f"放 {name} ×{qty} 進寵物背包")
+            if self.confirm(lambda _b, p: p.get(item_id, 0) >= before + qty):
+                entry.phase = "confirmed"
+                self.put += qty
+                return True
+            # Not seen after CONFIRM_WAIT: a late landing would show by now, so
+            # sending it again does not put it twice.
         entry.phase = "unconfirmed"
-        entry.text += "（寵物背包沒有增加，可能滿了）"
+        entry.text += "（放了兩次寵物背包都沒有增加，可能滿了）"
         self.pet_out = False  # the rest stays in the bag
         return True
 

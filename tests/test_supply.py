@@ -139,6 +139,8 @@ class FakeGame:
         self.sent: list[str] = []
         self.stage = 51
         self.refuse_buy = False
+        self.summon_delay = 0  # `pet` polls before a summoned pet shows up
+        self.drop_puts = 0  # puts the server ignores (sent before the pet is out)
         self.warehouse_open = False
         self.stuck_window = False
         self.vault: dict[int, int] = {}
@@ -211,16 +213,22 @@ class FakeGame:
             self.bag[item] -= qty
             return {"ok": True}
         if cmd == "pet":
-            return {"ok": True, "slots": [PET] if self.pets_out else []}
+            if self.pets_out == "coming":
+                self.summon_delay -= 1
+                if self.summon_delay < 0:
+                    self.pets_out = True
+            return {"ok": True, "slots": [PET] if self.pets_out is True else []}
         if cmd == "petsummon":
-            self.pets_out = True
+            self.pets_out = "coming" if self.summon_delay else True
             return {"ok": True}
         if cmd == "petdismiss":
             self.pets_out = False
             return {"ok": True}
         if cmd == "petput":
             item, qty = int(args[0]), int(args[1])
-            if self.pets_out:
+            if self.drop_puts:
+                self.drop_puts -= 1
+            elif self.pets_out is True:
                 self.bag[item] -= qty
                 self.pet[item] = self.pet.get(item, 0) + qty
             return {"ok": True}
@@ -377,6 +385,33 @@ def test_trip_sells_buys_and_fills_the_pet_bag():
     assert all(int(line.split()[2]) <= sp.STACK for line in game.sent if line.startswith("buy"))
     assert game.sent[-1] == "petdismiss"  # the pet this trip summoned goes back
     assert guard.held == ["quiet", "pets"]
+
+
+def test_puts_wait_for_the_summoned_pet_and_retry_once():
+    game = FakeGame({POTION: 0, PET: 1})
+    game.summon_delay, game.drop_puts = 3, 1
+    cfg = SupplyConfig(items=[SupplyItem(item_id=POTION, bag=100, pet=100)], keep_gold=0)
+    mgr, _, _ = make(game, cfg)
+    result = mgr.run(1, threading.Event())
+    assert game.bag[POTION] == 100 and game.pet[POTION] == 100, result
+    summoned = game.sent.index("petsummon %d" % PET)
+    first_buy = next(i for i, s in enumerate(game.sent) if s.startswith("buy"))
+    # polled the pet bar until the pet showed (3 empty replies), before buying
+    assert game.sent[summoned + 1 : first_buy].count("pet") == 4
+    assert [s for s in game.sent if s.startswith("petput")][:2] == ["petput %d 100" % POTION] * 2
+    summon = next(line for line in mgr.status(1).log if line.text.startswith("召喚"))
+    assert summon.phase == "confirmed"
+
+
+def test_a_pet_that_never_comes_out_leaves_the_pet_bag():
+    game = FakeGame({POTION: 0, PET: 1})
+    game.summon_delay = 10_000
+    cfg = SupplyConfig(items=[SupplyItem(item_id=POTION, bag=50, pet=100)], keep_gold=0)
+    mgr, _, _ = make(game, cfg)
+    mgr.run(1, threading.Event())
+    assert game.bag[POTION] == 50 and game.pet.get(POTION, 0) == 0
+    assert not any(s.startswith("petput") for s in game.sent)
+    assert any("寵物沒有出來" in line.text for line in mgr.status(1).log)
 
 
 def test_nothing_to_do_skips_the_trip():
