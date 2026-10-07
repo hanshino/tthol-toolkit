@@ -1185,7 +1185,7 @@ class CombatRule(_Base):
     fallback. Skills are magic ids; the learned level is cast.
     """
 
-    basic: bool = True
+    basic: bool = False  # a new character starts with skills only (user, 2026-10-07)
     opener: int | None = None
     rotation: list[int] = Field(default_factory=list, max_length=3)
     # Picking a new target (the current one stays until it dies):

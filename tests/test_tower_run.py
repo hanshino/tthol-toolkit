@@ -210,7 +210,7 @@ def make(game=None, combat=None, config=None, hp_items=(24007,)):
     game = game or FakeGame()
     store = GuardStore()
     store.save("寒江孤影", GuardConfig(potion=GuardPotionRule(hp_items=list(hp_items))))
-    store.save_section("寒江孤影", COMBAT_SECTION, combat or CombatRule())
+    store.save_section("寒江孤影", COMBAT_SECTION, combat or CombatRule(basic=True))
     store.save_section("寒江孤影", TOWER_SECTION, config or TowerConfig())
     clock = {"t": 0.0}
 

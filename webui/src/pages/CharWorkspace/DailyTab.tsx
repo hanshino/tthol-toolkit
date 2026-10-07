@@ -308,7 +308,7 @@ function CombatSection({ combat, skills, onChange }: {
       </header>
       <div className="dl-combat">
         <label className="dl-check">
-          <input type="checkbox" checked={combat.basic ?? true} onChange={e => onChange({ ...combat, basic: e.target.checked })} />
+          <input type="checkbox" checked={combat.basic ?? false} onChange={e => onChange({ ...combat, basic: e.target.checked })} />
           使用普通攻擊（和技能一起打，不是備用）
         </label>
         <label className="dl-field">
