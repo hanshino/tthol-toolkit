@@ -193,3 +193,40 @@ def test_even_the_last_box_waits_for_a_free_slot():
     assert "use 31620" not in game.sent
     assert result.opened == {} and result.boxes_left == 1
     assert "背包滿了" in result.problem
+
+
+def test_a_round_of_only_potions_still_goes_on_while_a_slot_is_free():
+    # keep=0: the eaten potions free their slots, nothing is stored, and the
+    # boxes left still open in the next round.
+    filler = [[90000 + i, 1] for i in range(BAG_SLOTS - 2)]
+    game = FakeGame(filler + [[BOX_A, 3]], drops=[(PILL, 10)] * 3)
+    result, _notes = tidy(game, keep=0, store=False)
+    assert result.opened == {BOX_A: 3} and result.boxes_left == 0
+    assert result.problem is None and result.eaten == {PILL: 30}
+
+
+class LateLootGame(FakeGame):
+    """The box count drops one bag read before its loot shows."""
+
+    late = None
+    reads = 0
+
+    def cmd(self, line):
+        if line.startswith("use") and int(line.split()[1]) in LOOT.boxes:
+            self.sent.append(line)
+            self.take(int(line.split()[1]), 1)
+            self.late, self.reads = self.drops.pop(0), 0
+            return {"ok": True}
+        if line == "bag" and self.late:
+            if self.reads >= 1:  # the second read after the use
+                self.give(*self.late)
+                self.late = None
+            self.reads += 1
+        return super().cmd(line)
+
+
+def test_loot_that_lands_a_read_later_is_still_named():
+    game = LateLootGame([[BOX_A, 1]], drops=[(HELMET, 1)])
+    result, notes = tidy(game, store=False)
+    assert result.got == {HELMET: 1}
+    assert ("confirmed", "開歲星寶箱：聖曦頭盔 ×1") in notes

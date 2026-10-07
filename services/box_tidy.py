@@ -173,7 +173,7 @@ class BoxTidy:
             for _ in range(MAX_ROUNDS):
                 opens = self.open_all()
                 self.eat()
-                freed = self.store()
+                self.store()
                 slots, counts = self.bag()
                 left = sum(counts.get(b, 0) for b in self.loot.boxes)
                 if not left:
@@ -181,7 +181,9 @@ class BoxTidy:
                 if not opens:
                     problem = f"有寶箱打不開（背包沒有變化），還剩 {left} 個寶箱"
                     break
-                if slots >= BAG_SLOTS or not freed:
+                # A free slot lets the next round open more (open_all always
+                # opens one then); none left after eating and storing: stuck.
+                if slots >= BAG_SLOTS:
                     problem = f"背包滿了，存倉也空不出格子，還剩 {left} 個寶箱"
                     break
             else:
@@ -212,13 +214,28 @@ class BoxTidy:
                 self.note("error", f"開{name}沒有反應")
                 return False
             self.opened[box] = self.opened.get(box, 0) + 1
-            came = {i: n - counts.get(i, 0) for i, n in after.items() if n > counts.get(i, 0)}
+            came = self.came(counts, after, box)
             for i, n in came.items():
                 self.got[i] = self.got.get(i, 0) + n
             what = (
                 "、".join(f"{self.name_of(i)} ×{n}" for i, n in came.items()) or "（沒看到新東西）"
             )
             self.note("confirmed", f"開{name}：{what}")
+
+    def came(self, before: dict[int, int], after: dict[int, int], box: int) -> dict[int, int]:
+        """What the box gave: the box count can drop a packet before the loot
+        shows (a new stack), so look again for a moment when nothing rose yet."""
+        end = self.clock() + CONFIRM_WAIT
+        while True:
+            came = {
+                i: n - before.get(i, 0)
+                for i, n in after.items()
+                if i != box and n > before.get(i, 0)
+            }
+            if came or self.clock() >= end:
+                return came
+            self.wait(POLL)
+            _slots, after = self.bag()
 
     def eat(self) -> None:
         _slots, counts = self.bag()
@@ -241,22 +258,20 @@ class BoxTidy:
                 self.note("unconfirmed", f"{name} 吃不下了，先留著")
             _slots, counts = self.bag()
 
-    def store(self) -> bool:
-        """Store the box loot in the bag. True when it freed a slot."""
-        slots, counts = self.bag()
+    def store(self) -> None:
+        """Store the box loot in the bag."""
+        _slots, counts = self.bag()
         want = to_store(counts, self.loot)
         if not want:
-            return False
+            return
         if self.store_trip is None:
             self.note("error", "沒有補給模組，開出來的東西先留在背包")
-            return False
+            return
         self.step("存倉")
         result = self.store_trip(want)
         self.stored += getattr(result, "stored", 0) or 0
         if not getattr(result, "ok", False):
             self.note("error", f"存倉沒完成：{getattr(result, 'detail', '')}")
-        slots_after, _counts = self.bag()
-        return slots_after < slots
 
 
 class _Short(Exception):
