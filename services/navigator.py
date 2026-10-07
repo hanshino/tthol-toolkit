@@ -75,10 +75,13 @@ DEATH_CONFIRM = 3.0
 # Map events (doors, exits, click zones) fire only while the client's map
 # event switch is 1. A mouse click on the ground sets it; opening any panel
 # (shop, warehouse) clears it, and the hook's `walk` leaves it alone (hook,
-# 2026-10-07). So every walk switches it on first, as a player's click would.
-# (Keeping it off on the way and on only near the zone meant to be taken came
-# too late more than once: the user, 2026-10-07, asked for the plain way back;
-# a door crossed by chance on the way is a jump the plan recovers from.)
+# 2026-10-07). Walks keep it 0, so no zone on the way fires: the 杭州城 錢莊
+# door is right on the way out to the 家族總管, and with the switch on the walk
+# went straight back in (user, 2026-10-08). A walk to a zone switches it on
+# ARM_TILES from the zone's nearest cell. 3 came too late (a walk covers ~2
+# tiles between reads: a manor door (36, 124) was reached with it still off,
+# live 2026-10-07); a walk back in after backing off has it on from the start.
+ARM_TILES = 5
 DOOR_WAIT = 3.0  # a door walked onto teleports at once; longer means we stopped beside it
 AWAY_MIN, AWAY_MAX = 3, 4  # tiles to back off from a door that did not fire
 DOOR_TRIES = 3  # walks onto a door before giving up on it
@@ -473,13 +476,14 @@ class _Run:
         slack: int = ARRIVE_SLACK,
         zone: bool = False,
         cells: tuple[Tile, ...] = (),
+        early: bool = False,
     ) -> str:
         """_walk_to, written to the run record: where it started, the cells it
         went through, when map events were switched, and how it ended."""
         trail = self._trail = _Trail(self.nav._clock())
         result = "stopped"
         try:
-            result = self._walk_to(tile, src, slack, zone, cells)
+            result = self._walk_to(tile, src, slack, zone, cells, early)
             return result
         finally:
             self._trail = None
@@ -503,16 +507,25 @@ class _Run:
         slack: int = ARRIVE_SLACK,
         zone: bool = False,
         cells: tuple[Tile, ...] = (),
+        early: bool = False,
     ) -> str:
         """arrived / jump (teleported on this map) / map (the stage changed) / stuck.
         The target is clicked again every few seconds, and at once when the walk stalls.
 
-        `zone`: the target is a door / exit / click zone to take (`cells`: its
-        cells, for the run record)."""
+        `zone`: the target is a door / exit / click zone to take: map events are
+        switched on ARM_TILES from its nearest cell (`cells`, default `tile`
+        alone), off for the rest of the way and for any other walk. `early`:
+        on from the start (a walk back in from a few tiles off the zone)."""
         self.ensure_free()
+        zone_cells = cells or (tile,)
+
+        def close(pos: Tile | None) -> bool:
+            return pos is not None and min(math.dist(pos, c) for c in zone_cells) <= ARM_TILES
+
         start = self.me()  # so a zone on the very first steps still reads as a jump
         self._trace(start)
-        self.map_events(True)
+        armed = zone and (early or close(start))
+        self.map_events(armed)
         line = f"walk {tile[0] * TILE_PX + TILE_PX // 2} {tile[1] * TILE_PX + TILE_PX // 2}"
         space = src if src is not None else self.stage()
         for _ in range(WALK_TRIES):
@@ -529,6 +542,10 @@ class _Run:
                 return "map"
             pos = self.me()
             self._trace(pos)
+            if zone and not armed and close(pos):
+                armed = True
+                self.map_events(True)
+                self.cmd(line)  # walk on into the zone with events on
             if self.teleported(space, last, pos):
                 log.info(
                     "walk jump pid=%d %s -> %s (%.1f tiles)",
@@ -593,7 +610,7 @@ class _Run:
         way: step off, then click back)."""
         for n in range(DOOR_TRIES):
             before = self.me()
-            r = self.walk_to(at, here, slack=0, zone=True, cells=cells)
+            r = self.walk_to(at, here, slack=0, zone=True, cells=cells, early=n > 0)
             # The door often fires the moment the walk reads "arrived": by the
             # next read we are already through (live 2026-10-08, 杭州城 bank
             # (36, 107) -> (29, 3)), so compare with where the walk started.
