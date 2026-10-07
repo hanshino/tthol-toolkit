@@ -668,6 +668,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/supply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** View */
+        get: operations["view_api_characters__pid__supply_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/supply/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_characters__pid__supply_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/supply/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Config */
+        put: operations["put_config_api_characters__pid__supply_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/supply/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_characters__pid__supply_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/supply/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__supply_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/supply/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Items
+         * @description Items a town NPC sells for 銀兩, matching `q` (name substring).
+         */
+        get: operations["items_api_supply_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/daily": {
         parameters: {
             query?: never;
@@ -3792,6 +3897,273 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** SupplyBuyable */
+        SupplyBuyable: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Type Label */
+            type_label?: string | null;
+            /** Price */
+            price: number;
+            /** Shops */
+            shops: number;
+            /** Icon Url */
+            icon_url?: string | null;
+        };
+        /**
+         * SupplyConfig
+         * @description Per character (settings section "supply"). Rows are bought top to bottom.
+         */
+        SupplyConfig: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["SupplyItem"][];
+            /**
+             * Keep Gold
+             * @default 100000
+             */
+            keep_gold: number;
+            /**
+             * Extra Stop
+             * @default false
+             */
+            extra_stop: boolean;
+            /**
+             * Pet Summon
+             * @default true
+             */
+            pet_summon: boolean;
+            /**
+             * Stop When Short
+             * @default false
+             */
+            stop_when_short: boolean;
+            /** Gold Low */
+            gold_low?: number | null;
+            /** Gold High */
+            gold_high?: number | null;
+            /**
+             * Gold Target
+             * @default 500000
+             */
+            gold_target: number;
+        };
+        /**
+         * SupplyItem
+         * @description One row of the 補貨清單: buy until the bag and the pet bag hold these.
+         */
+        SupplyItem: {
+            /** Item Id */
+            item_id: number;
+            /**
+             * Bag
+             * @default 0
+             */
+            bag: number;
+            /**
+             * Pet
+             * @default 0
+             */
+            pet: number;
+        };
+        /**
+         * SupplyLoad
+         * @description Bag weight and slots now and after a trip (an estimate: stacks of 200
+         *     assumed, items.weight taken in the character's weight units).
+         */
+        SupplyLoad: {
+            /** Weight */
+            weight: number;
+            /** Weight Max */
+            weight_max: number;
+            /** Weight After */
+            weight_after: number;
+            /** Weight Peak */
+            weight_peak: number;
+            /** Slots */
+            slots: number;
+            /** Slots After */
+            slots_after: number;
+            /** Pet Slots */
+            pet_slots: number;
+            /** Pet Slots After */
+            pet_slots_after: number;
+        };
+        /** SupplyLogEntry */
+        SupplyLogEntry: {
+            /** Id */
+            id: number;
+            /** Ts */
+            ts: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "sent" | "confirmed" | "unconfirmed" | "error" | "info";
+            /** Text */
+            text: string;
+        };
+        /**
+         * SupplyMoveRow
+         * @description An item 道具處置 marks sell / store, and how many of it would go.
+         */
+        SupplyMoveRow: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Icon Url */
+            icon_url?: string | null;
+            /** Have */
+            have: number;
+            /** Keep */
+            keep: number;
+            /** Qty */
+            qty: number;
+        };
+        /** SupplyRow */
+        SupplyRow: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Icon Url */
+            icon_url?: string | null;
+            /** Type Label */
+            type_label?: string | null;
+            /** Price */
+            price?: number | null;
+            /**
+             * Shops
+             * @default 0
+             */
+            shops: number;
+            /**
+             * Bag
+             * @default 0
+             */
+            bag: number;
+            /**
+             * Pet
+             * @default 0
+             */
+            pet: number;
+            /**
+             * Need
+             * @default 0
+             */
+            need: number;
+        };
+        /** SupplyStatus */
+        SupplyStatus: {
+            /** Running */
+            running: boolean;
+            /** Step */
+            step?: string | null;
+            /** Host */
+            host?: string | null;
+            /** Ended */
+            ended?: string | null;
+            /**
+             * Log
+             * @default []
+             */
+            log: components["schemas"]["SupplyLogEntry"][];
+        };
+        /** SupplyStop */
+        SupplyStop: {
+            /** Npc */
+            npc: string;
+            /** Stage Name */
+            stage_name: string;
+            /** Tile */
+            tile: [
+                number,
+                number
+            ];
+            /**
+             * Buys
+             * @default []
+             */
+            buys: string[];
+            /**
+             * Missing
+             * @default []
+             */
+            missing: string[];
+        };
+        /** SupplyView */
+        SupplyView: {
+            /** Character */
+            character: string | null;
+            /**
+             * @default {
+             *       "items": [],
+             *       "keep_gold": 100000,
+             *       "extra_stop": false,
+             *       "pet_summon": true,
+             *       "stop_when_short": false,
+             *       "gold_target": 500000
+             *     }
+             */
+            config: components["schemas"]["SupplyConfig"];
+            /**
+             * Rows
+             * @default []
+             */
+            rows: components["schemas"]["SupplyRow"][];
+            /**
+             * Sells
+             * @default []
+             */
+            sells: components["schemas"]["SupplyMoveRow"][];
+            /**
+             * Stores
+             * @default []
+             */
+            stores: components["schemas"]["SupplyMoveRow"][];
+            /**
+             * Store Supported
+             * @default false
+             */
+            store_supported: boolean;
+            /**
+             * Bank Supported
+             * @default false
+             */
+            bank_supported: boolean;
+            /** Bank */
+            bank?: string | null;
+            load?: components["schemas"]["SupplyLoad"] | null;
+            /**
+             * Hook Ready
+             * @default false
+             */
+            hook_ready: boolean;
+            /** Gold */
+            gold?: number | null;
+            /**
+             * Plan
+             * @default []
+             */
+            plan: components["schemas"]["SupplyStop"][];
+            /**
+             * Hosts
+             * @default []
+             */
+            hosts: string[];
+            /**
+             * @default {
+             *       "running": false,
+             *       "log": []
+             *     }
+             */
+            status: components["schemas"]["SupplyStatus"];
+        };
         /**
          * TowerConfig
          * @description 神武玄天塔 module settings, per character name.
@@ -5339,6 +5711,196 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TowerEstimate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_api_characters__pid__supply_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_characters__pid__supply_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_config_api_characters__pid__supply_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupplyConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_characters__pid__supply_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__supply_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    items_api_supply_items_get: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupplyBuyable"][];
                 };
             };
             /** @description Validation Error */

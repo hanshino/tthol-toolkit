@@ -3,6 +3,7 @@ import type { CharacterRow } from '../../api/types';
 import { can, isStopped, isUnlocated, type CharTab, type GlobalView } from '../../nav';
 import { AutoClickTab } from './AutoClickTab';
 import { GuardPanel } from './GuardPanel';
+import { SupplyPanel } from './SupplyPanel';
 import { BodyTab } from './BodyTab';
 import { CharHeader } from './CharHeader';
 import { ChatTab } from './ChatTab';
@@ -83,6 +84,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
               {t.k === 'assist' && (
                 <div style={{ display: 'grid', gap: 14 }}>
                   <GuardPanel pid={char.pid} active={tab === 'assist'} />
+                  <SupplyPanel pid={char.pid} active={tab === 'assist'} />
                   <AutoClickTab pid={char.pid} />
                 </div>
               )}
