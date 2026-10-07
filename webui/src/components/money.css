@@ -1,0 +1,14 @@
+/* MoneyInput.tsx: the 萬/億 reading floats under the field, so typing never
+   shifts the row. */
+.money { position: relative; display: inline-flex; }
+input.money-input {
+  min-height: 30px; padding: 2px 8px;
+  font-family: var(--tt-font-mono); font-variant-numeric: tabular-nums; text-align: right;
+}
+.money-read {
+  position: absolute; top: calc(100% + 2px); right: 0; z-index: 5;
+  padding: 1px 6px; white-space: nowrap; pointer-events: none;
+  font-size: 11px; color: var(--tt-gold);
+  background: var(--tt-raised); border: 1px solid var(--tt-line);
+}
+.money-read.is-bad { color: var(--tt-bad); }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, put } from '../../api/client';
 import type { SupplyBuyable, SupplyConfig, SupplyLoad, SupplyLogEntry, SupplyStatus, SupplyView } from '../../api/types';
+import { MoneyInput } from '../../components/MoneyInput';
 import { reportClientError } from '../../diag/report';
 import './supply.css';
 
@@ -243,8 +244,8 @@ export function SupplyPanel({ pid, active }: { pid: number; active: boolean }) {
           <label className="sp-rule">
             <span>銀兩至少留</span>
             <span className="sp-split">
-              <input type="number" min={0} step={10000} value={cfg.keep_gold} className="sp-wide"
-                onChange={e => update({ ...cfg, keep_gold: clampInt(e.target.value, 0, 2_000_000_000) })} />
+              <MoneyInput value={cfg.keep_gold} aria-label="銀兩至少留"
+                onChange={n => update({ ...cfg, keep_gold: n })} />
               <span className="gd-cnt">目前 {view.gold != null ? fmt(view.gold) : '讀不到'}</span>
             </span>
           </label>
@@ -437,9 +438,8 @@ function Bank({ cfg, view, onChange }: { cfg: SupplyConfig; view: SupplyView; on
             onChange={e => onChange({ ...cfg, gold_low: e.target.checked ? 100_000 : null })} />
           銀兩低於
         </span>
-        <input type="number" min={0} step={10000} className="sp-wide" disabled={!low} value={cfg.gold_low ?? 0}
-          aria-label="低於多少時領錢"
-          onChange={e => onChange({ ...cfg, gold_low: clampInt(e.target.value, 0, 2_000_000_000) })} />
+        <MoneyInput disabled={!low} value={cfg.gold_low ?? 0} aria-label="低於多少時領錢"
+          onChange={n => onChange({ ...cfg, gold_low: n })} />
         <span>時領錢</span>
       </label>
       <label className="sp-rule">
@@ -448,16 +448,14 @@ function Bank({ cfg, view, onChange }: { cfg: SupplyConfig; view: SupplyView; on
             onChange={e => onChange({ ...cfg, gold_high: e.target.checked ? 5_000_000 : null })} />
           銀兩高於
         </span>
-        <input type="number" min={0} step={100000} className="sp-wide" disabled={!high} value={cfg.gold_high ?? 0}
-          aria-label="高於多少時存錢"
-          onChange={e => onChange({ ...cfg, gold_high: clampInt(e.target.value, 0, 2_000_000_000) })} />
+        <MoneyInput disabled={!high} value={cfg.gold_high ?? 0} aria-label="高於多少時存錢"
+          onChange={n => onChange({ ...cfg, gold_high: n })} />
         <span>時存錢</span>
       </label>
       <label className="sp-rule">
         <span>領或存到身上剩</span>
-        <input type="number" min={0} step={10000} className="sp-wide" disabled={!low && !high} value={cfg.gold_target}
-          aria-label="領錢或存錢後身上留多少"
-          onChange={e => onChange({ ...cfg, gold_target: clampInt(e.target.value, 0, 2_000_000_000) })} />
+        <MoneyInput disabled={!low && !high} value={cfg.gold_target} aria-label="領錢或存錢後身上留多少"
+          onChange={n => onChange({ ...cfg, gold_target: n })} />
       </label>
       {view.bank && <div className="gd-dim">現在會：{view.bank}</div>}
     </div>
