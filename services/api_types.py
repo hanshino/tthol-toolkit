@@ -479,6 +479,7 @@ class DispatchWindow(_Base):
     step: str | None = None
     done: int = 0
     problem: str | None = None  # why it took no (more) work
+    active: bool = False  # its thread is working the queue
 
 
 class DispatchStatus(_Base):
@@ -487,6 +488,10 @@ class DispatchStatus(_Base):
     started_at: float | None = None
     rows: list[DispatchRow] = []
     windows: list[DispatchWindow] = []
+
+
+class MarkDoneRequest(_Base):
+    done: bool = True  # False: take a mark (or a finished run) back
 
 
 class DispatchRequest(_Base):

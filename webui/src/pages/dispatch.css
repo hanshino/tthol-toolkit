@@ -13,6 +13,14 @@
 .dp-windows li.is-out { opacity: 0.6; }
 .dp-windows li.is-out label, .dp-windows li.is-out input { cursor: not-allowed; }
 .dp-windows label { display: flex; align-items: baseline; gap: 8px; cursor: pointer; font-size: 13px; }
+button.dp-join {
+  min-height: 28px; padding: 2px 12px; font-size: 12.5px; cursor: pointer;
+  color: var(--tt-text); background: var(--tt-accent-dim); border: 1px solid var(--tt-accent);
+  transition: border-color 150ms ease, color 150ms ease;
+}
+button.dp-join:hover:not(:disabled) { border-color: var(--tt-gold); }
+button.dp-join:disabled { opacity: 0.45; cursor: not-allowed; }
+button.dp-join:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: 1px; }
 .dp-wname { color: var(--tt-text); }
 
 .dp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -68,3 +76,4 @@ button.dp-link {
 button.dp-link:hover:not(:disabled) { color: var(--tt-text); border-color: var(--tt-accent); }
 button.dp-link:disabled { opacity: 0.4; cursor: not-allowed; }
 button.dp-link:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: 1px; }
+button.dp-mark { margin-left: 8px; }

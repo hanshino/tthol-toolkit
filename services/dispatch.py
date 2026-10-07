@@ -1,7 +1,8 @@
 """Batch dispatch: hand the ticked characters out to game windows; on each,
 log the character in, run its 日常 list, log out, take the next one.
 
-Each window works through the queue on its own thread. A character is
+Each window works through the queue on its own thread; a window opened
+after the start joins with join(pid) and takes from the same queue. A character is
 logged in once per dispatch (a wrong password is never retried); whatever
 goes wrong with one is written on its row and the window moves on. A window
 whose hook is gone (or never there) takes no more work.
@@ -29,6 +30,11 @@ STOP_WAIT = 30.0  # for the 日常 to wind down after a stop
 HOOK_WAIT = 10.0  # after a login, for the hook to start answering commands
 MAX_RUN_DROPS = 1  # disconnects while a character's 日常 runs before it counts as failed
 DROPPED = object()  # _attempt: the connection dropped, log the same character in again
+LOGOUT_HOME = object()  # _take: log out the character left in game here first
+# An account logged out moments ago is refused for about a minute (the game:
+# 資料儲存中，請等待一分鐘; user, 2026-10-07), and the flow then reads the box
+# as a rejected login. No account is logged in again sooner than this.
+ACCOUNT_COOLDOWN = 65.0
 
 
 PING_PROTO = 5  # hooks from this protocol answer `ping` even at the login screens
@@ -156,6 +162,10 @@ class DispatchManager:
         self._stop = threading.Event()
         self._dry_run = False
         self._started_at: float | None = None
+        # pid -> rows skipped at the start because that window (not picked)
+        # had their account in game: they go back in the queue if it joins.
+        self._held: dict[int, list[DispatchRow]] = {}
+        self._logged_out: dict[str, float] = {}  # account -> wall clock of its logout
 
     # -- control ---------------------------------------------------------------------
 
@@ -172,9 +182,10 @@ class DispatchManager:
                 f"（{'、'.join(sorted(reasons))}）" if reasons else ""
             )
         rows = [self._first_look(name, dry_run) for name in dict.fromkeys(characters)]
-        self._skip_online_elsewhere(rows, windows)
+        held = self._skip_online_elsewhere(rows, windows)
         with self._lock:
             self._rows = rows
+            self._held = held
             self._dry_run = dry_run
             self._started_at = self._wall()
             self._stop = threading.Event()
@@ -196,16 +207,48 @@ class DispatchManager:
             extra={"cat": "dispatch"},
         )
         for pid in usable:
-            w = self._windows[pid]
-            w.thread = threading.Thread(
-                target=self._work, args=(w,), daemon=True, name=f"dispatch-{pid}"
-            )
-            w.thread.start()
+            self._launch(self._windows[pid])
         return True, None
 
+    def join(self, pid: int) -> tuple[bool, str | None]:
+        """Put another window to work on a running dispatch (opened after the
+        start to get through the queue faster). Like a window picked at the
+        start: a character in game there runs first if it is on the list, and
+        one that is not gets logged out."""
+        problem = self._window_problem(pid)
+        if problem is not None:
+            return False, problem
+        home = self._in_game_as(pid)
+        with self._lock:
+            if not self._alive():
+                return False, "派發沒在跑"
+            w = self._windows.get(pid)
+            if w is not None and w.thread is not None and w.thread.is_alive():
+                return False, "這個視窗已經在派發"
+            home_account = self._account(home) if home else None
+            busy = {o.account for o in self._windows.values() if o is not w and o.account}
+            if home_account and home_account in busy:
+                return False, f"{home} 的帳號正在別的視窗派發"
+            if w is None:
+                w = self._windows[pid] = _Window(pid)
+            w.problem, w.home, w.account = None, home, home_account
+            for row in self._held.pop(pid, []):
+                if row.state == "skipped":
+                    row.state, row.reason = "pending", None
+        log.info("dispatch window joined pid=%d", pid, extra={"cat": "dispatch"})
+        self._launch(w)
+        return True, None
+
+    def _launch(self, w: _Window) -> None:
+        w.thread = threading.Thread(
+            target=self._work, args=(w,), daemon=True, name=f"dispatch-{w.pid}"
+        )
+        w.thread.start()
+
     def stop(self) -> None:
-        """Stop handing out characters and stop the ones running. Characters
-        stay logged in where they are."""
+        """Stop handing out characters. A 日常 already running runs on (stopped,
+        a character in the tower stops fighting and dies; user, 2026-10-07) and
+        its character stays logged in where it is."""
         self._stop.set()
 
     shutdown = stop
@@ -231,14 +274,19 @@ class DispatchManager:
                         step=w.step,
                         done=w.done,
                         problem=w.problem,
+                        active=w.thread is not None and w.thread.is_alive(),
                     )
                     for w in self._windows.values()
                 ],
             )
 
-    def _skip_online_elsewhere(self, rows: list[DispatchRow], windows: list[int]) -> None:
+    def _skip_online_elsewhere(
+        self, rows: list[DispatchRow], windows: list[int]
+    ) -> dict[int, list[DispatchRow]]:
         """A listed character in game on a window the dispatch was not given:
-        logging its account in elsewhere would throw that window out."""
+        logging its account in elsewhere would throw that window out. Returns
+        the skipped rows by window, for join()."""
+        held: dict[int, list[DispatchRow]] = {}
         for pid in self._live_pids():
             if pid in windows:
                 continue
@@ -252,6 +300,8 @@ class DispatchManager:
                 if row.character == name or (account and self._account(row.character) == account):
                     row.state = "skipped"
                     row.reason = f"{name} 在沒勾選的視窗（pid {pid}）登著這個帳號"
+                    held.setdefault(pid, []).append(row)
+        return held
 
     def plan(self, pids: list[int]) -> tuple[list, list]:
         """For the dispatch page: each listed character with what a run would do,
@@ -290,23 +340,36 @@ class DispatchManager:
                 return DispatchRow(character=name, state="skipped", reason=why)
         return DispatchRow(character=name, state="pending")
 
-    def _take(self, w: _Window) -> DispatchRow | None:
+    def _take(self, w: _Window):
         """The next pending row whose account is not in use on another window
-        (one account logs in once at a time); the character already in game
-        here comes first."""
+        (one account logs in once at a time) and was not logged out in the last
+        ACCOUNT_COOLDOWN; the character already in game here comes first.
+        LOGOUT_HOME: one is in game here that is not on the list, log it out
+        first (its account then cools down like any other)."""
         with self._lock:
             busy = {
                 other.account
                 for other in self._windows.values()
                 if other is not w and other.account
             }
+            if not self._dry_run:
+                for r in self._rows:
+                    if r.state == "pending" and self._daily.precheck(r.character)[0] == "done":
+                        r.state, r.reason = "skipped", "今日已完成（派發中標記）"
             free = [
                 r
                 for r in self._rows
                 if r.state == "pending" and self._account(r.character) not in busy
             ]
-            row = next((r for r in free if r.character == w.home), None) or next(iter(free), None)
+            row = next((r for r in free if r.character == w.home), None)
+            if row is None and w.home is not None and free:
+                w.home = None
+                return LOGOUT_HOME
             w.home = None  # past the first pick, this window logs in whoever is next
+            if row is None:
+                now = self._wall()
+                cool = {a for a, t in self._logged_out.items() if now - t < ACCOUNT_COOLDOWN}
+                row = next((r for r in free if self._account(r.character) not in cool), None)
             if row is not None:
                 w.account = self._account(row.character)
                 row.state, row.pid, row.started_at = "login", w.pid, self._wall()
@@ -349,9 +412,16 @@ class DispatchManager:
                     w.problem = problem
                     return
                 row = self._take(w)
+                if row is LOGOUT_HOME:
+                    if not self._logout(w):
+                        return
+                    with self._lock:
+                        w.account = None
+                    continue
                 if row is None:
                     if self._waiting_for_account():
-                        self._wait(self._stop, POLL)  # its account is busy on another window
+                        # Its account is busy on another window, or just logged out.
+                        self._wait(self._stop, POLL)
                         continue
                     return
                 try:
@@ -419,6 +489,7 @@ class DispatchManager:
                 w.problem = "遊戲視窗不見了"
                 return False
             self._flow.logout(w.pid, self._stop)
+            self._cooled(w.account)  # a failed login may still have got in
             return True
         self._confirm(w.pid, name)
         problem = self._window_problem(w.pid)
@@ -446,9 +517,8 @@ class DispatchManager:
         self._set_step(w, "跑日常")
         while self._daily.status(w.pid).running:
             if self._wait(self._stop, POLL):
-                self._stop_daily(w)
-                self._end(w, row, "stopped", "手動停下")
-                return False  # leave the character where it is
+                self._end(w, row, "stopped", "派發停止，日常繼續在跑")
+                return False  # leave the character and its 日常 where they are
             if self._flow.dismiss(w.pid, self._stop) == "disconnected":
                 self._stop_daily(w)
                 return DROPPED
@@ -470,9 +540,15 @@ class DispatchManager:
         while self._daily.status(w.pid).running and self._wall() < end:
             self._wait(threading.Event(), 0.5)
 
+    def _cooled(self, account: str | None) -> None:
+        if account:
+            with self._lock:
+                self._logged_out[account] = self._wall()
+
     def _logout(self, w: _Window) -> bool:
         self._set_step(w, "登出")
         if self._flow.logout(w.pid, self._stop):
+            self._cooled(w.account)
             return True
         if not self._stop.is_set():
             w.problem = "登不出去，這個視窗先停下"

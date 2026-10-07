@@ -125,6 +125,13 @@ def make(logins, flow=None, daily=None, problems=None, in_game=None, live=None, 
     flow.on.update(in_game or {})
     daily = daily or Daily(flow)
     confirmed = []
+    clock = {"t": 1000.0}  # wall clock, moved on by each wait (the account cooldown)
+
+    def wait(ev, secs):
+        with flow.lock:
+            clock["t"] += secs
+        return ev.wait(0.001)
+
     mgr = DispatchManager(
         Logins(logins),
         flow,
@@ -134,7 +141,8 @@ def make(logins, flow=None, daily=None, problems=None, in_game=None, live=None, 
         hook_check=lambda pid: (hook or {}).get(pid),
         in_game_as=lambda pid: (in_game or {}).get(pid),
         live_pids=lambda: list(live or []),
-        wait=lambda ev, secs: ev.wait(0.001),
+        wall=lambda: clock["t"],
+        wait=wait,
     )
     return mgr, flow, daily, confirmed
 
@@ -245,7 +253,8 @@ def test_stop_leaves_the_running_character_and_hands_out_no_more():
     mgr.stop()
     out = finish(mgr)
     assert out["甲"][0] == "stopped" and out["乙"][0] == "pending"
-    assert daily.stopped == [1] and flow.logouts == []  # left in game
+    # Its 日常 runs on (stopped mid-tower the character would stand and die).
+    assert daily.stopped == [] and flow.logouts == []
 
 
 def test_a_character_already_in_game_runs_on_its_window_first():
@@ -421,3 +430,105 @@ def test_a_v5_hook_without_actions_fails_at_once():
     send = hook({"ping": [{"ok": True, "actions": False}], "status": [{"ok": True}]})
     assert hook_problem(send, NEED, clock, sleep, ping=True) == RELOAD_HINT
     assert clock() == 0.0
+
+
+# --------------------------------------------------------------------------
+# 加入派發: a window opened after the start takes from the same queue.
+# --------------------------------------------------------------------------
+
+
+def test_a_window_joining_a_running_dispatch_takes_from_the_queue():
+    mgr, flow, daily, _ = make(ROWS)
+    daily.ticks = 50
+    mgr.start(list(ROWS), [1])
+    ok, why = mgr.join(2)
+    assert ok, why
+    out = finish(mgr)
+    assert {v[0] for v in out.values()} == {"done"} and flow.overlap == []
+    assert {pid for pid, _ in flow.logins} == {1, 2}
+    assert {w.pid for w in mgr.status().windows} == {1, 2}
+
+
+def test_join_needs_a_running_dispatch_and_a_usable_window():
+    mgr, flow, daily, _ = make(ROWS, problems={3: "這個視窗沒有 hook"})
+    assert mgr.join(2) == (False, "派發沒在跑")
+    daily.ticks = 200
+    mgr.start(["甲", "乙"], [1])
+    assert mgr.join(3) == (False, "這個視窗沒有 hook")
+    assert mgr.join(1) == (False, "這個視窗已經在派發")
+    mgr.stop()
+    finish(mgr)
+
+
+def test_join_refuses_a_window_whose_account_is_being_dispatched():
+    mgr, flow, daily, _ = make(ROWS, in_game={2: "甲"})
+    mgr._rows = []
+    from services.dispatch import _Window
+
+    busy = _Window(1)
+    busy.account = "a1"
+    busy.thread = threading.Thread(target=lambda: time.sleep(0.2))
+    busy.thread.start()
+    mgr._windows = {1: busy}
+    ok, why = mgr.join(2)
+    assert not ok and "甲" in why
+    busy.thread.join()
+
+
+def test_rows_held_by_a_joining_window_go_back_in_the_queue():
+    mgr, flow, daily, _ = make(ROWS, in_game={3: "乙"}, live=[1, 3])
+    daily.ticks = 50
+    mgr.start(["甲", "乙"], [1])
+    assert {r.character: r.state for r in mgr.status().rows}["乙"] == "skipped"
+    ok, why = mgr.join(3)
+    assert ok, why
+    out = finish(mgr)
+    assert out == {"甲": ("done", "60 層"), "乙": ("done", "60 層")}
+    assert "乙" in daily.started
+    assert flow.overlap == []
+
+
+def test_a_character_marked_done_during_the_dispatch_is_not_logged_in():
+    flow = Flow()
+    daily = Daily(flow, ticks=30)
+    mgr, flow, daily, _ = make(ROWS, flow, daily)
+    mgr.start(["甲", "乙"], [1])
+    daily.pre["乙"] = ("done", "今日都做完了")  # marked by hand while 甲 runs
+    out = finish(mgr)
+    assert out["甲"][0] == "done"
+    assert out["乙"][0] == "skipped" and [c for _, c in flow.logins] == ["甲"]
+
+
+def test_an_account_just_logged_out_waits_before_its_next_login():
+    # 甲 and 乙 share an account: 乙 must not log in right after 甲's logout
+    # (the game: 資料儲存中，請等待一分鐘).
+    from services.dispatch import ACCOUNT_COOLDOWN
+
+    rows = {"甲": ("same", True, True), "乙": ("same", True, True), "丙": ("other", True, True)}
+    mgr, flow, daily, _ = make(rows)
+    stamps = []
+    login = flow.login
+
+    def timed(pid, who, stop, note):
+        stamps.append((who.character, mgr._wall()))
+        return login(pid, who, stop, note)
+
+    flow.login = timed
+    mgr.start(["甲", "乙", "丙"], [1])
+    out = finish(mgr)
+    assert {v[0] for v in out.values()} == {"done"}
+    order = [c for c, _ in stamps]
+    assert order == ["甲", "丙", "乙"]  # the other account goes first meanwhile
+    at = dict(stamps)
+    assert at["乙"] - at["甲"] >= ACCOUNT_COOLDOWN
+
+
+def test_a_character_left_in_game_off_the_list_is_logged_out_first():
+    # Window 1 has 甲 (account a1, not on the list); 乙 shares a1: logging 甲 out
+    # starts a1's cooldown, so 丙 goes first.
+    rows = {"甲": ("a1", True, True), "乙": ("a1", True, True), "丙": ("a3", True, True)}
+    mgr, flow, daily, _ = make(rows, in_game={1: "甲"})
+    mgr.start(["乙", "丙"], [1])
+    out = finish(mgr)
+    assert {v[0] for v in out.values()} == {"done"}
+    assert [c for _, c in flow.logins] == ["丙", "乙"]

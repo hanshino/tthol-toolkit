@@ -194,7 +194,10 @@ class _Run:
             box = s.box
             if box is not None:
                 self.click(box.center)
-            raise _Stop("rejected", "登入沒有成功（帳號密碼錯誤，或伺服器拒絕）")
+            raise _Stop(
+                "rejected",
+                "登入沒有成功（帳號密碼錯誤、伺服器拒絕，或帳號剛登出還在儲存資料，約一分鐘後再試）",
+            )
         if s.box is not None:
             self.click(s.box.center)
             self.wait(0.6)

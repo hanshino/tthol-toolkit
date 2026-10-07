@@ -844,6 +844,32 @@ def test_old_records_without_done_count_any_cleared_floor():
     assert mgr.summary(1).state == "done_today"
 
 
+def test_marking_done_by_hand_keeps_the_floors_and_can_be_taken_back():
+    from services.api_types import TowerRecord
+    from services.tower_run import RECORD_SECTION
+    import time as _time
+
+    mgr, run, game, _ = make()
+    today = _time.strftime("%Y-%m-%d", _time.localtime(1000.0))
+    # Finished in game after the toolkit's run stopped at floor 29.
+    mgr._store.save_section(
+        "寒江孤影", RECORD_SECTION, TowerRecord(date=today, top_floor=29, done=False)
+    )
+    assert not mgr.done_for("寒江孤影")
+    mgr.mark_done("寒江孤影", True)
+    assert mgr.done_for("寒江孤影")
+    rec = mgr._store.load_section("寒江孤影", RECORD_SECTION, TowerRecord)
+    assert rec.top_floor == 29 and rec.date == today
+    mgr.mark_done("寒江孤影", False)
+    assert not mgr.done_for("寒江孤影")
+
+
+def test_marking_done_with_no_run_today_writes_today():
+    mgr, run, game, _ = make()
+    mgr.mark_done("寒江孤影", True)
+    assert mgr.done_for("寒江孤影") and mgr.summary(1).state == "done_today"
+
+
 # ---- 狐光靈珠 skips at 燕飄風 ----------------------------------------------------
 
 

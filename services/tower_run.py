@@ -328,6 +328,15 @@ class TowerManager:
         """`name` finished today's tower (done_today by name)."""
         return self._done_today(self._today_record(name))
 
+    def mark_done(self, name: str, done: bool) -> None:
+        """By hand: today's tower done (finished in game, or on another PC), or
+        not. The floors already recorded today are kept."""
+        record = self._today_record(name) or TowerRecord(date=self._today())
+        record = record.model_copy(
+            update={"done": done, "ended": "手動標記今日完成" if done else "取消手動標記"}
+        )
+        self._store.save_section(name, RECORD_SECTION, record)
+
     def start(self, pid: int) -> tuple[bool, str | None]:
         name = self._character_name(pid)
         if not name:
