@@ -631,6 +631,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/tower/tidy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tidy
+         * @description 寶箱整理 now, without a climb.
+         */
+        post: operations["tidy_api_characters__pid__tower_tidy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/tower/stop": {
         parameters: {
             query?: never;
@@ -768,6 +788,91 @@ export interface paths {
         get: operations["items_api_supply_items_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** View */
+        get: operations["view_api_characters__pid__handoff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/handoff/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_characters__pid__handoff_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/handoff/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Config */
+        put: operations["put_config_api_characters__pid__handoff_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/handoff/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_characters__pid__handoff_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/handoff/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__handoff_stop_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1517,6 +1622,27 @@ export interface paths {
         };
         /** Items By Id */
         get: operations["items_by_id_api_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/items/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Items
+         * @description Items by name substring and / or category (q may be empty with a
+         *     category); `tradable` leaves out no_trade ones.
+         */
+        get: operations["search_items_api_items_search_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2977,6 +3103,214 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HandoffBagItem */
+        HandoffBagItem: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Count */
+            count: number;
+            /** Stacks */
+            stacks: number;
+            /**
+             * No Trade
+             * @default false
+             */
+            no_trade: boolean;
+            /**
+             * No Store
+             * @default false
+             */
+            no_store: boolean;
+            /**
+             * Category
+             * @default misc
+             * @enum {string}
+             */
+            category: "potion" | "gear" | "book" | "pet" | "event" | "misc";
+        };
+        /**
+         * HandoffConfig
+         * @description A receiver's whitelist (character_settings section "handoff").
+         */
+        HandoffConfig: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["HandoffItem"][];
+            /**
+             * Bag Slots
+             * @default 40
+             */
+            bag_slots: number;
+            /**
+             * From Warehouse
+             * @default true
+             */
+            from_warehouse: boolean;
+        };
+        /** HandoffCount */
+        HandoffCount: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Count */
+            count: number;
+            /** Store */
+            store?: boolean | null;
+        };
+        /** HandoffItem */
+        HandoffItem: {
+            /** Item Id */
+            item_id: number;
+            /**
+             * Store
+             * @default true
+             */
+            store: boolean;
+        };
+        /** HandoffLogEntry */
+        HandoffLogEntry: {
+            /** Id */
+            id: number;
+            /** Ts */
+            ts: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "info" | "confirmed" | "unconfirmed" | "error";
+            /** Text */
+            text: string;
+        };
+        /** HandoffPlanRow */
+        HandoffPlanRow: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Count */
+            count: number;
+            /** Receiver Pid */
+            receiver_pid: number;
+            /** Receiver */
+            receiver: string;
+            /** Store */
+            store: boolean;
+        };
+        /** HandoffReceiver */
+        HandoffReceiver: {
+            /** Pid */
+            pid: number;
+            /** Character */
+            character: string;
+            /** Same Account */
+            same_account: boolean;
+            /** Stage Name */
+            stage_name?: string | null;
+            /** Tile */
+            tile?: number[] | null;
+            /** Free */
+            free?: number | null;
+            /** Items */
+            items: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "waiting" | "trading" | "storing" | "busy" | "stopped";
+            /** Busy With */
+            busy_with?: string | null;
+            /**
+             * Queue
+             * @default 0
+             */
+            queue: number;
+            /**
+             * Stacks
+             * @default 0
+             */
+            stacks: number;
+        };
+        /** HandoffStart */
+        HandoffStart: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "receive" | "send";
+        };
+        /** HandoffStatus */
+        HandoffStatus: {
+            /** Running */
+            running: boolean;
+            /** Role */
+            role?: ("receive" | "send") | null;
+            /** Character */
+            character?: string | null;
+            /** Step */
+            step?: string | null;
+            /** Problem */
+            problem?: string | null;
+            /**
+             * Stopping
+             * @default false
+             */
+            stopping: boolean;
+            /** Ended */
+            ended?: string | null;
+            /** Free */
+            free?: number | null;
+            /**
+             * Queue
+             * @default []
+             */
+            queue: string[];
+            /** Turn With */
+            turn_with?: string | null;
+            /**
+             * Moved
+             * @default []
+             */
+            moved: components["schemas"]["HandoffCount"][];
+            /**
+             * Log
+             * @default []
+             */
+            log: components["schemas"]["HandoffLogEntry"][];
+        };
+        /** HandoffView */
+        HandoffView: {
+            /** Character */
+            character: string | null;
+            config: components["schemas"]["HandoffConfig"];
+            status: components["schemas"]["HandoffStatus"];
+            /**
+             * Receivers
+             * @default []
+             */
+            receivers: components["schemas"]["HandoffReceiver"][];
+            /**
+             * Plan
+             * @default []
+             */
+            plan: components["schemas"]["HandoffPlanRow"][];
+            /**
+             * Bag
+             * @default []
+             */
+            bag: components["schemas"]["HandoffBagItem"][];
+            /** Bag Used */
+            bag_used?: number | null;
+            /**
+             * Warehouse
+             * @default []
+             */
+            warehouse: components["schemas"]["HandoffBagItem"][];
+        };
         /**
          * HookInfo
          * @description A hook pipe this app is reading for the character (protocol from its hello).
@@ -4283,6 +4617,16 @@ export interface components {
             logout_mp_at?: number | null;
             /** Skip To */
             skip_to?: number | null;
+            /**
+             * Tidy Boxes
+             * @default false
+             */
+            tidy_boxes: boolean;
+            /**
+             * Keep Potions
+             * @default 50
+             */
+            keep_potions: number;
         };
         /**
          * TowerEstimate
@@ -4435,7 +4779,9 @@ export interface components {
             /**
              * @default {
              *       "logout": false,
-             *       "logout_hp_at": 0
+             *       "logout_hp_at": 0,
+             *       "tidy_boxes": false,
+             *       "keep_potions": 50
              *     }
              */
             config: components["schemas"]["TowerConfig"];
@@ -5761,6 +6107,37 @@ export interface operations {
             };
         };
     };
+    tidy_api_characters__pid__tower_tidy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stop_api_characters__pid__tower_stop_post: {
         parameters: {
             query?: never;
@@ -6001,6 +6378,169 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SupplyBuyable"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_api_characters__pid__handoff_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_characters__pid__handoff_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_config_api_characters__pid__handoff_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandoffConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_characters__pid__handoff_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandoffStart"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__handoff_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7408,6 +7948,40 @@ export interface operations {
             query: {
                 /** @description Comma-separated item ids */
                 ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemMeta"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_items_api_items_search_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                tradable?: boolean;
+                category?: ("potion" | "gear" | "book" | "pet" | "event" | "misc") | null;
+                limit?: number;
             };
             header?: never;
             path?: never;

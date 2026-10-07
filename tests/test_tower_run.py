@@ -1137,3 +1137,106 @@ def test_a_floor_pass_says_how_hard_it_hit():
     passed = [line.text for line in run.log if "第 1 層通過" in line.text]
     assert passed and passed[0].endswith("，最低血 61%，單下最多 -390（39%））")
     run_log.forget(1)
+
+
+class BoxGame(FakeGame):
+    """FakeGame with a bag of 歲星寶箱 that open into 聖曦頭盔 (hook `bag` / `use`)."""
+
+    def __init__(self, boxes=2):
+        super().__init__()
+        self.stacks = [[31620, boxes]]
+
+    def send(self, pid, line, priority=0):
+        cmd, *args = line.split()
+        if cmd == "bag":
+            self.sent.append(line)
+            return {"ok": True, "bag": [{"item": i, "inst": 0, "count": n} for i, n in self.stacks]}
+        if cmd == "use" and int(args[0]) == 31620:
+            self.sent.append(line)
+            self.stacks[0][1] -= 1
+            self.stacks = [s for s in self.stacks if s[1] > 0] + [[23292, 1]]
+            return {"ok": True}
+        return super().send(pid, line, priority)
+
+
+def _box_loot():
+    from services.box_tidy import Loot
+
+    return Loot((31620,), frozenset(), frozenset({23292}), {31620: "歲星寶箱", 23292: "聖曦頭盔"})
+
+
+def test_a_normal_end_tidies_the_boxes_when_asked():
+    game = BoxGame()
+    mgr, run, _game, _ = make(game, config=TowerConfig(stop_floor=1, tidy_boxes=True))
+    mgr._loot = _box_loot()
+    run_loop(mgr, run)
+    texts = [line.text for line in run.log]
+    assert game.sent.count("use 31620") == 2
+    assert "開歲星寶箱：聖曦頭盔 ×1" in texts
+    assert "寶箱整理完成：開了 2 個寶箱" in texts
+    assert mgr.outcome(1)[0] == "done"  # the tidy does not change how the run ended
+    assert texts.index("寶箱整理完成：開了 2 個寶箱") < len(texts) - 1  # before the end line
+    assert texts[-1].startswith("登塔結束：")
+
+
+def test_no_tidy_when_off_or_after_a_death():
+    game = BoxGame()
+    mgr, run, _game, _ = make(game, config=TowerConfig(stop_floor=1))
+    mgr._loot = _box_loot()
+    run_loop(mgr, run)
+    assert "use 31620" not in game.sent
+    game = BoxGame()
+    game.hp = 0
+    mgr, run, _game, _ = make(game, config=TowerConfig(tidy_boxes=True))
+    mgr._loot = _box_loot()
+    run_loop(mgr, run)
+    assert "use 31620" not in game.sent
+
+
+def test_tidy_now_opens_the_boxes_without_a_climb():
+    game = BoxGame()
+    game.caps = game.caps + ["bag", "use"]
+    mgr, run, _game, _ = make(game, config=TowerConfig(keep_potions=50))
+    mgr._loot = _box_loot()
+    with mgr._lock:
+        mgr._runs.pop(1)  # nothing running
+    assert mgr.tidy_now(1) == (True, None)
+    tidy = mgr._runs[1]
+    tidy.thread.join(timeout=10)
+    texts = [line.text for line in tidy.log]
+    assert game.sent.count("use 31620") == 2
+    assert "寶箱整理完成：開了 2 個寶箱" in texts
+    assert tidy.ended == "寶箱整理結束" and not mgr.status(1).running
+    assert not any(line.startswith("walk") or line.startswith("attack") for line in game.sent)
+    # A second one waits for nothing: the first is over, so it starts again.
+    assert mgr.tidy_now(1) == (True, None)
+    mgr._runs[1].thread.join(timeout=10)
+
+
+def test_tidy_now_is_refused_while_climbing():
+    import threading
+
+    game = BoxGame()
+    game.caps = game.caps + ["bag", "use"]
+    mgr, run, _game, _ = make(game)
+    run.thread = threading.Thread(target=run.stop.wait, daemon=True)
+    run.thread.start()
+    ok, reason = mgr.tidy_now(1)
+    assert not ok and "還在進行" in reason
+    run.stop.set()
+
+
+def test_box_potions_get_auto_use_unless_the_user_set_a_rule():
+    from services.api_types import ItemRule, ItemRules
+    from services.item_rules import ItemFact
+
+    game = BoxGame()
+    mgr, run, _game, guard = make(game)
+    guard.set_items = lambda pid, rules: None  # guard not running: saved to the store
+    periodic = ItemFact("丹", True, True, True, None, None)
+    plain = ItemFact("回血", True, True, False, None, None)
+    mgr._item_facts = lambda i: {1: periodic, 2: periodic, 3: plain}.get(i)
+    mgr._store.save_items("寒江孤影", ItemRules(items={2: ItemRule(action="store")}))
+    assert mgr._auto_use(1, run, [1, 2, 3, 4]) == [1]
+    rules = mgr._store.load_items("寒江孤影").items
+    assert rules[1].action == "use_periodic" and rules[2].action == "store" and 3 not in rules

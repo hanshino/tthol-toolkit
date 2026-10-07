@@ -22,6 +22,7 @@ from services.api_types import (
     DispatchWindow,
     DispatchWindowOption,
 )
+from services.hook_caps import read_manifest
 
 log = logging.getLogger("tthol.dispatch")
 
@@ -103,7 +104,7 @@ def hook_problem(
             return last
         sleep(0.5)
     try:
-        caps = send("caps")
+        caps = read_manifest(send)
     except Exception:
         return "連不到這個視窗的 hook"
     if not caps.get("ok"):

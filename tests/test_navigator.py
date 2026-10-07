@@ -450,6 +450,8 @@ def test_door_is_armed_only_near_it():
 
 
 def test_a_walk_to_an_npc_keeps_events_off():
+    # A door on the way to an NPC must not fire: the 杭州城 錢莊 door is right
+    # on the way out to the 家族總管 (user, 2026-10-08).
     game = SwitchGame(CHENGDU, BANK_CLERK, {})
     run = _Run(nav_for(game), 1, None, lambda t: None)
     run.walk_to((BANK_CLERK[0] + 4, BANK_CLERK[1]), CHENGDU)
@@ -515,7 +517,7 @@ def exit_step(dst):
 def test_an_exit_is_armed_before_its_edge_not_its_middle():
     # From the left the edge (19, 2) is 2 tiles nearer than the middle: armed
     # by the middle, the character stood on the edge with the switch off.
-    game = ExitGame(HANGZHOU, (15, 2), EXIT_CELLS, dst=1)
+    game = ExitGame(HANGZHOU, (9, 2), EXIT_CELLS, dst=1)
     run = _Run(exit_nav(game), 1, None, lambda t: None)
     run.take(exit_step(1), HANGZHOU)
     assert game.stage == 1 and game.fired_off == []
@@ -529,12 +531,22 @@ def test_an_exit_stood_on_is_backed_off_and_walked_into():
     assert game.sent.count("mapevents 0") >= 1  # the back-off walk had it off
 
 
-def test_a_zone_walk_starting_close_is_armed_at_once():
+def test_a_zone_walk_starting_close_leaves_the_switch_alone():
+    # Close to the zone: no switching at all, the game's state stands (user,
+    # 2026-10-08); here it is on, as a click or a closepanel leaves it.
     game = ExitGame(HANGZHOU, (17, 2), EXIT_CELLS, dst=1)
+    game.events = 1
     run = _Run(exit_nav(game), 1, None, lambda t: None)
     run.walk_to((21, 2), HANGZHOU, slack=0, zone=True, cells=EXIT_CELLS)
-    assert game.sent[: game.sent.index("mapevents 1") + 1].count("mapevents 0") == 0
+    assert not any(line.startswith("mapevents") for line in game.sent)
     assert game.stage == 1
+
+
+def test_close_with_the_switch_off_the_walk_back_in_turns_it_on():
+    game = ExitGame(HANGZHOU, (17, 2), EXIT_CELLS, dst=1)  # switch off (a panel cleared it)
+    run = _Run(exit_nav(game), 1, None, lambda t: None)
+    run.take(exit_step(1), HANGZHOU)
+    assert game.stage == 1 and "mapevents 1" in game.sent
 
 
 def test_backing_off_an_exit_at_the_map_edge_stays_on_the_map():
@@ -574,3 +586,111 @@ def test_a_zone_walk_is_written_to_the_run_record(caplog):
         if r.name == "tthol.run" and r.getMessage().startswith("step")
     ]
     assert steps and steps[0].startswith("step door")
+
+
+class MissOnceGame(SwitchGame):
+    """A door that lets the first step-in pass (live 2026-10-07 in a manor):
+    only a second step-in fires."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.misses = 1
+        self.armed_at_start = []
+
+    def send(self, pid, line):
+        if line.startswith("walk ") and self.zones:
+            self.armed_at_start.append(self.events)
+        return super().send(pid, line)
+
+    def _step(self):
+        if self.target is None:
+            return
+        before = self.pos
+        x, y = self.pos
+        tx, ty = self.target
+        self.pos = (x + max(-2, min(2, tx - x)), y + max(-2, min(2, ty - y)))
+        for zone, land in self.zones.items():
+
+            def near(p, z=zone):
+                return max(abs(p[0] - z[0]), abs(p[1] - z[1])) <= 1
+
+            if near(self.pos) and not near(before) and self.events:
+                if self.misses:
+                    self.misses -= 1
+                    continue
+                self.pos, self.target = land, None
+                return
+
+
+def test_a_door_that_did_not_fire_is_stepped_off_and_into_again_armed():
+    zone, _t = door_into_bank()
+    game = MissOnceGame(CHENGDU, (47, 168), {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result
+    assert game.misses == 0
+    assert game.armed_at_start.count(1) >= 2  # walked in twice, the switch on both times
+
+
+class StuckFlagGame(FakeGame):
+    """The hook reads the warehouse open while nothing is on screen: closepanel
+    says no window open (live 2026-10-07, 晨曦破空)."""
+
+    def send(self, pid, line):
+        if line == "warehouse":
+            self.sent.append(line)
+            return {"ok": True, "open": True, "items": []}
+        if line == "closepanel":
+            self.sent.append(line)
+            return {"ok": False, "error": "no window open"}
+        return super().send(pid, line)
+
+
+def test_a_stuck_warehouse_flag_does_not_stop_the_walk():
+    zone, _t = door_into_bank()
+    game = StuckFlagGame(CHENGDU, (47, 168), {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result
+
+
+class LateDoorGame(FakeGame):
+    """A door that sends us through one read after we reach it: the walk has
+    already read "arrived" (live 2026-10-08, 杭州城 bank (36, 107) -> (29, 3))."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.pending = None
+
+    def _step(self):
+        if self.pending is not None:
+            self.pos, self.pending = self.pending, None
+            return
+        if self.target is None:
+            return
+        x, y = self.pos
+        tx, ty = self.target
+        self.pos = (x + max(-2, min(2, tx - x)), y + max(-2, min(2, ty - y)))
+        for zone, land in self.zones.items():
+            if max(abs(self.pos[0] - zone[0]), abs(self.pos[1] - zone[1])) <= 1:
+                self.pending, self.target = land, None
+                return
+
+
+def test_a_door_that_fires_just_after_the_walk_arrives_counts_as_taken():
+    zone, _t = door_into_bank()
+    game = LateDoorGame(CHENGDU, (47, 168), {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result
+    door = f"walk {zone[0] * 40 + 20} {zone[1] * 40 + 20}"
+    clerk = f"walk {BANK_CLERK[0] * 40 + 20} {BANK_CLERK[1] * 40 + 20}"
+    walks = {line for line in game.sent if line.startswith("walk ")}
+    assert walks == {door, clerk}  # no back-off walk: the door counted as taken
+
+
+def test_a_door_on_the_way_to_an_npc_does_not_fire():
+    # The 杭州城 錢莊 door lies on the way out to the 家族總管: walked over with
+    # the switch off, it must not send us back in (user, 2026-10-08).
+    door = (BANK_CLERK[0] + 2, BANK_CLERK[1])
+    game = SwitchGame(CHENGDU, BANK_CLERK, {door: (12, 13)})
+    run = _Run(nav_for(game), 1, None, lambda t: None)
+    run.walk_to((BANK_CLERK[0] + 6, BANK_CLERK[1]), CHENGDU)
+    assert game.fired_off and game.pos != (12, 13)

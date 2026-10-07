@@ -27,6 +27,7 @@ from services.api_types import (
     DailyMetric,
     DailySegment,
     DailySummary,
+    ItemRule,
     TowerConfig,
     TowerFloor,
     TowerLogEntry,
@@ -54,6 +55,8 @@ from services.combat import (
 from services.game_input import leave_game
 from services.guard import GuardManager, GuardStore, read_holdings, read_learned, read_stage_id
 from services import run_log
+from services.box_tidy import BoxTidy, Loot, load_loot
+from services.item_rules import KEEP, USE_PERIODIC, load_item_facts
 from services.hook_caps import FEATURES, HookCaps
 from services.hook_cmd import CommandChannel, NoReply, PipeBusy, PipeGone
 from services.tower import (
@@ -277,10 +280,15 @@ class TowerManager:
         navigator=None,  # services.navigator.Navigator: walks to 玄天之境 from elsewhere
         hook_caps: HookCaps | None = None,  # shared with the other modules
         supply=None,  # services.supply.SupplyManager: a 補給 trip before each run
+        loot: Callable[[], Loot] = load_loot,  # 寶箱整理: what the 關 boxes hold
     ) -> None:
         self._supply = supply
         if supply is not None:
             supply.add_host("神武玄天塔 · 出發前")
+            supply.add_host("神武玄天塔 · 寶箱整理")
+        self._load_loot = loot
+        self._loot: Loot | None = None
+        self._item_facts = None  # services.item_rules.load_item_facts, loaded on first use
         self._leave_game = leave_game
         self._navigator = navigator
         self._guard = guard
@@ -390,6 +398,51 @@ class TowerManager:
             run.thread.start()
         log.info("tower started pid=%d", pid, extra={"cat": "tower"})
         return True, None
+
+    def tidy_now(self, pid: int) -> tuple[bool, str | None]:
+        """寶箱整理 by hand, without a climb: the same tidy a run that ended the
+        normal way does. Its lines show in the tower log; 停止 stops it."""
+        name = self._character_name(pid)
+        if not name:
+            return False, "角色還沒定位"
+        try:
+            missing = [
+                c
+                for c in ("status", "bag", "use")
+                if c not in (self._hook_caps.get(pid, 60.0) or ())
+            ]
+        except PipeGone:
+            return False, "這個遊戲視窗沒有 hook 指令通道"
+        except (PipeBusy, NoReply):
+            return False, "hook 暫時沒有回應（還在登入或換地圖？），稍後再試"
+        if missing:
+            return False, f"這個 hook 缺少整理要用的指令：{'、'.join(missing)}"
+        with self._lock:
+            run = self._runs.get(pid)
+            if run is not None and run.thread is not None and run.thread.is_alive():
+                return False, "登塔或整理還在進行（登塔正常結束時，勾了自動整理就會整理）"
+            run = _Run(
+                name,
+                self._store.load_section(name, COMBAT_SECTION, CombatRule),
+                self._store.load_section(name, TOWER_SECTION, TowerConfig),
+            )
+            run.run_started = self._wall()
+            run.pid = pid
+            self._runs[pid] = run
+            run.thread = threading.Thread(
+                target=self._tidy_only, args=(pid, run), daemon=True, name=f"tidy-{pid}"
+            )
+            run.thread.start()
+        return True, None
+
+    def _tidy_only(self, pid: int, run: _Run) -> None:
+        try:
+            self._tidy(pid, run)
+        finally:
+            with run.lock:
+                run.ended = "寶箱整理結束"
+                run.outcome = "user"
+            run.stop.set()
 
     def stop(self, pid: int) -> None:
         with self._lock:
@@ -746,6 +799,8 @@ class TowerManager:
                 self._wait(run, self._tick(pid, run))
         except _Done as done:
             ended, phase, complete = done.reason, done.phase, done.complete
+            if complete and run.config.tidy_boxes:
+                self._tidy(pid, run)
         except Exception:
             log.exception("tower loop failed pid=%d", pid, extra={"cat": "tower"})
             ended, phase = "登塔出錯停止（詳見診斷紀錄）", "error"
@@ -828,6 +883,88 @@ class TowerManager:
             return self._at_start(pid, run, tower)
         run.start_since = None
         return self._room_tick(pid, run, tower, st, tile, objs)
+
+    def _tidy(self, pid: int, run: _Run) -> None:
+        """寶箱整理 after a run that ended the normal way (services.box_tidy).
+        A stop or a failure here does not undo the run: it stays done."""
+        self._set_step(run, "寶箱整理")
+        self._note(run, "info", "開始整理寶箱")
+        try:
+            if self._loot is None:
+                self._loot = self._load_loot()
+            potion = self._store.load(run.name).potion
+            result = BoxTidy(
+                cmd=lambda line: self._cmd(pid, run, line),
+                wait=lambda secs: self._wait(run, secs),
+                clock=self._clock,
+                note=lambda phase, text: self._note(run, phase, text),
+                step=lambda text: self._set_step(run, text),
+                loot=self._loot,
+                supplies=frozenset(potion.hp_items) | frozenset(potion.mp_items),
+                store_trip=self._store_trip(pid, run) if self._supply is not None else None,
+                auto_use=lambda items: self._auto_use(pid, run, items),
+            ).run()
+        except _Done as done:
+            self._note(run, "error", f"寶箱整理中斷：{done.reason}")
+            return
+        except Exception:
+            log.exception("box tidy failed pid=%d", pid, extra={"cat": "tower"})
+            self._note(run, "error", "寶箱整理出錯（詳見診斷紀錄）")
+            return
+        loot = self._loot
+        opened = sum(result.opened.values())
+        parts = [f"開了 {opened} 個寶箱"] if opened else ["沒有寶箱可開"]
+        if result.collected:
+            parts.append("蒐藏 " + "、".join(loot.name(i) for i in result.collected))
+        if result.auto:
+            parts.append("設成自動使用 " + "、".join(loot.name(i) for i in result.auto))
+        if result.stored:
+            parts.append(f"存倉 {result.stored} 個")
+        summary = "，".join(parts)
+        if result.problem:
+            self._note(run, "error", f"寶箱整理停下：{result.problem}（{summary}）")
+        else:
+            self._note(run, "confirmed", f"寶箱整理完成：{summary}")
+
+    def _auto_use(self, pid: int, run: _Run, items: list[int]) -> list[int]:
+        """道具處置 自動使用 (use_periodic) for these box potions, where the item
+        allows it and the user set no rule of their own; the running guard
+        picks the rules up at once."""
+        if self._item_facts is None:
+            self._item_facts = load_item_facts()
+        rules = self._store.load_items(run.name)
+        new: dict[int, ItemRule] = {}
+        for item_id in items:
+            fact = self._item_facts(item_id)
+            if fact is None or USE_PERIODIC not in fact.actions:
+                continue
+            old = rules.items.get(item_id)
+            if old is not None and old.action != KEEP:
+                continue
+            new[item_id] = ItemRule(action=USE_PERIODIC)
+        if new:
+            saved = rules.model_copy(update={"items": {**rules.items, **new}})
+            if self._guard.set_items(pid, saved) is None:
+                self._store.save_items(run.name, saved)
+        return list(new)
+
+    def _store_trip(self, pid: int, run: _Run):
+        def trip(want: dict[int, int]):
+            with run.lock:
+                run.moving = True
+            try:
+                return self._supply.run(
+                    pid,
+                    run.stop,
+                    note=lambda text: self._set_step(run, text),
+                    host="神武玄天塔 · 寶箱整理",
+                    store_only=want,
+                )
+            finally:
+                with run.lock:
+                    run.moving = False
+
+        return trip
 
     def _resupply(self, pid: int, run: _Run) -> None:
         """補給 before the climb, every run (user, 2026-10-07): sell, store, buy."""

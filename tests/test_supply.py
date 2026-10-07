@@ -145,12 +145,16 @@ class FakeGame:
         self.stuck_window = False
         self.vault: dict[int, int] = {}
         self.balance = 0
+        self.pose = "Wait"
 
     def send(self, _pid, line: str) -> dict:
         self.sent.append(line)
         cmd, *args = line.split()
         if cmd == "status":
-            return {"ok": True, "self": 1, "hp": [10, 10], "tile": [1, 1]}
+            return {"ok": True, "self": 1, "hp": [10, 10], "tile": [1, 1], "pose": self.pose}
+        if cmd == "sit":
+            self.pose = "Wait" if self.pose == "Sit" else "Sit"
+            return {"ok": True}
         if cmd == "near":
             return {
                 "ok": True,
@@ -171,7 +175,14 @@ class FakeGame:
             self.shop_open = self.warehouse_open = False
             return {"ok": True} if was else {"ok": False, "error": "no panel open"}
         if cmd == "warehouse":
-            return {"ok": True, "open": self.warehouse_open, "items": []}
+            items = [{"item": i, "inst": 0, "count": n} for i, n in self.vault.items() if n]
+            return {"ok": True, "open": self.warehouse_open, "items": items}
+        if cmd == "withdraw":
+            item, qty = int(args[0]), int(args[1])
+            if self.warehouse_open and self.vault.get(item, 0) >= qty:
+                self.vault[item] -= qty
+                self.bag[item] = self.bag.get(item, 0) + qty
+            return {"ok": True, "item": item, "qty": qty}
         if cmd == "store":
             item, qty = int(args[0]), int(args[1])
             if self.warehouse_open:
@@ -597,3 +608,104 @@ def test_windows_are_closed_when_the_trip_ends():
     assert game.sent.index("closepanel") > max(
         i for i, line in enumerate(game.sent) if line.startswith("buy")
     )
+
+
+def test_store_only_stores_just_those_and_nothing_else():
+    game = FakeGame({ORE: 30, JUNK: 46, POTION: 0}, gold=40_000)
+    game.balance = 1_000_000
+    cfg = SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)], keep_gold=0, gold_low=100_000)
+    rules = ItemRules(items={JUNK: ItemRule(action="sell")})
+    mgr, nav, _ = make(game, cfg, rules, caps=WAREHOUSE_CAPS)
+    result = mgr.run(1, threading.Event(), store_only={ORE: 12, 99999: 5})
+    assert result.ok and result.stored == 12, result
+    assert [d for d, _g in nav.went] == [23]  # the 錢莊伙計 only: no shop
+    assert game.vault == {ORE: 12} and game.bag[ORE] == 18
+    assert game.bag[JUNK] == 46 and game.bag[POTION] == 0  # no sell, no buy
+    assert game.gold == 40_000  # no 錢莊 move
+
+
+def test_withdraw_takes_out_the_wanted_stacks_that_fit():
+    game = FakeGame({JUNK: 1}, gold=40_000)
+    game.vault = {ORE: 300, SCROLL: 2, POTION: 5}
+    cfg = SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)], keep_gold=0, gold_low=100_000)
+    mgr, nav, _ = make(game, cfg, ItemRules(), caps=WAREHOUSE_CAPS + ("withdraw",))
+    result = mgr.run(1, threading.Event(), withdraw=(frozenset({ORE, SCROLL}), 1))
+    assert result.ok and result.withdrawn == 300 and result.left == 1, result
+    assert game.bag[ORE] == 300 and game.vault[SCROLL] == 2  # one slot: one stack
+    assert [line for line in game.sent if line.startswith("withdraw")] == [
+        f"withdraw {ORE} 255",
+        f"withdraw {ORE} 45",
+    ]
+    assert [d for d, _g in nav.went] == [23]  # the 錢莊伙計 only
+    assert game.bag.get(POTION, 0) == 0 and game.gold == 40_000  # no buy, no 錢莊 move
+
+
+def test_withdraw_needs_the_hook_command():
+    game = FakeGame({}, gold=40_000)
+    mgr, _nav, _ = make(game, SupplyConfig(), ItemRules(), caps=WAREHOUSE_CAPS)
+    result = mgr.run(1, threading.Event(), withdraw=(frozenset({ORE}), 3))
+    assert not result.ok and "withdraw" in result.detail
+
+
+SIT_CAPS = WAREHOUSE_CAPS + ("withdraw", "sit")
+
+
+def test_a_seated_trip_sits_and_opens_the_warehouse_from_where_it_is():
+    game = FakeGame({ORE: 30}, gold=40_000)
+    game.stage = 23  # the 錢莊伙計's map, and he is on screen
+    mgr, nav, _ = make(game, SupplyConfig(), ItemRules(), caps=SIT_CAPS)
+    result = mgr.run(1, threading.Event(), store_only={ORE: 12}, seated=True)
+    assert result.ok and result.stored == 12, result
+    assert nav.went == []  # no walk
+    assert game.sent.count("sit") == 2 and game.pose == "Wait"  # sat, then up again
+    assert game.vault == {ORE: 12}
+
+
+def test_a_seated_trip_on_another_map_walks_as_usual():
+    game = FakeGame({ORE: 30}, gold=40_000)
+    mgr, nav, _ = make(game, SupplyConfig(), ItemRules(), caps=SIT_CAPS)
+    result = mgr.run(1, threading.Event(), store_only={ORE: 12}, seated=True)
+    assert result.ok and [d for d, _g in nav.went] == [23]
+    assert "sit" not in game.sent
+
+
+def test_withdraw_waits_for_the_warehouse_list_to_fill():
+    # Not opened since the game started: the list reads empty for a moment.
+    game = FakeGame({}, gold=40_000)
+    game.vault = {ORE: 5}
+    late = {"reads": 0}
+    send = game.send
+
+    def slow(pid, line):
+        if line == "warehouse" and game.warehouse_open:
+            late["reads"] += 1
+            if late["reads"] <= 3:
+                return {"ok": True, "open": True, "items": []}
+        return send(pid, line)
+
+    game.send = slow
+    mgr, _nav, _ = make(game, SupplyConfig(), ItemRules(), caps=WAREHOUSE_CAPS + ("withdraw",))
+    result = mgr.run(1, threading.Event(), withdraw=(frozenset({ORE}), 3))
+    assert result.ok and result.withdrawn == 5, result
+
+
+def test_a_stuck_warehouse_flag_is_taken_as_closed():
+    # The hook reads the warehouse open with nothing on screen, and closepanel
+    # says no window open (live 2026-10-07): the trip goes on.
+    game = FakeGame({ORE: 30}, gold=40_000)
+    game.stuck_flag = True
+    send = game.send
+
+    def stuck(pid, line):
+        if line == "warehouse":
+            r = send(pid, line)
+            return {**r, "open": True}
+        if line == "closepanel" and not game.shop_open:
+            send(pid, line)
+            return {"ok": False, "error": "no window open"}
+        return send(pid, line)
+
+    game.send = stuck
+    mgr, _nav, _ = make(game, SupplyConfig(), ItemRules(), caps=WAREHOUSE_CAPS)
+    result = mgr.run(1, threading.Event(), store_only={ORE: 12})
+    assert result.ok and result.stored == 12, result

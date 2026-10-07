@@ -79,3 +79,29 @@ def test_not_in_game_is_not_cached_as_no_manifest():
     with pytest.raises(NoReply):
         caps.read(1)
     assert caps.cached(1) is None and 1 not in caps._entries
+
+
+def test_a_paged_manifest_is_read_whole():
+    from services.hook_caps import read_manifest
+
+    pages = {
+        "caps": {"ok": True, "page": 1, "pages": 3, "commands": [{"cmd": "a"}, {"cmd": "b"}]},
+        "caps 2": {"ok": True, "page": 2, "pages": 3, "commands": [{"cmd": "c"}]},
+        "caps 3": {"ok": True, "page": 3, "pages": 3, "commands": [{"cmd": "d"}]},
+    }
+    sent = []
+
+    def send(line):
+        sent.append(line)
+        return pages[line]
+
+    reply = read_manifest(send)
+    assert [c["cmd"] for c in reply["commands"]] == ["a", "b", "c", "d"]
+    assert sent == ["caps", "caps 2", "caps 3"]
+    # An older hook: no "pages", one reply.
+    assert read_manifest(lambda line: {"ok": True, "commands": [{"cmd": "x"}]})["commands"] == [
+        {"cmd": "x"}
+    ]
+    # A page that cannot be read hides nothing: the whole manifest fails.
+    pages["caps 2"] = {"ok": False, "error": "busy"}
+    assert read_manifest(send)["ok"] is False
