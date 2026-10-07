@@ -5,7 +5,7 @@ import pytest
 
 from services import route_plan as rp
 from services._paths import bundled
-from services.navigator import Navigator, _Replan, _Run, read_level
+from services.navigator import Navigator, _Replan, _Run, _Stop, read_level
 
 pytestmark = pytest.mark.skipif(
     not bundled("tthol.sqlite").exists(), reason="tthol.sqlite not pulled"
@@ -309,3 +309,71 @@ def test_zero_hp_that_stays_is_a_death():
     with pytest.raises(_Stop) as e:
         run.walk_to((47, 150), CHENGDU)
     assert e.value.reason == "dead"
+
+
+class WindowGame(FakeGame):
+    """A shop window and an NPC dialog the walk has to get out of the way first."""
+
+    def __init__(self, *a, shop=False, dialog_pages=0, options=None, closable=True, **kw):
+        super().__init__(*a, **kw)
+        self.shop, self.pages, self.options, self.closable = shop, dialog_pages, options, closable
+
+    def send(self, pid, line):
+        cmd = line.split()[0]
+        if cmd == "shop":
+            self.sent.append(line)
+            return {"ok": True, "open": self.shop}
+        if cmd == "warehouse":
+            self.sent.append(line)
+            return {"ok": True, "open": False}
+        if cmd == "dialog":
+            self.sent.append(line)
+            open_ = self.pages > 0 or self.options is not None
+            return {"ok": True, "open": open_, "waiting": False, "options": self.options or []}
+        if cmd == "next":
+            self.sent.append(line)
+            self.pages = max(self.pages - 1, 0)
+            return {"ok": True}
+        if cmd == "closepanel":
+            self.sent.append(line)
+            if not self.closable:
+                return {"ok": False, "error": "unknown command"}
+            self.shop = False
+            return {"ok": True, "closed": ["shop"]}
+        if cmd == "walk":
+            assert not self.shop and not self.pages and self.options is None, "walked while busy"
+        return super().send(pid, line)
+
+
+def _run(game):
+    nav = nav_for(game)
+    return _Run(nav, 1, None, lambda t: None)
+
+
+def test_walk_closes_a_shop_window_first():
+    game = WindowGame(1, (5, 5), {}, shop=True)
+    run = _run(game)
+    run.ensure_free()
+    assert "closepanel" in game.sent and not game.shop
+
+
+def test_walk_pushes_a_dialog_without_options_to_its_end():
+    game = WindowGame(1, (5, 5), {}, dialog_pages=2)
+    run = _run(game)
+    run.ensure_free()
+    assert game.sent.count("next") == 2
+
+
+def test_walk_stops_on_a_dialog_that_wants_a_choice():
+    game = WindowGame(1, (5, 5), {}, options=[123, 456])
+    run = _run(game)
+    with pytest.raises(_Stop, match="選選項"):
+        run.ensure_free()
+    assert not any(line.startswith("walk") for line in game.sent)
+
+
+def test_walk_stops_when_the_hook_cannot_close_the_window():
+    game = WindowGame(1, (5, 5), {}, shop=True, closable=False)
+    run = _run(game)
+    with pytest.raises(_Stop, match="關不掉"):
+        run.ensure_free()

@@ -71,6 +71,7 @@ SETTLE = 1.5  # after a map change, before reading `near` again
 # HP 0 this long in a row is a death. A map load reads 0 for a moment (live
 # 2026-10-07: 聖火狂狐 stopped as dead entering 探幽曲徑 at full health).
 DEATH_CONFIRM = 3.0
+FREE_TRIES = 12  # reads (0.3 s apart) to get a window or dialog out of the way before a walk
 
 
 @dataclass
@@ -378,9 +379,33 @@ class _Run:
 
     # -- moves -------------------------------------------------------------------
 
+    def ensure_free(self) -> None:
+        """No walking while a shop / warehouse window or an NPC dialog is open:
+        the character cannot move then (user, 2026-10-07), and a walk packet
+        sent anyway leaves the client and the server disagreeing. Close the
+        window (hook closepanel), push a dialog without options to its end, or
+        stop."""
+        for _ in range(FREE_TRIES):
+            shop, ware = self.cmd("shop"), self.cmd("warehouse")
+            panel = bool(shop.get("open")) or bool(ware.get("open"))
+            d = self.cmd("dialog")
+            if not panel and not d.get("open"):
+                return
+            if panel:
+                r = self.cmd("closepanel")
+                if not r.get("ok") and str(r.get("error") or "") != "no window open":
+                    raise _Stop("busy", "商店或倉庫視窗開著，這個 hook 關不掉（沒有 closepanel）")
+            elif d.get("options") and not d.get("waiting"):
+                raise _Stop("busy", "NPC 對話還開著而且要選選項，先不走路")
+            elif not d.get("waiting"):
+                self.cmd("next")
+            self.wait(0.3)
+        raise _Stop("busy", "視窗或 NPC 對話一直關不掉，先不走路")
+
     def walk_to(self, tile: Tile, src: int | None, slack: int = ARRIVE_SLACK) -> str:
         """arrived / jump (teleported on this map) / map (the stage changed) / stuck.
         The target is clicked again every few seconds, and at once when the walk stalls."""
+        self.ensure_free()
         line = f"walk {tile[0] * TILE_PX + TILE_PX // 2} {tile[1] * TILE_PX + TILE_PX // 2}"
         start = self.me()  # so a zone on the very first steps still reads as a jump
         space = src if src is not None else self.stage()
@@ -473,6 +498,7 @@ class _Run:
 
     def touch_zone(self, zone: Tile, here: int) -> bool:
         """Click the map object on a click zone. False when none is near it."""
+        self.ensure_free()
         self.walk_to(zone, here, slack=1)
         objs = self.cmd("objects").get("objects") or []
         near = [
