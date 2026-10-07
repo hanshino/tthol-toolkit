@@ -71,6 +71,12 @@ SETTLE = 1.5  # after a map change, before reading `near` again
 # HP 0 this long in a row is a death. A map load reads 0 for a moment (live
 # 2026-10-07: 聖火狂狐 stopped as dead entering 探幽曲徑 at full health).
 DEATH_CONFIRM = 3.0
+# Map events (doors, exits, click zones) fire only while the client's map
+# event switch is 1. A mouse click on the ground sets it; opening any panel
+# (shop, warehouse) clears it, and the hook's `walk` leaves it alone (hook,
+# 2026-10-07). Walks keep it 0, so no zone on the way fires, and set it 1
+# this close to the zone they mean to take.
+ARM_TILES = 3
 DOOR_WAIT = 3.0  # a door walked onto teleports at once; longer means we stopped beside it
 AWAY_MIN, AWAY_MAX = 3, 4  # tiles to back off from a door that did not fire
 FREE_TRIES = 12  # reads (0.3 s apart) to get a window or dialog out of the way before a walk
@@ -158,6 +164,7 @@ class _Run:
         self.script = rp._Script(rp._tables(), self.level, self.manor)
         self.names = rp._tables().stages
         self.zero_hp_at: float | None = None  # clock HP first read 0 (see DEATH_CONFIRM)
+        self.events_ok = True  # the hook has `mapevents` (an older one does not)
 
     # -- plumbing ----------------------------------------------------------------
 
@@ -317,7 +324,7 @@ class _Run:
         if step.kind == "door":
             if step.touch and self.touch_zone(step.at, here):
                 return
-            r = self.walk_to(step.at, here, slack=0)
+            r = self.walk_to(step.at, here, slack=0, zone=True)
             if r == "map" or r == "jump" or self.jumped(self.me(), DOOR_WAIT):
                 return
             # Started next to the zone: "one off" counts as arrived, but the
@@ -326,7 +333,7 @@ class _Run:
             away = self.step_away(step.at, here)
             if away is not None:
                 self.walk_to(away, here, slack=0)
-                r = self.walk_to(step.at, here, slack=0)
+                r = self.walk_to(step.at, here, slack=0, zone=True)
                 if r == "map" or r == "jump" or self.jumped(self.me()):
                     return
             raise _Stop("stuck", f"傳點 {step.at} 沒有傳送")
@@ -334,7 +341,7 @@ class _Run:
             if step.touch and self.touch_zone(step.at, here):
                 return
             for _ in range(EXIT_TRIES):
-                r = self.walk_to(step.at, here, slack=0)
+                r = self.walk_to(step.at, here, slack=0, zone=True)
                 if r == "map":
                     return  # the exit, or another one on the way: the next plan sorts it out
                 if r == "jump":
@@ -365,7 +372,9 @@ class _Run:
         pos = self.me()
         hops = rp.room_doors("sestage", manor, pos, tile) if pos else None
         for zone, _touch in hops or []:
-            if self.walk_to(zone, None, slack=0) != "jump" and not self.jumped(self.me()):
+            if self.walk_to(zone, None, slack=0, zone=True) != "jump" and not self.jumped(
+                self.me()
+            ):
                 raise _Stop("stuck", "莊園裡的門沒有傳送")
         self.ride(horse, tile, ride_to, manor)
 
@@ -390,6 +399,16 @@ class _Run:
 
     # -- moves -------------------------------------------------------------------
 
+    def map_events(self, on: bool) -> None:
+        """Set the client's map event switch (hook `mapevents`); see ARM_TILES."""
+        if not self.events_ok:
+            return
+        r = self.cmd(f"mapevents {1 if on else 0}")
+        if not r.get("ok"):
+            # An older hook without the command: zones fire as the switch is.
+            self.events_ok = False
+            log.info("navigator pid=%d no mapevents: %s", self.pid, r.get("error"))
+
     def ensure_free(self) -> None:
         """No walking while a shop / warehouse window or an NPC dialog is open:
         the character cannot move then (user, 2026-10-07), and a walk packet
@@ -413,10 +432,18 @@ class _Run:
             self.wait(0.3)
         raise _Stop("busy", "視窗或 NPC 對話一直關不掉，先不走路")
 
-    def walk_to(self, tile: Tile, src: int | None, slack: int = ARRIVE_SLACK) -> str:
+    def walk_to(
+        self, tile: Tile, src: int | None, slack: int = ARRIVE_SLACK, zone: bool = False
+    ) -> str:
         """arrived / jump (teleported on this map) / map (the stage changed) / stuck.
-        The target is clicked again every few seconds, and at once when the walk stalls."""
+        The target is clicked again every few seconds, and at once when the walk stalls.
+
+        `zone`: the target is a door / exit / click zone to take: map events are
+        switched on ARM_TILES from it (off for the rest of the way and for any
+        other walk)."""
         self.ensure_free()
+        self.map_events(False)
+        armed = False
         line = f"walk {tile[0] * TILE_PX + TILE_PX // 2} {tile[1] * TILE_PX + TILE_PX // 2}"
         start = self.me()  # so a zone on the very first steps still reads as a jump
         space = src if src is not None else self.stage()
@@ -433,6 +460,10 @@ class _Run:
             if src is not None and self.stage() not in (src, None):
                 return "map"
             pos = self.me()
+            if zone and not armed and pos and math.dist(pos, tile) <= ARM_TILES:
+                armed = True
+                self.map_events(True)
+                self.cmd(line)  # walk on into the zone with events on
             if self.teleported(space, last, pos):
                 log.info(
                     "walk jump pid=%d %s -> %s (%.1f tiles)",
@@ -541,6 +572,7 @@ class _Run:
             return False
         obj = min(near, key=lambda o: math.dist((o["x"] // TILE_PX, o["y"] // TILE_PX), zone))
         last = self.me()
+        self.map_events(True)  # a click zone is a map event too
         self.cmd(f"touch {obj['h']}")  # walks up to the object first when not next to it
         end = self.nav._clock() + MAP_WAIT
         while self.nav._clock() < end:

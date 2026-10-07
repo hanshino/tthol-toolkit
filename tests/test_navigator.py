@@ -407,3 +407,50 @@ def test_a_door_started_beside_is_walked_into_again():
     result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
     assert result.ok, result
     assert math.dist(result.tile, BANK_CLERK) <= 2
+
+
+class SwitchGame(FakeGame):
+    """Doors fire only while the map event switch is on (hook `mapevents`)."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.events = 0
+        self.fired_off = []  # zones crossed while the switch was off
+
+    def send(self, pid, line):
+        if line.startswith("mapevents"):
+            self.sent.append(line)
+            self.events = int(line.split()[1])
+            return {"ok": True, "was": 0, "map_events": self.events}
+        return super().send(pid, line)
+
+    def _step(self):
+        if self.target is None:
+            return
+        x, y = self.pos
+        tx, ty = self.target
+        self.pos = (x + max(-2, min(2, tx - x)), y + max(-2, min(2, ty - y)))
+        for zone, land in self.zones.items():
+            if max(abs(self.pos[0] - zone[0]), abs(self.pos[1] - zone[1])) <= 1:
+                if not self.events:
+                    self.fired_off.append(zone)
+                    continue
+                self.pos, self.target = land, None
+                return
+
+
+def test_door_is_armed_only_near_it():
+    zone, _t = door_into_bank()
+    game = SwitchGame(CHENGDU, (47, 168), {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result
+    on = game.sent.index("mapevents 1")
+    assert "mapevents 0" in game.sent[:on]  # off for the way there
+    assert game.events == 0  # the last walk (to the clerk) switched it off again
+
+
+def test_a_walk_to_an_npc_keeps_events_off():
+    game = SwitchGame(CHENGDU, BANK_CLERK, {})
+    run = _Run(nav_for(game), 1, None, lambda t: None)
+    run.walk_to((BANK_CLERK[0] + 4, BANK_CLERK[1]), CHENGDU)
+    assert "mapevents 1" not in game.sent and game.events == 0

@@ -101,6 +101,9 @@ class FakeGame:
     def send(self, pid, line, priority=0):
         self.sent.append(line)
         cmd, *args = line.split()
+        if cmd == "mapevents":
+            self.events = int(args[0])
+            return {"ok": True, "was": 0, "map_events": self.events}
         if cmd == "caps":
             return {
                 "ok": True,
@@ -1073,3 +1076,18 @@ def test_supply_short_stops_the_run_and_a_failed_trip_does_not():
     with_supply(mgr, SupplyResult(False, "error", "找不到商人"))
     mgr._tick(1, run)
     assert any("照常登塔" in line.text for line in run.log)
+
+
+def test_only_the_exit_walk_switches_map_events_on():
+    mgr, run, game, _ = make()
+    ticks(mgr, run, 12)
+    switches = [line for line in game.sent if line.startswith("mapevents")]
+    assert "mapevents 1" in switches and "mapevents 0" in switches
+    # every walk right after a "mapevents 1" goes to an exit tile
+    tower = make_tower()
+    exits = {t for r in range(1, 11) for t in tower.exit_tiles(r)}
+    for i, line in enumerate(game.sent):
+        if line == "mapevents 1":
+            walk = next(w for w in game.sent[i:] if w.startswith("walk"))
+            x, y = (int(v) // 40 for v in walk.split()[1:3])
+            assert (x, y) in exits, walk

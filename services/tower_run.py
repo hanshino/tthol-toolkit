@@ -236,6 +236,7 @@ class _Run:
         self.start_since: float | None = None  # clock we got to the 關 start
         self.navigated = False  # walked to 玄天之境 from elsewhere (once a run)
         self.supplied = False  # 補給 ran (or was skipped) before the first floor
+        self.events_ok = True  # the hook has `mapevents`
         self.skip_tried = False  # 狐光靈珠 skips looked at (once a run, before entering)
         self.moving = False  # the navigator is walking us to 玄天之境
         self.user_stop = False  # stop() was called (the 日常 tab or the queue)
@@ -1272,7 +1273,7 @@ class TowerManager:
         """Step onto one exit tile (the next one each try) and give it time to
         open the dialog; back to the stand-off tile when it did not."""
         tiles = tower.exit_tiles(room)
-        self._walk(pid, run, tiles[run.exit_try % len(tiles)])
+        self._walk(pid, run, tiles[run.exit_try % len(tiles)], zone=True)
         r = self._dialog(pid, run, (), frozenset({LEAVE}), EXIT_DIALOG, leave=leave)
         if r == "none":
             self._walk(pid, run, tower.staging(room))
@@ -1280,7 +1281,13 @@ class TowerManager:
 
     # -- moving and talking ------------------------------------------------------------
 
-    def _walk(self, pid: int, run: _Run, tile: tuple[int, int], wait: bool = True) -> None:
+    def _walk(
+        self, pid: int, run: _Run, tile: tuple[int, int], wait: bool = True, zone: bool = False
+    ) -> None:
+        """`zone`: the target is the room's exit, a map event: switch map events
+        on for it, off for every other walk (no exit opens by accident). An NPC
+        dialog or the shop clears the switch, so it is set before each walk."""
+        self._map_events(pid, run, zone)
         line = f"walk {tile[0] * TILE_PX + TILE_PX // 2} {tile[1] * TILE_PX + TILE_PX // 2}"
         for _ in range(6):  # refused (path false) while the last walk still runs
             if self._cmd(pid, run, line).get("path"):
@@ -1297,6 +1304,13 @@ class TowerManager:
             t = own_tile(st, self._near(pid, run))
             if abs(t[0] - tile[0]) <= 1 and abs(t[1] - tile[1]) <= 1:
                 return
+
+    def _map_events(self, pid: int, run: _Run, on: bool) -> None:
+        if not run.events_ok:
+            return
+        r = self._cmd(pid, run, f"mapevents {1 if on else 0}")
+        if not r.get("ok") and r.get("error") != "busy":
+            run.events_ok = False  # an older hook: zones fire as the switch is
 
     def _talk(self, pid: int, run: _Run, npc: dict, want, avoid, **kw) -> str:
         self._cmd(pid, run, f"talk {npc['h']}")
