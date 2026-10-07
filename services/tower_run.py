@@ -396,6 +396,51 @@ class TowerManager:
         log.info("tower started pid=%d", pid, extra={"cat": "tower"})
         return True, None
 
+    def tidy_now(self, pid: int) -> tuple[bool, str | None]:
+        """寶箱整理 by hand, without a climb: the same tidy a run that ended the
+        normal way does. Its lines show in the tower log; 停止 stops it."""
+        name = self._character_name(pid)
+        if not name:
+            return False, "角色還沒定位"
+        try:
+            missing = [
+                c
+                for c in ("status", "bag", "use")
+                if c not in (self._hook_caps.get(pid, 60.0) or ())
+            ]
+        except PipeGone:
+            return False, "這個遊戲視窗沒有 hook 指令通道"
+        except (PipeBusy, NoReply):
+            return False, "hook 暫時沒有回應（還在登入或換地圖？），稍後再試"
+        if missing:
+            return False, f"這個 hook 缺少整理要用的指令：{'、'.join(missing)}"
+        with self._lock:
+            run = self._runs.get(pid)
+            if run is not None and run.thread is not None and run.thread.is_alive():
+                return False, "登塔或整理還在進行（登塔正常結束時，勾了自動整理就會整理）"
+            run = _Run(
+                name,
+                self._store.load_section(name, COMBAT_SECTION, CombatRule),
+                self._store.load_section(name, TOWER_SECTION, TowerConfig),
+            )
+            run.run_started = self._wall()
+            run.pid = pid
+            self._runs[pid] = run
+            run.thread = threading.Thread(
+                target=self._tidy_only, args=(pid, run), daemon=True, name=f"tidy-{pid}"
+            )
+            run.thread.start()
+        return True, None
+
+    def _tidy_only(self, pid: int, run: _Run) -> None:
+        try:
+            self._tidy(pid, run)
+        finally:
+            with run.lock:
+                run.ended = "寶箱整理結束"
+                run.outcome = "user"
+            run.stop.set()
+
     def stop(self, pid: int) -> None:
         with self._lock:
             run = self._runs.get(pid)

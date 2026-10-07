@@ -91,6 +91,19 @@ export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
     }
   };
 
+  const tidyNow = async () => {
+    setBusy(true);
+    try {
+      const r = await post<GuardStartResult>(`/api/characters/${pid}/tower/tidy`);
+      setNotice(r.ok ? null : r.reason ?? '無法開始整理');
+      await refresh();
+    } catch (e) {
+      reportClientError(e, { component: 'DailyTab.tidy' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const estimate = async () => {
     setEstimating(true);
     try {
@@ -228,7 +241,8 @@ export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
           <span>每天第一次進塔前，依序一關一關略過；等級或靈珠不夠就略過到能略過的那關</span>
         </div>
         <PotionFloors config={settings.config} onChange={config => update({ ...settings, config })} />
-        <BoxTidy config={settings.config} onChange={config => update({ ...settings, config })} />
+        <BoxTidy config={settings.config} onChange={config => update({ ...settings, config })}
+          busy={busy || view.status.running} onTidy={tidyNow} />
         <div className="gd-fixed">
           <span>層數是全塔編號：辰星關 1–10、太白關 11–20…</span>
           <span>藥量＝補水白名單的藥，背包加寵物背包</span>
@@ -414,7 +428,9 @@ function PotionFloors({ config, onChange }: { config: TowerConfig; onChange: (c:
 }
 
 // 寶箱整理 after a run that ended the normal way (services/box_tidy.py).
-function BoxTidy({ config, onChange }: { config: TowerConfig; onChange: (c: TowerConfig) => void }) {
+function BoxTidy({ config, onChange, busy, onTidy }: {
+  config: TowerConfig; onChange: (c: TowerConfig) => void; busy: boolean; onTidy: () => void;
+}) {
   const on = config.tidy_boxes ?? false;
   return (
     <div className="dl-floors">
@@ -432,6 +448,8 @@ function BoxTidy({ config, onChange }: { config: TowerConfig; onChange: (c: Towe
             keep_potions: Math.min(10000, Math.max(0, Math.floor(Number(e.target.value)) || 0)),
           })} />
         <span>個，多的吃掉；神兵、技能書、覺醒符存倉</span>
+        <button type="button" className="dl-btn dl-btn-sm" disabled={busy} onClick={onTidy}
+          title="不登塔，現在就照這個設定整理背包裡的關寶箱">現在整理寶箱</button>
       </div>
     </div>
   );

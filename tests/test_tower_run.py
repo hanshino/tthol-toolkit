@@ -1191,3 +1191,36 @@ def test_no_tidy_when_off_or_after_a_death():
     mgr._loot = _box_loot()
     run_loop(mgr, run)
     assert "use 31620" not in game.sent
+
+
+def test_tidy_now_opens_the_boxes_without_a_climb():
+    game = BoxGame()
+    game.caps = game.caps + ["bag", "use"]
+    mgr, run, _game, _ = make(game, config=TowerConfig(keep_potions=50))
+    mgr._loot = _box_loot()
+    with mgr._lock:
+        mgr._runs.pop(1)  # nothing running
+    assert mgr.tidy_now(1) == (True, None)
+    tidy = mgr._runs[1]
+    tidy.thread.join(timeout=10)
+    texts = [line.text for line in tidy.log]
+    assert game.sent.count("use 31620") == 2
+    assert "寶箱整理完成：開了 2 個寶箱" in texts
+    assert tidy.ended == "寶箱整理結束" and not mgr.status(1).running
+    assert not any(line.startswith("walk") or line.startswith("attack") for line in game.sent)
+    # A second one waits for nothing: the first is over, so it starts again.
+    assert mgr.tidy_now(1) == (True, None)
+    mgr._runs[1].thread.join(timeout=10)
+
+
+def test_tidy_now_is_refused_while_climbing():
+    import threading
+
+    game = BoxGame()
+    game.caps = game.caps + ["bag", "use"]
+    mgr, run, _game, _ = make(game)
+    run.thread = threading.Thread(target=run.stop.wait, daemon=True)
+    run.thread.start()
+    ok, reason = mgr.tidy_now(1)
+    assert not ok and "還在進行" in reason
+    run.stop.set()

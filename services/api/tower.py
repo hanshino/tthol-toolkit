@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Request
 
 from services.api_types import (
@@ -41,6 +43,16 @@ async def start(pid: int, request: Request) -> GuardStartResult:
     if mgr is None:
         return GuardStartResult(ok=False, reason="登塔未啟用")
     ok, reason = mgr.start(pid)
+    return GuardStartResult(ok=ok, reason=reason)
+
+
+@router.post("/tidy", response_model=GuardStartResult)
+async def tidy(pid: int, request: Request) -> GuardStartResult:
+    """寶箱整理 now, without a climb."""
+    mgr = _mgr(request)
+    if mgr is None:
+        return GuardStartResult(ok=False, reason="登塔未啟用")
+    ok, reason = await asyncio.to_thread(mgr.tidy_now, pid)
     return GuardStartResult(ok=ok, reason=reason)
 
 
