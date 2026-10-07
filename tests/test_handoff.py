@@ -36,6 +36,13 @@ class World:
         self.drop_invites = 0  # invites that never arrive
         self.mgr = None
         self.vaults = {}  # pid -> warehouse stacks
+        self.stage_misses = {}  # pid -> stage reads that come back None first
+
+    def stage_of(self, pid):
+        if self.stage_misses.get(pid):
+            self.stage_misses[pid] -= 1
+            return None
+        return 7
 
     def add(self, pid, name, stacks, tile=(10, 10)):
         self.chars[pid] = {"name": name, "stacks": [list(s) for s in stacks], "tile": tile}
@@ -249,7 +256,7 @@ def setup(accounts=None):
         store=store,
         navigator=nav,
         supply=supply,
-        read_stage=lambda _pid: 7,
+        read_stage=lambda pid: world.stage_of(pid),
         stage_name=lambda _sid: "杭州城",
         account_of=accounts.get,
         item_info=lambda i: (NAMES.get(i, f"#{i}"), i == D, False, "book"),
@@ -560,4 +567,18 @@ def test_an_empty_bag_still_goes_to_the_warehouse():
     mgr.start(2, "send")
     assert finish(mgr, 2).ended == "全部交完"
     assert supply.withdraws[0] == (2, [(A, 2)]) and supply.trips == [(1, {A: 2})]
+    mgr.stop(1)
+
+
+def test_a_map_read_that_misses_for_a_moment_is_read_again():
+    # Live 2026-10-08: 華沁 started receiving with no map, and the sender gave up.
+    world, store, supply, _nav, mgr = setup()
+    world.add(1, "倉庫", [])
+    world.add(2, "送貨", [(A, 1)])
+    world.stage_misses[1] = 3
+    whitelist(store, "倉庫", [(A, True)])
+    start_receiver(mgr, 1)
+    assert mgr.view(2).receivers[0].stage_name == "杭州城"
+    mgr.start(2, "send")
+    assert finish(mgr, 2).ended == "全部交完"
     mgr.stop(1)

@@ -601,17 +601,26 @@ class HandoffManager:
         raise _Stop("讀不到背包", "error")
 
     def _here(self, run: _Run) -> tuple[int | None, tuple[int, int], tuple[int, int]]:
-        """(stage id, tile, own (npc id, inst)) now."""
-        for _ in range(20):
-            st = self._cmd(run, "status")
-            near = self._cmd(run, "near")
-            tile = st.get("tile")
-            if st.get("ok") and isinstance(tile, list) and near.get("ok"):
-                me = next(
-                    (o for o in near.get("objects") or [] if o.get("h") == st.get("self")), None
-                )
-                if me is not None:
-                    return self._read_stage(run.pid), (tile[0], tile[1]), (me["id"], me["inst"])
+        """(stage id, tile, own (npc id, inst)) now. The stage is a memory read
+        that can miss for a moment (live 2026-10-08: 華沁 started receiving with
+        no map): it is read again for a few seconds, then None."""
+        found = None
+        for n in range(20):
+            if found is None:
+                st = self._cmd(run, "status")
+                near = self._cmd(run, "near")
+                tile = st.get("tile")
+                if st.get("ok") and isinstance(tile, list) and near.get("ok"):
+                    me = next(
+                        (o for o in near.get("objects") or [] if o.get("h") == st.get("self")),
+                        None,
+                    )
+                    if me is not None:
+                        found = (tile[0], tile[1]), (me["id"], me["inst"])
+            if found is not None:
+                stage = self._read_stage(run.pid)
+                if stage is not None or n >= 19:
+                    return stage, found[0], found[1]
             self._wait(run, 0.5)
         raise _Stop("讀不到角色位置（換地圖中？）", "error")
 
@@ -756,7 +765,10 @@ class HandoffManager:
         stage, tile, key = self._here(run)
         free = run.config.bag_slots - len(self._bag(run))
         with self._hub:
-            run.stage, run.tile, run.key, run.free = stage, tile, key, free
+            # A map that could not be read keeps the last one (the receiver
+            # stands still; a store trip walks it back to the same spot).
+            run.stage = stage if stage is not None else run.stage
+            run.tile, run.key, run.free = tile, key, free
             run.ready = True
             self._hub.notify_all()
 
@@ -980,10 +992,15 @@ class HandoffManager:
 
     def _deliver(self, run: _Run, r: _Run, wants: set[int]) -> bool:
         """Everything it wants from the bag (True), or it is full (False)."""
-        with self._hub:
-            stage, tile = r.stage, r.tile
-        if stage is None or tile is None:
-            raise _Fail(f"不知道 {r.name} 在哪")
+        end = self._clock() + self.t.invite
+        while True:
+            with self._hub:
+                stage, tile = r.stage, r.tile
+            if stage is not None and tile is not None:
+                break
+            if self._clock() >= end or r.stop.is_set():
+                raise _Fail(f"不知道 {r.name} 在哪（讀不到它的地圖）")
+            self._wait(run, 0.5)
         here, pos, _key = self._here(run)
         if here != stage or max(abs(pos[0] - tile[0]), abs(pos[1] - tile[1])) > 2:
             if self._navigator is None:
