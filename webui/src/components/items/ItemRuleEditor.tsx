@@ -8,8 +8,8 @@ const NOTE: Record<ItemAction, string> = {
   keep: '自動功能不會碰這個道具。',
   use_periodic: '身上沒有它的效果就自動使用（守護開著、有 hook、不在城裡時）。',
   use_on_status: '中了它能解的狀態就自動使用（守護開著時）。',
-  sell: '背包整理時賣掉，留下指定數量。背包整理上線後才執行。',
-  store: '背包整理時存進倉庫，留下指定數量。背包整理上線後才執行。',
+  sell: '補給時在商人那裡賣掉，留下指定數量。',
+  store: '補給時存進錢莊伙計的倉庫，留下指定數量。',
 };
 
 /** The 處置 section of the item detail panel. */
