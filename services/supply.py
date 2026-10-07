@@ -275,7 +275,7 @@ def pick_stop(
 @dataclass
 class SupplyResult:
     ok: bool
-    reason: str  # done / nothing / short / stopped / no-hook / error
+    reason: str  # done / nothing / short / stopped / busy / no-hook / error
     detail: str = ""
     sold: int = 0
     bought: int = 0
@@ -504,11 +504,12 @@ class SupplyManager:
         with self._lock:
             if pid in self._hosts_running:
                 return GuardStartResult(ok=False, reason="補給已經在跑")
+            self._hosts_running[pid] = None  # claimed here: a module's trip waits its turn
             run = _ManualRun()
             self._manual[pid] = run
 
         def body() -> None:
-            self.run(pid, run.stop, host=None)
+            self.run(pid, run.stop, host=None, claimed=True)
 
         run.thread = threading.Thread(target=body, daemon=True, name=f"supply-{pid}")
         run.thread.start()
@@ -525,6 +526,7 @@ class SupplyManager:
         with self._lock:
             self._logs.pop(pid, None)
             self._ended.pop(pid, None)
+            self._steps.pop(pid, None)
 
     def running(self, pid: int) -> bool:
         with self._lock:
@@ -549,9 +551,12 @@ class SupplyManager:
         stop: threading.Event | None,
         note: Callable[[str], None] | None = None,
         host: str | None = None,
+        claimed: bool = False,
     ) -> SupplyResult:
         """One trip. `note` gets the step text (a host module shows it as its own step)."""
         with self._lock:
+            if pid in self._hosts_running and not claimed:
+                return SupplyResult(False, "busy", "另一趟補給正在跑")
             self._hosts_running[pid] = host
             self._logs[pid] = _Log()
             self._ended.pop(pid, None)
@@ -730,8 +735,18 @@ class _Trip:
         sells = sell_list(rules, bag, self.m._facts, SELL)
         stores = sell_list(rules, bag, self.m._facts, STORE)
         needs = buy_needs(cfg.items, bag, pet)
-        if not sells and not needs and not stores:
+        if (
+            not sells
+            and not needs
+            and not stores
+            and bank_action(self.m._gold(self.pid), cfg) is None
+        ):
             return SupplyResult(True, "nothing", "沒有要賣、要存或要買的東西")
+        if not sells and not needs:
+            # Only store / 錢莊 work, which no hook can do yet: note it, no walk.
+            self.store_phase(stores)
+            self.bank_phase(cfg)
+            return SupplyResult(True, "done", self.summary([]), self.sold, self.bought, self.put)
         caps = self.m._caps(self.pid)
         if caps is None:
             raise _Abort("no-hook", "讀不到 hook 的指令清單（舊版 hook，或還在登入）")
@@ -749,8 +764,6 @@ class _Trip:
         if stores:
             self.store_phase(stores)
         self.bank_phase(cfg)
-        if not sells and not needs:
-            return SupplyResult(True, "done", self.summary([]), self.sold, self.bought, self.put)
 
         level = self.m._level(self.pid)
         script = rp._Script(rp._tables(), level, None)
@@ -798,10 +811,18 @@ class _Trip:
             self.line("info", f"{npc.name}沒賣：{names}，再找下一間")
         else:
             short += [self.name(i) for i, _b, _p in needs]
+        self.shop_left_open()
         detail = self.summary(short)
         if short and cfg.stop_when_short:
             return SupplyResult(False, "short", detail, self.sold, self.bought, self.put)
         return SupplyResult(True, "done", detail, self.sold, self.bought, self.put)
+
+    def shop_left_open(self) -> None:
+        """Say whether the shop window stayed open: the hook cannot close it,
+        and whoever walks next (the module) has to cope with it."""
+        shop = self.cmd("shop")
+        if shop.get("open"):
+            self.line("info", "商店視窗還開著（hook 沒有關閉商店的指令）")
 
     def summary(self, short: list[str]) -> str:
         parts = []
@@ -826,6 +847,8 @@ class _Trip:
 
     def store_phase(self, stores: list[tuple[int, int, int, int]]) -> None:
         """No hook has a warehouse store command yet: say what stays in the bag."""
+        if not stores:
+            return
         names = "、".join(f"{self.name(i)} ×{q}" for i, q, _k, _h in stores)
         self.line("info", f"存倉跳過：hook 還沒有存倉指令（{names}）")
 
@@ -862,16 +885,30 @@ class _Trip:
             raise _Abort("error", f"附近找不到{npc.name}")
         level = self.m._level(self.pid)
         script = rp._Script(rp._tables(), level, None)
+        before = self.cmd("shop")
+        stale = (before.get("npc") or {}).get("id") if before.get("open") else None
         self.cmd(f"talk {obj['h']}")
         end = self.m._clock() + OPEN_WAIT
         while self.m._clock() < end:
             self.wait(POLL)
             shop = self.cmd("shop")
-            if shop.get("open"):
+            # There is no close command: the last stop's (or the user's) shop
+            # window may still be open. Only this NPC's counts.
+            owner = (shop.get("npc") or {}).get("id")
+            if shop.get("open") and owner == npc.npc_id:
                 if shop.get("mode") == 3:
                     raise _Abort("error", f"{npc.name}的商店是這個 hook 不支援的種類")
                 self.line("info", f"打開{npc.name}的商店")
                 return
+            if shop.get("open") and owner != stale:
+                stale = owner
+                log.info(
+                    "supply pid=%d shop open for npc %s, waiting for %d",
+                    self.pid,
+                    owner,
+                    npc.npc_id,
+                    extra={"cat": "supply"},
+                )
             d = self.cmd("dialog")
             if not d.get("open") or (d.get("npc") or {}).get("id") != npc.npc_id:
                 continue

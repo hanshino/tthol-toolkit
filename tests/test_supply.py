@@ -134,6 +134,7 @@ class FakeGame:
         self.sells = sells or {POTION: 312, SCROLL: 250}
         self.pets_out = pets_out
         self.shop_open = False
+        self.shop_npc = 0
         self.sent: list[str] = []
         self.stage = 51
         self.refuse_buy = False
@@ -154,7 +155,7 @@ class FakeGame:
         if cmd == "talk":
             return {"ok": True}
         if cmd == "dialog":
-            if self.shop_open:
+            if self.shop_open and self.shop_npc == 6130:
                 return {"ok": True, "open": False}
             return {
                 "ok": True,
@@ -164,13 +165,14 @@ class FakeGame:
                 "options": [0, 2],
             }
         if cmd == "option":
-            self.shop_open = args[0] == "1"
+            if args[0] == "1":
+                self.shop_open, self.shop_npc = True, 6130
             return {"ok": True}
         if cmd == "shop":
-            return {"ok": True, "open": self.shop_open, "mode": 0}
+            return {"ok": True, "open": self.shop_open, "mode": 0, "npc": {"id": self.shop_npc}}
         if cmd == "buy":
             item, qty = int(args[0]), int(args[1])
-            if not self.refuse_buy and item in self.sells:
+            if not self.refuse_buy and item in self.sells and self.shop_npc == 6130:
                 self.bag[item] = self.bag.get(item, 0) + qty
                 self.gold -= qty * self.sells[item]
             return {"ok": True}
@@ -400,3 +402,31 @@ def test_store_and_bank_are_noted_until_the_hook_can():
     assert any(t.startswith("存倉跳過") and "玄鐵礦 ×30" in t for t in texts)
     assert any(t.startswith("錢莊跳過") and "從錢莊領 460,000" in t for t in texts)
     assert result.ok and nav.went == []  # nothing to buy or sell: no walk
+
+
+def test_a_shop_window_left_open_is_not_taken_for_this_one():
+    game = FakeGame({POTION: 0})
+    game.shop_open, game.shop_npc = True, 6121  # another shopkeeper's, never closed
+    mgr, _, _ = make(game, SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)]))
+    result = mgr.run(1, threading.Event())
+    assert result.ok and game.bag[POTION] == 10
+    first_buy = next(i for i, line in enumerate(game.sent) if line.startswith("buy"))
+    assert game.sent.index("option 1") < first_buy
+    assert any("商店視窗還開著" in line.text for line in mgr.status(1).log)
+
+
+def test_a_second_trip_waits_for_the_first():
+    game = FakeGame({POTION: 0})
+    mgr, nav, _ = make(game, SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)]))
+    mgr._hosts_running[1] = None  # the 現在補給 button's trip
+    result = mgr.run(1, threading.Event(), host="神武玄天塔")
+    assert result.reason == "busy" and nav.went == []
+
+
+def test_store_only_needs_no_hook_commands():
+    game = FakeGame({ORE: 30})
+    mgr, nav, _ = make(
+        game, SupplyConfig(), ItemRules(items={ORE: ItemRule(action="store")}), caps=()
+    )
+    result = mgr.run(1, threading.Event())
+    assert result.ok and nav.went == []
