@@ -2912,6 +2912,11 @@ export interface components {
              * @default false
              */
             travel: boolean;
+            /**
+             * Love
+             * @default false
+             */
+            love: boolean;
         };
         /**
          * GuardConfig
@@ -2935,7 +2940,8 @@ export interface components {
              * @default {
              *       "skills": [],
              *       "hero": false,
-             *       "travel": false
+             *       "travel": false,
+             *       "love": false
              *     }
              */
             buff: components["schemas"]["GuardBuffRule"];
@@ -2950,7 +2956,7 @@ export interface components {
              * Rule
              * @enum {string}
              */
-            rule: "potion" | "cure" | "buff" | "item" | "hero" | "pet" | "guard";
+            rule: "potion" | "cure" | "buff" | "item" | "hero" | "pet" | "love" | "guard";
             /** Text */
             text: string;
             /**
@@ -3056,6 +3062,11 @@ export interface components {
              */
             refills: number;
             /**
+             * Loves
+             * @default 0
+             */
+            loves: number;
+            /**
              * Debuffs
              * @default []
              */
@@ -3079,6 +3090,7 @@ export interface components {
              *       },
              *       "buff": {
              *         "hero": false,
+             *         "love": false,
              *         "skills": [],
              *         "travel": false
              *       }

@@ -19,7 +19,7 @@ type Rule = {
   hp_pct: number; mp_pct: number; hp_items: number[]; mp_items: number[];
   pet_refill: boolean; refill_below: number; refill_summon: boolean; refill_qty: number;
 };
-type Cfg = { potion: Rule; buff: { skills: number[]; hero: boolean; travel: boolean } };
+type Cfg = { potion: Rule; buff: { skills: number[]; hero: boolean; travel: boolean; love: boolean } };
 
 const toCfg = (c?: GuardConfig): Cfg => ({
   potion: {
@@ -32,20 +32,23 @@ const toCfg = (c?: GuardConfig): Cfg => ({
     refill_summon: c?.potion.refill_summon ?? true,
     refill_qty: c?.potion.refill_qty ?? 200,
   },
-  buff: { skills: c?.buff?.skills ?? [], hero: c?.buff?.hero ?? false, travel: c?.buff?.travel ?? false },
+  buff: {
+    skills: c?.buff?.skills ?? [], hero: c?.buff?.hero ?? false,
+    travel: c?.buff?.travel ?? false, love: c?.buff?.love ?? false,
+  },
 });
 
 // This run's counts for the log header; only what happened, so it stays short.
 const tally = (s: GuardStatus) => {
   const parts = ([
-    ['喝水', s.drinks], ['解狀態', s.cures], ['補 buff', s.casts], ['用道具', s.uses], ['變身', s.transforms], ['取水', s.refills],
+    ['喝水', s.drinks], ['解狀態', s.cures], ['補 buff', s.casts], ['用道具', s.uses], ['變身', s.transforms], ['取水', s.refills], ['送愛心', s.loves],
   ] as const).filter(([, n]) => n > 0).map(([what, n]) => `${what} ${n}`);
   return parts.length ? `本次：${parts.join('・')}` : '本次還沒有動作';
 };
 
 const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString('zh-TW', { hour12: false });
 
-export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
+export function GuardPanel({ pid, active, canLove = false }: { pid: number; active: boolean; canLove?: boolean }) {
   const [status, setStatus] = useState<GuardStatus | null>(null);
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [potions, setPotions] = useState<PotionCandidate[]>([]);
@@ -218,6 +221,8 @@ export function GuardPanel({ pid, active }: { pid: number; active: boolean }) {
         onHero={on => update({ ...cfg, buff: { ...cfg.buff, hero: on } })}
         travel={cfg.buff.travel}
         onTravel={on => update({ ...cfg, buff: { ...cfg.buff, travel: on } })}
+        love={canLove || cfg.buff.love ? cfg.buff.love : null}
+        onLove={on => update({ ...cfg, buff: { ...cfg.buff, love: on } })}
       />
 
       <section className="gd-panel">
@@ -327,7 +332,7 @@ const TRAVEL_SKILLS = [
   { id: 270, min: 7 }, // 黯影
 ];
 
-function BuffSection({ skills, candidates, onSkills, hero, onHero, travel, onTravel }: {
+function BuffSection({ skills, candidates, onSkills, hero, onHero, travel, onTravel, love, onLove }: {
   skills: number[];
   candidates: BuffSkillCandidate[];
   onSkills: (v: number[]) => void;
@@ -335,6 +340,8 @@ function BuffSection({ skills, candidates, onSkills, hero, onHero, travel, onTra
   onHero: (on: boolean) => void;
   travel: boolean;
   onTravel: (on: boolean) => void;
+  love: boolean | null; // null: the hook has no `love`
+  onLove: (on: boolean) => void;
 }) {
   const [showOld, setShowOld] = useState(false);
   const learnedTravel = TRAVEL_SKILLS.flatMap(t => {
@@ -400,6 +407,15 @@ function BuffSection({ skills, candidates, onSkills, hero, onHero, travel, onTra
             <span className="gd-cure-st">英雄變身結束就再開（不提前續）</span>
           </label>
         </li>
+        {love !== null && (
+          <li>
+            <input id="gd-love" type="checkbox" checked={love} onChange={e => onLove(e.target.checked)} />
+            <label htmlFor="gd-love" title="每小時得一顆、最多存 3 或 6 顆；送出後看背包少一顆才算數，5 秒沒少就換人，連續 3 次都沒少就暫停 60 秒">
+              <span className="gd-name">自動把愛傳出去</span>
+              <span className="gd-cure-st">背包有愛心就送給畫面上最近的玩家（不挑人，城裡也送）</span>
+            </label>
+          </li>
+        )}
         {learnedTravel.length > 0 && (
           <li className={usable.length ? undefined : 'is-out'}>
             <input

@@ -1331,6 +1331,9 @@ class GuardBuffRule(_Base):
     # 趕路 buff while a module walks the character across maps (the other
     # buffs are held off then): 無名島 疾風身法, then 黯影 Lv7+.
     travel: bool = False
+    # 把愛傳出去 (item 25098, one an hour, 3 or 6 at most): give each heart in
+    # the bag to the nearest player on screen (user, 2026-10-08: anyone).
+    love: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -1353,7 +1356,7 @@ class GuardConfig(_Base):
 class GuardLogEntry(_Base):
     id: int  # stable while the line is updated in place (bag confirmation)
     ts: float
-    rule: Literal["potion", "cure", "buff", "item", "hero", "pet", "guard"]
+    rule: Literal["potion", "cure", "buff", "item", "hero", "pet", "love", "guard"]
     text: str
     # sent: the hook accepted the command; confirmed: the bag count dropped for
     # every drink in the line (cure: the debuff went away); unconfirmed: some
@@ -1380,6 +1383,7 @@ class GuardStatus(_Base):
     uses: int = 0  # 定期使用 item uses
     transforms: int = 0  # 自動變身 presses
     refills: int = 0  # 寵物取水 takes
+    loves: int = 0  # 把愛傳出去 hearts given
     debuffs: list[str] = []  # debuffs on the character now, by name
     log: list[GuardLogEntry] = []
     config: GuardConfig = GuardConfig()
