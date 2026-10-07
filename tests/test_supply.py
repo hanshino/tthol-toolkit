@@ -667,3 +667,23 @@ def test_a_seated_trip_on_another_map_walks_as_usual():
     result = mgr.run(1, threading.Event(), store_only={ORE: 12}, seated=True)
     assert result.ok and [d for d, _g in nav.went] == [23]
     assert "sit" not in game.sent
+
+
+def test_withdraw_waits_for_the_warehouse_list_to_fill():
+    # Not opened since the game started: the list reads empty for a moment.
+    game = FakeGame({}, gold=40_000)
+    game.vault = {ORE: 5}
+    late = {"reads": 0}
+    send = game.send
+
+    def slow(pid, line):
+        if line == "warehouse" and game.warehouse_open:
+            late["reads"] += 1
+            if late["reads"] <= 3:
+                return {"ok": True, "open": True, "items": []}
+        return send(pid, line)
+
+    game.send = slow
+    mgr, _nav, _ = make(game, SupplyConfig(), ItemRules(), caps=WAREHOUSE_CAPS + ("withdraw",))
+    result = mgr.run(1, threading.Event(), withdraw=(frozenset({ORE}), 3))
+    assert result.ok and result.withdrawn == 5, result

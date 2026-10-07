@@ -86,6 +86,13 @@ MAX_STOPS = 3
 MAX_ROUNDS = 60  # buys + puts for one row (a 9999 target is 50 stacks)
 OPEN_WAIT = 20.0  # talk -> shop window
 CONFIRM_WAIT = 3.0  # a sale / buy / put showing up in the bag
+# The warehouse list fills a moment after the window opens (the server sends
+# it then): read at once, a warehouse not opened since the game started read
+# empty and a withdraw found nothing (live 2026-10-07, 晨曦破空). Read until two
+# reads agree, no sooner than WAREHOUSE_SETTLE; an empty one waits out
+# WAREHOUSE_WAIT before it counts as empty.
+WAREHOUSE_SETTLE = 0.8
+WAREHOUSE_WAIT = 4.0
 POLL = 0.25
 # A summoned pet takes a moment to come out; a put sent before it is out is
 # dropped (2026-10-07: a put 1.3 s after petsummon never landed, the same put
@@ -1269,8 +1276,9 @@ class _Trip:
         if keeper is None:
             raise _Abort("error", "找不到走得到的錢莊伙計")
         self.reach_warehouse(keeper, market.script)
-        items = self.cmd("warehouse").get("items") or []
+        items = self.warehouse_items()
         stacks = [(int(i["item"]), int(i["count"])) for i in items if int(i["item"]) in wants]
+        self.line("info", f"倉庫裡 {len(items)} 堆，要領的 {len(stacks)} 堆")
         take = stacks[:room]
         left = len(stacks) - len(take)
         for item_id, count in take:
@@ -1280,6 +1288,21 @@ class _Trip:
         self.stand()
         detail = f"領出 {self.withdrawn} 個" if self.withdrawn else "倉庫裡沒有要領的東西"
         return SupplyResult(True, "done", detail, withdrawn=self.withdrawn, left=left)
+
+    def warehouse_items(self) -> list[dict]:
+        """The open warehouse's stacks, once the list has settled."""
+        start = self.m._clock()
+        last: list[tuple[int, int]] | None = None
+        while True:
+            items = self.cmd("warehouse").get("items") or []
+            key = sorted((int(i["item"]), int(i["count"])) for i in items)
+            waited = self.m._clock() - start
+            if waited >= WAREHOUSE_WAIT:
+                return items
+            if key == last and waited >= WAREHOUSE_SETTLE and items:
+                return items
+            last = key
+            self.wait(POLL)
 
     def withdraw_stack(self, item_id: int, count: int) -> bool:
         """One warehouse stack into the bag, STORE_MAX at a time."""
