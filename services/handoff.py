@@ -594,7 +594,9 @@ class HandoffManager:
             near = self._cmd(run, "near")
             tile = st.get("tile")
             if st.get("ok") and isinstance(tile, list) and near.get("ok"):
-                me = next((o for o in near.get("near") or [] if o.get("h") == st.get("self")), None)
+                me = next(
+                    (o for o in near.get("objects") or [] if o.get("h") == st.get("self")), None
+                )
                 if me is not None:
                     return self._read_stage(run.pid), (tile[0], tile[1]), (me["id"], me["inst"])
             self._wait(run, 0.5)
@@ -840,6 +842,7 @@ class HandoffManager:
             note=lambda text: self._set_step(run, text),
             host=HOST,
             store_only=want,
+            seated=True,
         )
         if not getattr(result, "ok", False):
             raise _Stop(f"存倉沒完成：{getattr(result, 'detail', '')}", "error")
@@ -932,6 +935,7 @@ class HandoffManager:
             note=lambda text: self._set_step(run, text),
             host=HOST_WITHDRAW,
             withdraw=(frozenset(wants), free),
+            seated=True,
         )
         if run.stop.is_set():
             raise _Stop("已停止")
@@ -1023,7 +1027,8 @@ class HandoffManager:
             key = r.key
         near = self._cmd(run, "near")
         target = next(
-            (o for o in near.get("near") or [] if key and (o.get("id"), o.get("inst")) == key), None
+            (o for o in near.get("objects") or [] if key and (o.get("id"), o.get("inst")) == key),
+            None,
         )
         if target is None:
             raise _Fail(f"旁邊看不到 {r.name}")

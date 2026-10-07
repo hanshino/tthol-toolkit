@@ -145,12 +145,16 @@ class FakeGame:
         self.stuck_window = False
         self.vault: dict[int, int] = {}
         self.balance = 0
+        self.pose = "Wait"
 
     def send(self, _pid, line: str) -> dict:
         self.sent.append(line)
         cmd, *args = line.split()
         if cmd == "status":
-            return {"ok": True, "self": 1, "hp": [10, 10], "tile": [1, 1]}
+            return {"ok": True, "self": 1, "hp": [10, 10], "tile": [1, 1], "pose": self.pose}
+        if cmd == "sit":
+            self.pose = "Wait" if self.pose == "Sit" else "Sit"
+            return {"ok": True}
         if cmd == "near":
             return {
                 "ok": True,
@@ -641,3 +645,25 @@ def test_withdraw_needs_the_hook_command():
     mgr, _nav, _ = make(game, SupplyConfig(), ItemRules(), caps=WAREHOUSE_CAPS)
     result = mgr.run(1, threading.Event(), withdraw=(frozenset({ORE}), 3))
     assert not result.ok and "withdraw" in result.detail
+
+
+SIT_CAPS = WAREHOUSE_CAPS + ("withdraw", "sit")
+
+
+def test_a_seated_trip_sits_and_opens_the_warehouse_from_where_it_is():
+    game = FakeGame({ORE: 30}, gold=40_000)
+    game.stage = 23  # the 錢莊伙計's map, and he is on screen
+    mgr, nav, _ = make(game, SupplyConfig(), ItemRules(), caps=SIT_CAPS)
+    result = mgr.run(1, threading.Event(), store_only={ORE: 12}, seated=True)
+    assert result.ok and result.stored == 12, result
+    assert nav.went == []  # no walk
+    assert game.sent.count("sit") == 2 and game.pose == "Wait"  # sat, then up again
+    assert game.vault == {ORE: 12}
+
+
+def test_a_seated_trip_on_another_map_walks_as_usual():
+    game = FakeGame({ORE: 30}, gold=40_000)
+    mgr, nav, _ = make(game, SupplyConfig(), ItemRules(), caps=SIT_CAPS)
+    result = mgr.run(1, threading.Event(), store_only={ORE: 12}, seated=True)
+    assert result.ok and [d for d, _g in nav.went] == [23]
+    assert "sit" not in game.sent

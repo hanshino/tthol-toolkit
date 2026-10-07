@@ -675,6 +675,7 @@ class SupplyManager:
         claimed: bool = False,
         store_only: dict[int, int] | None = None,
         withdraw: tuple[frozenset[int], int] | None = None,
+        seated: bool = False,
     ) -> SupplyResult:
         """One trip. `note` gets the step text (a host module shows it as its own step).
 
@@ -684,7 +685,10 @@ class SupplyManager:
 
         `withdraw` (items, free bag slots): a trip to the warehouse that takes
         out whole stacks of these, one per free slot, and nothing else (分身交貨
-        hands them on)."""
+        hands them on).
+
+        `seated`: open the warehouse sitting where the character is when the
+        錢莊伙計 is on screen, instead of walking up to him."""
         with self._lock:
             if pid in self._hosts_running and not claimed:
                 return SupplyResult(False, "busy", "另一趟補給正在跑")
@@ -692,7 +696,13 @@ class SupplyManager:
             self._logs[pid] = _Log()
             self._ended.pop(pid, None)
         trip = _Trip(
-            self, pid, stop or threading.Event(), note or (lambda _t: None), store_only, withdraw
+            self,
+            pid,
+            stop or threading.Event(),
+            note or (lambda _t: None),
+            store_only,
+            withdraw,
+            seated,
         )
         try:
             with ExitStack() as hold:
@@ -865,6 +875,7 @@ class _Trip:
         note,
         store_only: dict[int, int] | None = None,
         withdraw: tuple[frozenset[int], int] | None = None,
+        seated: bool = False,
     ) -> None:
         self.m = mgr
         self.pid = pid
@@ -873,6 +884,8 @@ class _Trip:
         self.store_only = store_only
         self.withdraw = withdraw
         self.withdrawn = 0
+        self.seated = seated
+        self.sat = False  # this trip sat down
         self.sold = 0
         self.bought = 0
         self.put = 0
@@ -1118,12 +1131,67 @@ class _Trip:
         if keeper is None:
             self.line("error", "找不到走得到的錢莊伙計，存倉和錢莊這次跳過")
             return
-        self.go_to(keeper)
-        self.open_warehouse(keeper, market.script)
+        self.reach_warehouse(keeper, market.script)
         self.store_all(stores)
         if bank is not None:
             self.settle_bank(bank)
         self.close_windows()
+        self.stand()
+
+    def reach_warehouse(self, keeper: SupplyPoint, script) -> None:
+        """Open the 錢莊伙計's warehouse. A seated trip (分身交貨) first sits and
+        talks from where it is: seated, any NPC on screen answers (user,
+        2026-10-07); if that does not open it, it walks over as usual."""
+        if self.seated and self.sit_and_open(keeper, script):
+            return
+        self.stand()
+        self.go_to(keeper)
+        self.open_warehouse(keeper, script)
+
+    def sit_and_open(self, keeper: SupplyPoint, script) -> bool:
+        if "sit" not in self.caps:
+            return False
+        try:
+            stage = self.m._read_locked(self.pid, read_stage_id)
+        except Exception:
+            stage = None
+        if not stage or stage[0] != keeper.stage or self.find(keeper.npc_id) is None:
+            return False
+        if not self.set_sitting(True):
+            return False
+        try:
+            self.open_warehouse(keeper, script)
+        except _Abort as a:
+            if a.reason == "stopped":
+                raise
+            self.line("info", f"坐著叫不開{keeper.name}的倉庫，改走過去")
+            return False
+        return True
+
+    def set_sitting(self, want: bool) -> bool:
+        """Sit down / stand up (the hook's `sit` toggles) and see the pose change."""
+
+        def sitting() -> bool:
+            return self.cmd("status").get("pose") == "Sit"
+
+        if sitting() == want:
+            self.sat = self.sat or want
+            return True
+        self.step("坐下" if want else "站起來")
+        self.cmd("sit")
+        end = self.m._clock() + CONFIRM_WAIT
+        while True:
+            self.wait(POLL)
+            if sitting() == want:
+                self.sat = want
+                return True
+            if self.m._clock() >= end:
+                return False
+
+    def stand(self) -> None:
+        """Up again if this trip sat down (the module goes on walking or trading)."""
+        if self.sat:
+            self.set_sitting(False)
 
     def open_warehouse(self, npc: SupplyPoint, script) -> None:
         self.step(f"和{npc.name}對話")
@@ -1200,8 +1268,7 @@ class _Trip:
         keeper = self.m._pick_warehouse(graph, stage[0], None)
         if keeper is None:
             raise _Abort("error", "找不到走得到的錢莊伙計")
-        self.go_to(keeper)
-        self.open_warehouse(keeper, market.script)
+        self.reach_warehouse(keeper, market.script)
         items = self.cmd("warehouse").get("items") or []
         stacks = [(int(i["item"]), int(i["count"])) for i in items if int(i["item"]) in wants]
         take = stacks[:room]
@@ -1210,6 +1277,7 @@ class _Trip:
             if not self.withdraw_stack(item_id, count):
                 left += 1
         self.close_windows()
+        self.stand()
         detail = f"領出 {self.withdrawn} 個" if self.withdrawn else "倉庫裡沒有要領的東西"
         return SupplyResult(True, "done", detail, withdrawn=self.withdrawn, left=left)
 

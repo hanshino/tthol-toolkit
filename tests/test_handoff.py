@@ -58,7 +58,7 @@ class World:
         if verb == "near":
             return {
                 "ok": True,
-                "near": [
+                "objects": [
                     {"h": 100 + p, "kind": 1, "id": self.key(p)[0], "inst": self.key(p)[1]}
                     for p in self.chars
                 ],
@@ -181,7 +181,8 @@ class Supply:
     def add_host(self, _text):
         pass
 
-    def run(self, pid, stop, note=None, host=None, store_only=None, withdraw=None):
+    def run(self, pid, stop, note=None, host=None, store_only=None, withdraw=None, seated=False):
+        assert seated  # 分身交貨 opens the warehouse sitting
         me = self.world.chars[pid]
         if withdraw is not None:
             wants, room = withdraw
