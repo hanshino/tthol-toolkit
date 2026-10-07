@@ -483,9 +483,16 @@ function Load({ load }: { load: SupplyLoad }) {
         )}
       </div>
       <div className="sp-slots">
-        <span>背包 <b className="gd-cnt">{load.slots} → {load.slots_after}</b> 格</span>
-        <span>寵物背包 <b className="gd-cnt">{load.pet_slots} → {load.pet_slots_after}</b> 格</span>
+        <span className={load.slots_after > load.slots_max ? 'sp-warn' : undefined}>
+          背包 <b className="gd-cnt">{load.slots} → {load.slots_after}</b> / {load.slots_max} 格
+        </span>
+        <span className={load.pet_slots_after > load.pet_slots_max ? 'sp-warn' : undefined}>
+          寵物背包 <b className="gd-cnt">{load.pet_slots} → {load.pet_slots_after}</b> / {load.pet_slots_max} 格
+        </span>
       </div>
+      {(load.slots_after > load.slots_max || load.pet_slots_after > load.pet_slots_max) && (
+        <div className="sp-warn">補完放不下：調低目標，或先清出格子（賣掉、存倉）</div>
+      )}
       <div className="gd-dim">以一格 200 個、道具資料庫的重量估算</div>
     </div>
   );

@@ -3989,10 +3989,20 @@ export interface components {
             slots: number;
             /** Slots After */
             slots_after: number;
+            /**
+             * Slots Max
+             * @default 40
+             */
+            slots_max: number;
             /** Pet Slots */
             pet_slots: number;
             /** Pet Slots After */
             pet_slots_after: number;
+            /**
+             * Pet Slots Max
+             * @default 8
+             */
+            pet_slots_max: number;
         };
         /** SupplyLogEntry */
         SupplyLogEntry: {

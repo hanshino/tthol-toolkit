@@ -62,7 +62,10 @@ SUPPLY_SECTION = "supply"
 SUPPLY_COMMANDS = ("status", "near", "walk", "talk", "dialog", "option", "next", "shop")
 PET_COMMANDS = ("pet", "petput")
 SUMMON_COMMANDS = ("petsummon", "petdismiss")
-STACK = 200  # most a bag stack holds (seen on potions): one buy at most this many
+STACK = 200  # most a bag stack holds (the snapshots never show more): one buy at most this many
+# Slots: the bag holds 40 (the fullest snapshot, 止戰詩園 2026-10-02), the pet bag 8 (user).
+BAG_SLOTS = 40
+PET_SLOTS = 8
 MAX_STOPS = 3
 MAX_ROUNDS = 60  # buys + puts for one row (a 9999 target is 50 stacks)
 OPEN_WAIT = 20.0  # talk -> shop window
@@ -209,8 +212,10 @@ def estimate_load(
         weight_peak=w + peak_extra,
         slots=slots,
         slots_after=slots_after,
+        slots_max=BAG_SLOTS,
         pet_slots=pet_slots,
         pet_slots_after=pet_slots_after,
+        pet_slots_max=PET_SLOTS,
     )
 
 

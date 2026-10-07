@@ -1429,8 +1429,10 @@ class SupplyLoad(_Base):
     weight_peak: int  # while buying: a stack waits in the bag before the pet bag
     slots: int  # bag stacks now
     slots_after: int
+    slots_max: int = 40
     pet_slots: int
     pet_slots_after: int
+    pet_slots_max: int = 8
 
 
 class SupplyStop(_Base):
