@@ -454,3 +454,101 @@ def test_a_walk_to_an_npc_keeps_events_off():
     run = _Run(nav_for(game), 1, None, lambda t: None)
     run.walk_to((BANK_CLERK[0] + 4, BANK_CLERK[1]), CHENGDU)
     assert "mapevents 1" not in game.sent and game.events == 0
+
+
+# --------------------------------------------------------------------------
+# Exit zones are several cells wide (live 2026-10-07: 杭州城 (21, 2) is
+# (19, 2) (21, 2) (22, 2)); the switch must be on before the edge is reached.
+# --------------------------------------------------------------------------
+
+HANGZHOU = 231
+EXIT_CELLS = ((19, 2), (21, 2), (22, 2))
+
+
+class ExitGame(SwitchGame):
+    """An exit fires on stepping into it from outside while the switch is on;
+    walking between its cells, or standing on it, does not."""
+
+    def __init__(self, stage, pos, cells, dst):
+        super().__init__(stage, pos, {})
+        self.cells, self.dst = set(cells), dst
+        self.now = 0.0
+
+    def _step(self):
+        if self.target is None or self.stage == self.dst:
+            return
+        before = self.pos
+        x, y = self.pos
+        tx, ty = self.target
+        self.pos = (x + max(-2, min(2, tx - x)), y + max(-2, min(2, ty - y)))
+        entered = self.pos in self.cells and before not in self.cells
+        if entered and self.events:
+            self.stage, self.target = self.dst, None
+        elif entered:
+            self.fired_off.append(self.pos)
+
+
+def exit_nav(game):
+    def read_locked(pid, fn):
+        if fn is read_level:
+            return 120
+        return (game.stage, "x")
+
+    def sleep(_ev, secs):
+        game.now += secs
+        return False
+
+    return Navigator(
+        game,
+        read_locked,
+        lambda *a: None,
+        manor=lambda pid: 1121,
+        clock=lambda: game.now,
+        sleep=sleep,
+    )
+
+
+def exit_step(dst):
+    return rp.Step("walk", HANGZHOU, dst, (21, 2), cells=EXIT_CELLS)
+
+
+def test_an_exit_is_armed_before_its_edge_not_its_middle():
+    # From the left the edge (19, 2) is 2 tiles nearer than the middle: armed
+    # by the middle, the character stood on the edge with the switch off.
+    game = ExitGame(HANGZHOU, (15, 2), EXIT_CELLS, dst=1)
+    run = _Run(exit_nav(game), 1, None, lambda t: None)
+    run.take(exit_step(1), HANGZHOU)
+    assert game.stage == 1 and game.fired_off == []
+
+
+def test_an_exit_stood_on_is_backed_off_and_walked_into():
+    game = ExitGame(HANGZHOU, (19, 2), EXIT_CELLS, dst=1)
+    run = _Run(exit_nav(game), 1, None, lambda t: None)
+    run.take(exit_step(1), HANGZHOU)
+    assert game.stage == 1
+    assert game.sent.count("mapevents 0") >= 1  # the back-off walk had it off
+
+
+def test_a_zone_walk_starting_close_is_armed_at_once():
+    game = ExitGame(HANGZHOU, (17, 2), EXIT_CELLS, dst=1)
+    run = _Run(exit_nav(game), 1, None, lambda t: None)
+    run.walk_to((21, 2), HANGZHOU, slack=0, zone=True, cells=EXIT_CELLS)
+    assert game.sent[: game.sent.index("mapevents 1") + 1].count("mapevents 0") == 0
+    assert game.stage == 1
+
+
+def test_backing_off_an_exit_at_the_map_edge_stays_on_the_map():
+    # 杭州城's exit is on row 2: stepping 3-4 tiles "away" from it picked (21, -1)
+    # off the map (the region lookup snaps to the cell beside it), and the walk
+    # stuck there (live 2026-10-07, pid 13848 logged in standing on the exit).
+    game = ExitGame(HANGZHOU, (21, 2), EXIT_CELLS, dst=1)
+    run = _Run(exit_nav(game), 1, None, lambda t: None)
+    run.take(exit_step(1), HANGZHOU)
+    assert game.stage == 1
+    cells = rp._regions()
+    targets = [
+        tuple(int(v) // 40 for v in line.split()[1:])
+        for line in game.sent
+        if line.startswith("walk ")
+    ]
+    assert targets and all(cells.cell(HANGZHOU, t) is not None for t in targets), targets

@@ -121,6 +121,9 @@ class Step:
     # 清音瀑布 crane statues (kind 1) needed a click (live 2026-10-06).
     touch: bool = False
     horse: int | None = None  # family: the manor 家族馬夫 whose menu has `dst`
+    # walk / door: every cell of the zone (`at` is its middle). An exit is
+    # often 3 cells wide, so its edge is 1-2 tiles closer than `at`.
+    cells: tuple[Tile, ...] = ()
 
 
 @dataclass
@@ -437,6 +440,19 @@ class _Regions:
             self._cache[(kind, stage)] = map_regions._label(*row) if ok else None
         return self._cache[(kind, stage)]
 
+    def cell(self, stage: int, tile: Tile, kind: str = "stage") -> int | None:
+        """The space of exactly this cell: None off the map or on a blocked cell
+        (no snapping: __call__ snaps REGION_SNAP cells, so a tile off the edge
+        read as the space beside it; live 2026-10-07, a back-off to (21, -1))."""
+        reg = self._get(stage, kind)
+        if reg is None:
+            return None
+        col, row = tile[0], reg.height - 1 - tile[1]
+        if not (0 <= col < reg.width and 0 <= row < reg.height):
+            return None
+        label = reg._labels[row * reg.width + col]
+        return label if label >= 0 else None
+
     def __call__(self, stage: int, tile: Tile | None, kind: str = "stage") -> int | None:
         reg = self._get(stage, kind)
         if reg is None or tile is None:
@@ -538,16 +554,17 @@ def build_graph(level: int, manor: int | None, db_path: Path | None = None) -> _
         if cat != "arrival" or sid in STORY_STAGES:
             continue
         at = t.middle(sid, "arrival", tag)
+        cells = tuple(t.tiles.get((sid, "arrival", tag)) or ())
         touch = t.event_kind.get((sid, tag), STEP_ON) != STEP_ON
         for dst, dtag in script.warps_from_event(sid, tag):
             if dst == DOOR:
                 land = landing(sid, dtag)
                 if land is not None:
-                    add(COST_DOOR, Step("door", sid, sid, at, touch=touch), land)
+                    add(COST_DOOR, Step("door", sid, sid, at, touch=touch, cells=cells), land)
                 continue
             if dst == sid or dst not in stages or dst in STORY_STAGES:
                 continue
-            add(COST_WALK, Step("walk", sid, dst, at, touch=touch), landing(dst, dtag))
+            add(COST_WALK, Step("walk", sid, dst, at, touch=touch, cells=cells), landing(dst, dtag))
 
     for horse in TOWN_HORSES:
         dests = {d: tag for menu in horse.menus for d, tag in script.warps_from_msg(menu)}
