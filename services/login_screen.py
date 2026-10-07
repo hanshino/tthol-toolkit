@@ -141,7 +141,24 @@ def classify(widgets: list[Widget], in_game: bool) -> str:
     return "unknown"
 
 
+# Screens before the game: no character exists yet, so locating one is futile.
+PRE_GAME = frozenset({"login", "select", "protect"})
+
+
 # ---- reading a live client -----------------------------------------------------
+
+
+def screen_kind(pm) -> str:
+    """classify() of the client behind `pm`; "unknown" when it cannot be read."""
+    try:
+        widgets, _servers, _selected, _rect = _read_widgets(pm)
+    except Exception:
+        return "unknown"
+    try:
+        in_game = bool(reader.read_hp_from_player_chain(pm))
+    except Exception:
+        in_game = False
+    return classify(widgets, in_game)
 
 
 class ScreenReader:

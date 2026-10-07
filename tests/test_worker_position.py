@@ -269,3 +269,63 @@ def test_locate_character_prefers_a_char_object(monkeypatch):
     monkeypatch.setattr(reader, "is_char_object", lambda _pm, a: a == real)
     kn = {"character_structure": {"fields": {}}}
     assert reader.locate_character(PM(), 907, kn) == real
+
+
+def test_provisional_lock_publishes_no_name(worker, monkeypatch):
+    # ";w9w" was read from the look-alike block after a character switch
+    # (live 2026-10-06/07) and reported as a switch to that "character".
+    monkeypatch.setattr(W, "read_character_name", lambda _pm, _a: ";w9w")
+    worker._lock_is_obj = False
+    assert worker._lock_name(object(), HP) == ""
+    worker._lock_is_obj = True
+    assert worker._lock_name(object(), HP) == ";w9w"
+
+
+def test_provisional_recheck_runs_every_poll_at_first():
+    fast = range(1, W.PROVISIONAL_FAST_POLLS + 1)
+    assert all(W._provisional_recheck_due(t) for t in fast)
+    later = range(W.PROVISIONAL_FAST_POLLS + 1, 40)
+    due = [t for t in later if W._provisional_recheck_due(t)]
+    assert due == [t for t in later if t % W.PROVISIONAL_RECHECK_EVERY == 0]
+
+
+def test_pre_game_screens_wait_without_spending_retries(worker, monkeypatch):
+    # The login screen used to burn the 10 retries in ~33 s and stop the
+    # worker, so every login needed 重偵.
+    screens = iter(["login"] * 30 + ["select"] * 5 + ["game"])
+    waits: list[float] = []
+
+    class StopEvent:
+        def is_set(self):
+            return False
+
+        def wait(self, t):
+            waits.append(t)
+            return False
+
+    monkeypatch.setattr(W, "screen_kind", lambda _pm: next(screens))
+    monkeypatch.setattr(W, "is_char_object", lambda _pm, _a: True)
+    worker._stop_event = StopEvent()
+    located = []
+    worker._locate = lambda _pm, silent=False: located.append(1) or HP
+    assert worker._locate_with_retries(object(), "WAITING") == HP
+    assert len(located) == 1  # nothing scanned before the game showed
+    assert waits == [W.SCREEN_POLL_INTERVAL] * 35
+
+
+def test_retries_restart_after_a_pre_game_screen(worker, monkeypatch):
+    monkeypatch.setattr(W, "LOCATE_MAX_RETRIES", 3)
+    screens = iter(["game", "game", "login", "game", "game", "game", "game", "game"])
+    monkeypatch.setattr(W, "screen_kind", lambda _pm: next(screens))
+    worker._stop_event.wait = lambda _t: False
+    calls = []
+    worker._locate = lambda _pm, silent=False: calls.append(1) and None
+    worker._report_locate_exhausted = lambda _pm: None
+    assert worker._locate_with_retries(object(), "WAITING") is None
+    assert len(calls) == 2 + (W.LOCATE_MAX_RETRIES + 1)
+
+
+def test_screen_kind_of_an_unreadable_client_is_unknown():
+    from services.login_screen import screen_kind
+
+    assert screen_kind(object()) == "unknown"
