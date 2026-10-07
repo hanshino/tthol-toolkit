@@ -439,21 +439,23 @@ class SwitchGame(FakeGame):
                 return
 
 
-def test_door_is_armed_only_near_it():
+def test_a_door_fires_with_the_switch_on_from_the_walks_start():
     zone, _t = door_into_bank()
     game = SwitchGame(CHENGDU, (47, 168), {zone: (12, 13)})
     result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
     assert result.ok, result
-    on = game.sent.index("mapevents 1")
-    assert "mapevents 0" in game.sent[:on]  # off for the way there
-    assert game.events == 0  # the last walk (to the clerk) switched it off again
+    assert "mapevents 0" not in game.sent and game.fired_off == []
 
 
-def test_a_walk_to_an_npc_keeps_events_off():
+def test_every_walk_switches_map_events_on_first():
+    # A panel (shop, warehouse) clears the switch and `walk` leaves it alone:
+    # every walk turns it on, as a player's click on the ground does.
     game = SwitchGame(CHENGDU, BANK_CLERK, {})
     run = _Run(nav_for(game), 1, None, lambda t: None)
     run.walk_to((BANK_CLERK[0] + 4, BANK_CLERK[1]), CHENGDU)
-    assert "mapevents 1" not in game.sent and game.events == 0
+    on = game.sent.index("mapevents 1")
+    assert on < next(i for i, line in enumerate(game.sent) if line.startswith("walk "))
+    assert game.events == 1
 
 
 # --------------------------------------------------------------------------
@@ -526,7 +528,7 @@ def test_an_exit_stood_on_is_backed_off_and_walked_into():
     run = _Run(exit_nav(game), 1, None, lambda t: None)
     run.take(exit_step(1), HANGZHOU)
     assert game.stage == 1
-    assert game.sent.count("mapevents 0") >= 1  # the back-off walk had it off
+    assert "mapevents 0" not in game.sent  # every walk has it on, as a click would
 
 
 def test_a_zone_walk_starting_close_is_armed_at_once():
@@ -567,10 +569,53 @@ def test_a_zone_walk_is_written_to_the_run_record(caplog):
     door = next(r for r in walks if r.detail["zone"])
     assert door.char_pid == 7 and door.cat == "navigator"
     assert door.detail["path"][0][1:] == [47, 168]  # where it started
-    assert [e[1] for e in door.detail["events"]] == [0, 1]  # off, then armed near the door
+    assert [e[1] for e in door.detail["events"]] == [1]  # on from the start, as a click
     steps = [
         r.getMessage()
         for r in caplog.records
         if r.name == "tthol.run" and r.getMessage().startswith("step")
     ]
     assert steps and steps[0].startswith("step door")
+
+
+class MissOnceGame(SwitchGame):
+    """A door that lets the first step-in pass (live 2026-10-07 in a manor):
+    only a second step-in fires."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.misses = 1
+        self.armed_at_start = []
+
+    def send(self, pid, line):
+        if line.startswith("walk ") and self.zones:
+            self.armed_at_start.append(self.events)
+        return super().send(pid, line)
+
+    def _step(self):
+        if self.target is None:
+            return
+        before = self.pos
+        x, y = self.pos
+        tx, ty = self.target
+        self.pos = (x + max(-2, min(2, tx - x)), y + max(-2, min(2, ty - y)))
+        for zone, land in self.zones.items():
+
+            def near(p, z=zone):
+                return max(abs(p[0] - z[0]), abs(p[1] - z[1])) <= 1
+
+            if near(self.pos) and not near(before) and self.events:
+                if self.misses:
+                    self.misses -= 1
+                    continue
+                self.pos, self.target = land, None
+                return
+
+
+def test_a_door_that_did_not_fire_is_stepped_off_and_into_again_armed():
+    zone, _t = door_into_bank()
+    game = MissOnceGame(CHENGDU, (47, 168), {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result
+    assert game.misses == 0
+    assert game.armed_at_start.count(1) >= 2  # walked in twice, the switch on both times

@@ -75,14 +75,13 @@ DEATH_CONFIRM = 3.0
 # Map events (doors, exits, click zones) fire only while the client's map
 # event switch is 1. A mouse click on the ground sets it; opening any panel
 # (shop, warehouse) clears it, and the hook's `walk` leaves it alone (hook,
-# 2026-10-07). Walks keep it 0, so no zone on the way fires, and set it 1
-# this close to the nearest cell of the zone they mean to take. Measured to the
-# zone's middle it came too late: a 3-cell exit's edge is 1-2 tiles nearer,
-# a walk covers ~2 tiles between reads, and the character stepped onto the
-# edge with the switch still 0 (live 2026-10-07, 杭州城 (21, 2), 玄天之境 (4, 18)).
-ARM_TILES = 3
+# 2026-10-07). So every walk switches it on first, as a player's click would.
+# (Keeping it off on the way and on only near the zone meant to be taken came
+# too late more than once: the user, 2026-10-07, asked for the plain way back;
+# a door crossed by chance on the way is a jump the plan recovers from.)
 DOOR_WAIT = 3.0  # a door walked onto teleports at once; longer means we stopped beside it
 AWAY_MIN, AWAY_MAX = 3, 4  # tiles to back off from a door that did not fire
+DOOR_TRIES = 3  # walks onto a door before giving up on it
 FREE_TRIES = 12  # reads (0.3 s apart) to get a window or dialog out of the way before a walk
 
 
@@ -355,18 +354,9 @@ class _Run:
         if step.kind == "door":
             if step.touch and self.touch_zone(step.at, here):
                 return
-            cells = step.cells or (step.at,)
-            r = self.walk_to(step.at, here, slack=0, zone=True, cells=cells)
-            if r == "map" or r == "jump" or self.jumped(self.me(), DOOR_WAIT):
-                return
-            # Started next to the zone: "one off" counts as arrived, but the
-            # zone fires only on stepping in (live 2026-10-07, 杭州城 (36, 107)).
-            # Back off a few tiles and walk in again.
-            if self.back_off(cells, here):
-                r = self.walk_to(step.at, here, slack=0, zone=True, cells=cells)
-                if r == "map" or r == "jump" or self.jumped(self.me()):
-                    return
-            raise _Stop("stuck", f"傳點 {step.at} 沒有傳送")
+            if not self.step_in(step.at, step.cells or (step.at,), here):
+                raise _Stop("stuck", f"傳點 {step.at} 沒有傳送")
+            return
         if step.kind == "walk":
             if step.touch and self.touch_zone(step.at, here):
                 return
@@ -407,9 +397,7 @@ class _Run:
         pos = self.me()
         hops = rp.room_doors("sestage", manor, pos, tile) if pos else None
         for zone, _touch in hops or []:
-            if self.walk_to(zone, None, slack=0, zone=True) != "jump" and not self.jumped(
-                self.me()
-            ):
+            if not self.step_in(zone, (zone,), manor):
                 raise _Stop("stuck", "莊園裡的門沒有傳送")
         self.ride(horse, tile, ride_to, manor)
 
@@ -512,20 +500,12 @@ class _Run:
         """arrived / jump (teleported on this map) / map (the stage changed) / stuck.
         The target is clicked again every few seconds, and at once when the walk stalls.
 
-        `zone`: the target is a door / exit / click zone to take: map events are
-        switched on ARM_TILES from its nearest cell (`cells`, default `tile`
-        alone), off for the rest of the way and for any other walk."""
+        `zone`: the target is a door / exit / click zone to take (`cells`: its
+        cells, for the run record)."""
         self.ensure_free()
-        zone_cells = cells or (tile,)
-
-        def close(pos: Tile | None) -> bool:
-            return pos is not None and min(math.dist(pos, c) for c in zone_cells) <= ARM_TILES
-
         start = self.me()  # so a zone on the very first steps still reads as a jump
         self._trace(start)
-        # Already that close: the first steps may reach the zone before a read.
-        armed = zone and close(start)
-        self.map_events(armed)
+        self.map_events(True)
         line = f"walk {tile[0] * TILE_PX + TILE_PX // 2} {tile[1] * TILE_PX + TILE_PX // 2}"
         space = src if src is not None else self.stage()
         for _ in range(WALK_TRIES):
@@ -542,10 +522,6 @@ class _Run:
                 return "map"
             pos = self.me()
             self._trace(pos)
-            if zone and not armed and close(pos):
-                armed = True
-                self.map_events(True)
-                self.cmd(line)  # walk on into the zone with events on
             if self.teleported(space, last, pos):
                 log.info(
                     "walk jump pid=%d %s -> %s (%.1f tiles)",
@@ -602,20 +578,44 @@ class _Run:
             return ra != rb
         return math.dist(a, b) > JUMP
 
-    def back_off(self, cells: tuple[Tile, ...], stage: int) -> bool:
+    def step_in(self, at: Tile, cells: tuple[Tile, ...], here: int) -> bool:
+        """Onto a door until it fires (True). A door fires only on stepping in:
+        standing on it, or reaching it with map events still off, does nothing
+        (live 2026-10-07: 杭州城 (36, 107), a manor door (36, 124)). So back off
+        a few tiles, a random way the next time, and walk in again (the user's
+        way: step off, then click back)."""
+        for n in range(DOOR_TRIES):
+            r = self.walk_to(at, here, slack=0, zone=True, cells=cells)
+            if r in ("map", "jump") or self.jumped(self.me(), DOOR_WAIT if n == 0 else MAP_WAIT):
+                return True
+            if n + 1 < DOOR_TRIES and not self.back_off(cells, here, shuffle=n > 0):
+                run_log.note("navigator", self.pid, None, f"no tile to back off to from {at}")
+        return False
+
+    def back_off(self, cells: tuple[Tile, ...], stage: int, shuffle: bool = False) -> bool:
         """Walk a few tiles off the zone, so the next walk steps into it."""
-        away = self.step_away(cells, stage)
+        away = self.step_away(cells, stage, shuffle)
         if away is None:
             return False
         self.walk_to(away, stage, slack=0)
         return True
 
-    def step_away(self, cells: tuple[Tile, ...], stage: int) -> Tile | None:
-        """A walkable tile in our own space, AWAY_MIN..AWAY_MAX from the zone's cells."""
+    def step_away(self, cells: tuple[Tile, ...], stage: int, shuffle: bool = False) -> Tile | None:
+        """A walkable tile in our own space, AWAY_MIN..AWAY_MAX from the zone's
+        cells: the nearest one, or with `shuffle` one of the eight ways at random."""
         pos = self.me()
         if pos is None:
             return None
         mine = self.region(stage, pos)
+        if shuffle:
+            ways = [(dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if dx or dy]
+            self.nav._rng.shuffle(ways)
+            for dx, dy in ways:
+                for k in range(AWAY_MAX, AWAY_MIN - 1, -1):
+                    t = (pos[0] + dx * k, pos[1] + dy * k)
+                    gap = min(max(abs(t[0] - c[0]), abs(t[1] - c[1])) for c in cells)
+                    if gap >= AWAY_MIN and self.walkable_in(stage, t, mine):
+                        return t
         best: tuple[float, Tile] | None = None
         for dx in range(-AWAY_MAX, AWAY_MAX + 1):
             for dy in range(-AWAY_MAX, AWAY_MAX + 1):
