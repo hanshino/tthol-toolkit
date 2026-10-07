@@ -560,5 +560,5 @@ def test_windows_are_closed_when_the_trip_ends():
     mgr.run(1, threading.Event())
     assert not game.shop_open
     assert game.sent.index("closepanel") > max(
-        i for i, l in enumerate(game.sent) if l.startswith("buy")
+        i for i, line in enumerate(game.sent) if line.startswith("buy")
     )
