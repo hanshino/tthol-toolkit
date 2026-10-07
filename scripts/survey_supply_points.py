@@ -14,8 +14,10 @@ finds the placed NPC; see services/shop_catalog.py).
 
 from __future__ import annotations
 
+import math
 import sqlite3
 import sys
+from collections import deque
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -72,6 +74,96 @@ def _old_verified() -> dict[tuple[int, int], str]:
     return {(p.npc_id, p.stage): p.verified for p in ns["POINTS"] if p.verified}
 
 
+class _Approach:
+    """Of an NPC's placements on a map, the one a character walks to least.
+
+    A bank has three 錢莊伙計 and the catalog keeps the first one in the DB:
+    in 杭州城 the middle one, behind a counter that lies across the straight
+    line from the door (user, 2026-10-07: the walk bumped into it and went
+    around). Scored by 8-way walking steps on the walk mask from the landing
+    points (map_placements 'trigger', one middle cell per tag) in the NPC's
+    space; ties, and NPCs with no landing in their space, keep the DB order.
+    """
+
+    def __init__(self, con: sqlite3.Connection) -> None:
+        self.con = con
+        self.region = rp._regions()
+        self._masks: dict[int, tuple[int, int, str] | None] = {}
+
+    def best(self, npc_id: int, stage: int, first: tuple[int, int]) -> tuple[int, int]:
+        tiles = [
+            (x, y)
+            for x, y in self.con.execute(
+                "SELECT tile_x, tile_y FROM map_placements WHERE stage_kind = 'stage'"
+                " AND stage_id = ? AND category = 'npc' AND npc_id = ? AND in_bounds = 1"
+                " ORDER BY id",
+                (stage, npc_id),
+            )
+        ]
+        if len(tiles) < 2:
+            return first
+        scored = []
+        for i, tile in enumerate(tiles):
+            steps = self._mean_steps(stage, tile)
+            if steps is not None:
+                scored.append((steps, tile != first, i, tile))
+        return min(scored)[3] if scored else first
+
+    def _mean_steps(self, stage: int, tile: tuple[int, int]) -> float | None:
+        mine = self.region(stage, tile)
+        starts = [s for s in self._landings(stage) if self.region(stage, s) == mine]
+        steps = [d for d in (self._steps(stage, s, tile) for s in starts) if d is not None]
+        return sum(steps) / len(steps) if steps else None
+
+    def _landings(self, stage: int) -> list[tuple[int, int]]:
+        cells: dict[int, list[tuple[int, int]]] = {}
+        for tag, x, y in self.con.execute(
+            "SELECT tag_id, tile_x, tile_y FROM map_placements WHERE stage_kind = 'stage'"
+            " AND stage_id = ? AND category = 'trigger'",
+            (stage,),
+        ):
+            cells.setdefault(tag, []).append((x, y))
+        return [min(c, key=lambda a: sum(math.dist(a, b) for b in c)) for c in cells.values()]
+
+    def _steps(self, stage: int, start: tuple[int, int], goal: tuple[int, int]) -> int | None:
+        if stage not in self._masks:
+            self._masks[stage] = self.con.execute(
+                "SELECT width, height, walk_mask FROM map_walkability"
+                " WHERE stage_kind = 'stage' AND stage_id = ?",
+                (stage,),
+            ).fetchone()
+        m = self._masks[stage]
+        if m is None or not m[2] or len(m[2]) != m[0] * m[1]:
+            return None
+        w, h, mask = m
+
+        def ok(x: int, y: int) -> bool:
+            return 0 <= x < w and 0 <= y < h and mask[(h - 1 - y) * w + x] == "1"
+
+        # An NPC on a blocked cell is talked to from a cell beside it.
+        goals = (
+            {goal}
+            if ok(*goal)
+            else {(goal[0] + dx, goal[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
+        )
+        seen = {start: 0}
+        queue = deque([start])
+        while queue:
+            x, y = queue.popleft()
+            if (x, y) in goals:
+                return seen[(x, y)]
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    n = (x + dx, y + dy)
+                    if n in seen or not ok(*n):
+                        continue
+                    if dx and dy and not (ok(x + dx, y) and ok(x, y + dy)):
+                        continue  # no cutting a corner
+                    seen[n] = seen[(x, y)] + 1
+                    queue.append(n)
+        return None
+
+
 def main() -> None:
     cat = load_catalog()
     names = rp._tables().stages
@@ -81,16 +173,24 @@ def main() -> None:
     stock = {
         r[0] for r in con.execute(f"SELECT id FROM items WHERE type_name IN ({marks})", STOCK_TYPES)
     }
-    con.close()
+    approach = _Approach(con)
     verified = _old_verified()
     rows = []
+    moved = []
+
+    def common_of(npc) -> str:
+        tile = approach.best(npc.npc_id, npc.stage, npc.tile)
+        if tile != npc.tile:
+            moved.append(f"{names.get(npc.stage, npc.stage)} {npc.name} {npc.tile} -> {tile}")
+        return (
+            f"npc_id={npc.npc_id}, name={npc.name!r}, stage={npc.stage},"
+            f" stage_name={names.get(npc.stage, '#' + str(npc.stage))!r}, tile={tile!r}"
+        )
+
     for npc in sorted(cat.npcs, key=lambda n: (n.npc_id != FAMILY_NPC, n.stage, n.npc_id)):
         v = verified.get((npc.npc_id, npc.stage))
-        common = (
-            f"npc_id={npc.npc_id}, name={npc.name!r}, stage={npc.stage},"
-            f" stage_name={names.get(npc.stage, '#' + str(npc.stage))!r}, tile={npc.tile!r}"
-        )
         if npc.npc_id == FAMILY_NPC:
+            common = common_of(npc)
             rows.append(f'    SupplyPoint(kind="family", {common}, verified={v!r}),')
             continue
         shops = sorted({s for m, s in npc.opens if s in script.shops_from_msg(m)})
@@ -98,18 +198,18 @@ def main() -> None:
             continue  # no shop, or one that depends on something a trip cannot check
         if not any(i in stock for i in cat.sells.get(shops[0], {})):
             continue  # weapons and the like
+        common = common_of(npc)
         rows.append(f'    SupplyPoint(kind="general", {common}, shop={shops[0]}, verified={v!r}),')
     for npc in sorted(warehouse_keepers(), key=lambda n: (n.stage, n.npc_id)):
         if "錢莊" not in npc.name or not any(script.opens_warehouse(m) for m, _s in npc.opens):
             continue  # quest NPCs (牧有虔) open it inside a story branch
         v = verified.get((npc.npc_id, npc.stage))
-        common = (
-            f"npc_id={npc.npc_id}, name={npc.name!r}, stage={npc.stage},"
-            f" stage_name={names.get(npc.stage, '#' + str(npc.stage))!r}, tile={npc.tile!r}"
-        )
-        rows.append(f'    SupplyPoint(kind="warehouse", {common}, verified={v!r}),')
+        rows.append(f'    SupplyPoint(kind="warehouse", {common_of(npc)}, verified={v!r}),')
+    con.close()
     OUT.write_text(HEADER + "\n".join(rows) + "\n)\n", encoding="utf-8")
     print(f"wrote {len(rows)} points to {OUT.relative_to(REPO)}")
+    for line in moved:
+        print("  nearer placement:", line)
 
 
 if __name__ == "__main__":
