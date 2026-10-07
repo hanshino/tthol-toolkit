@@ -891,6 +891,7 @@ class HandoffManager:
         done_with: set[int] = set()  # receivers full, stopped or failed
         from_warehouse = run.config.from_warehouse and self._supply is not None
         warehouse_left = 0
+        withdraw_failed = False
         for _ in range(MAX_PASSES):
             self._pass(run, receivers, done_with)
             if not from_warehouse:
@@ -904,7 +905,11 @@ class HandoffManager:
             if free <= 0:
                 self._note(run, "unconfirmed", "背包滿了，沒辦法再從倉庫領")
                 break
-            got, warehouse_left = self._withdraw(run, wants, free)
+            took = self._withdraw(run, wants, free)
+            if took is None:
+                withdraw_failed = True
+                break
+            got, warehouse_left = took
             if not got:
                 break
         left = plan(self._bag(run), [(r.pid, r.wants()) for r in receivers], self._cannot(run))
@@ -912,6 +917,8 @@ class HandoffManager:
         parts = [f"背包還有 {n} 格沒交出去"] if n else []
         if warehouse_left:
             parts.append(f"倉庫還有 {warehouse_left} 堆沒領")
+        if withdraw_failed:
+            parts.append("領倉沒完成，倉庫裡可能還有")
         return "，".join(parts) if parts else "全部交完"
 
     def _pass(self, run: _Run, receivers: list[_Run], done_with: set[int]) -> None:
@@ -939,8 +946,9 @@ class HandoffManager:
                         r.queue.remove(run.pid)
                     self._hub.notify_all()
 
-    def _withdraw(self, run: _Run, wants: set[int], free: int) -> tuple[int, int]:
-        """(items taken out, wanted stacks left there) from the own warehouse."""
+    def _withdraw(self, run: _Run, wants: set[int], free: int) -> tuple[int, int] | None:
+        """(items taken out, wanted stacks left there) from the own warehouse,
+        or None when the trip failed."""
         self._set_step(run, "去倉庫領東西")
         result = self._supply.run(
             run.pid,
@@ -954,7 +962,7 @@ class HandoffManager:
             raise _Stop("已停止")
         if not getattr(result, "ok", False):
             self._note(run, "error", f"領倉沒完成：{getattr(result, 'detail', '')}")
-            return 0, 0
+            return None
         got = getattr(result, "withdrawn", 0)
         left = getattr(result, "left", 0)
         if got:

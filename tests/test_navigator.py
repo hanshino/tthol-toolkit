@@ -619,3 +619,24 @@ def test_a_door_that_did_not_fire_is_stepped_off_and_into_again_armed():
     assert result.ok, result
     assert game.misses == 0
     assert game.armed_at_start.count(1) >= 2  # walked in twice, the switch on both times
+
+
+class StuckFlagGame(FakeGame):
+    """The hook reads the warehouse open while nothing is on screen: closepanel
+    says no window open (live 2026-10-07, 晨曦破空)."""
+
+    def send(self, pid, line):
+        if line == "warehouse":
+            self.sent.append(line)
+            return {"ok": True, "open": True, "items": []}
+        if line == "closepanel":
+            self.sent.append(line)
+            return {"ok": False, "error": "no window open"}
+        return super().send(pid, line)
+
+
+def test_a_stuck_warehouse_flag_does_not_stop_the_walk():
+    zone, _t = door_into_bank()
+    game = StuckFlagGame(CHENGDU, (47, 168), {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result

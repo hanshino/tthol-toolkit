@@ -450,9 +450,16 @@ class _Run:
                 return
             if panel:
                 r = self.cmd("closepanel")
-                if not r.get("ok") and str(r.get("error") or "") != "no window open":
+                if r.get("ok"):
+                    self.wait(0.3)
+                    continue
+                if str(r.get("error") or "") != "no window open":
                     raise _Stop("busy", "商店或倉庫視窗開著，這個 hook 關不掉（沒有 closepanel）")
-            elif d.get("options") and not d.get("waiting"):
+                # The hook's warehouse flag can stay set with no window on
+                # screen (live 2026-10-07, 晨曦破空): closepanel's word wins.
+                if not d.get("open"):
+                    return
+            if d.get("options") and not d.get("waiting"):
                 raise _Stop("busy", "NPC 對話還開著而且要選選項，先不走路")
             elif not d.get("waiting"):
                 self.cmd("next")

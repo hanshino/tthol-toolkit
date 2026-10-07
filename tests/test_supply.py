@@ -687,3 +687,25 @@ def test_withdraw_waits_for_the_warehouse_list_to_fill():
     mgr, _nav, _ = make(game, SupplyConfig(), ItemRules(), caps=WAREHOUSE_CAPS + ("withdraw",))
     result = mgr.run(1, threading.Event(), withdraw=(frozenset({ORE}), 3))
     assert result.ok and result.withdrawn == 5, result
+
+
+def test_a_stuck_warehouse_flag_is_taken_as_closed():
+    # The hook reads the warehouse open with nothing on screen, and closepanel
+    # says no window open (live 2026-10-07): the trip goes on.
+    game = FakeGame({ORE: 30}, gold=40_000)
+    game.stuck_flag = True
+    send = game.send
+
+    def stuck(pid, line):
+        if line == "warehouse":
+            r = send(pid, line)
+            return {**r, "open": True}
+        if line == "closepanel" and not game.shop_open:
+            send(pid, line)
+            return {"ok": False, "error": "no window open"}
+        return send(pid, line)
+
+    game.send = stuck
+    mgr, _nav, _ = make(game, SupplyConfig(), ItemRules(), caps=WAREHOUSE_CAPS)
+    result = mgr.run(1, threading.Event(), store_only={ORE: 12})
+    assert result.ok and result.stored == 12, result

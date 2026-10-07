@@ -1081,6 +1081,13 @@ class _Trip:
             return
         self.step(f"關閉{'、'.join(left)}視窗")
         r = self.cmd("closepanel")
+        if not r.get("ok") and r.get("error") == "no window open":
+            # The hook's warehouse flag can stay set with no window on screen
+            # (live 2026-10-07, 晨曦破空): closepanel's word wins.
+            log.info(
+                "closepanel: no window open, though %s read open", left, extra={"cat": "supply"}
+            )
+            return
         end = self.m._clock() + CONFIRM_WAIT
         while True:
             self.wait(POLL)
