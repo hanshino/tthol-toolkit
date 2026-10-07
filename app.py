@@ -36,6 +36,8 @@ from services.guard import (
     migrate_legacy_store,
     read_stage_id,
 )
+from services.item_rules import load_item_facts
+from services.supply import SupplyManager
 from services.tower_run import ATTACK_PACKET, CAST_START_PACKET, TowerManager
 from services.buff_tracker import BUFF_PACKET, BuffTracker
 from services.hook_cmd import CommandChannel
@@ -120,6 +122,22 @@ def _build_services(dev: bool) -> dict:
     navigator = Navigator(
         channel, wm.read_locked, read_stage_id, manor=manor, ask_family=ask_family
     )
+    # 補給: sell / store / buy at a town NPC, run first by the 日常 modules.
+    supply = SupplyManager(
+        guard=guard,
+        read_locked=wm.read_locked,
+        character_name=wm.character_name,
+        channel=channel,
+        store=GuardStore(db),
+        navigator=navigator,
+        hook_caps=hook_caps,
+        facts=load_item_facts(),
+        icon_url=lambda item_id: (
+            item_catalog.icon_path(item_id) if item_catalog.icon_url(item_id) else None
+        ),
+        manor=manor,
+        ask_family=ask_family,
+    )
     tower = TowerManager(
         guard=guard,
         read_locked=wm.read_locked,
@@ -128,6 +146,7 @@ def _build_services(dev: bool) -> dict:
         store=GuardStore(db),
         navigator=navigator,
         hook_caps=hook_caps,
+        supply=supply,
     )
     hook.add_packet_listener(ATTACK_PACKET, tower.on_attack_packet)
     hook.add_packet_listener(CAST_START_PACKET, tower.on_cast_packet)
@@ -135,7 +154,7 @@ def _build_services(dev: bool) -> dict:
     wm.set_daily_queue(daily)
     wm.set_family_query(lambda pid: channel.send(pid, "family"))
     # Another character on the same game window starts clean (queue first: it stops the tower).
-    for forget in (daily.forget, tower.forget, guard.forget):
+    for forget in (daily.forget, tower.forget, supply.forget, guard.forget):
         wm.add_forget(forget)
     # 帳號派發: log characters in on the hooked windows, run their 日常, log out.
     logins = LoginStore(db)
@@ -195,6 +214,7 @@ def _build_services(dev: bool) -> dict:
         "keep_active_manager": keep_active,
         "guard_manager": guard,
         "tower_manager": tower,
+        "supply_manager": supply,
         "daily_manager": daily,
         "login_store": logins,
         "dispatch_manager": dispatch,

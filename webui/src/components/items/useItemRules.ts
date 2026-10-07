@@ -17,7 +17,7 @@ export const ACTION_LABEL: Record<ItemAction, string> = {
 export const ACTION_SHORT: Partial<Record<ItemAction, string>> = {
   use_periodic: '定', use_on_status: '解', sell: '賣', store: '存',
 };
-/** Saved now, carried out by the daily bag tidy-up once it exists. */
+/** Carried out by 補給 (sell at the shop, store at the 錢莊伙計), leaving `keep`. */
 export const LATER_ACTIONS: ItemAction[] = ['sell', 'store'];
 
 export type ItemRulesState = {
@@ -27,6 +27,8 @@ export type ItemRulesState = {
   error: string | null;
   setAction: (itemId: number, action: ItemAction) => void;
   setKeep: (itemId: number, keep: number) => void;
+  /** One 處置 for many items (multi-select, right-click); `keep` for sell / store. */
+  setMany: (itemIds: number[], action: ItemAction, keep?: number) => void;
   reload: () => void;
 };
 
@@ -88,6 +90,14 @@ export function useItemRules(pid: number, extra: number[]): ItemRulesState {
     setKeep: (itemId, keep) => {
       const cur = rules[itemId];
       if (cur) save({ ...rules, [itemId]: { ...cur, keep: Math.max(0, Math.floor(keep) || 0) } });
+    },
+    setMany: (itemIds, action, keep) => {
+      const next = { ...rules };
+      for (const id of itemIds) {
+        if (action === 'keep') delete next[id];
+        else next[id] = { action, keep: keep ?? next[id]?.keep ?? 0 };
+      }
+      save(next);
     },
     reload: () => { dirty.current = false; load(); },
   };

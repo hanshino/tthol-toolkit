@@ -28,18 +28,27 @@ function qtyText(n: number) {
 /** 道具處置 badge text, e.g. 定 / 解 / 賣 / 存; absent for no rule. */
 export type RuleBadge = { short: string; label: string; tone: 'use' | 'later' };
 
-export function Slot({
-  entry, selected, showSources, onSelect, rule,
-}: { entry: Entry; selected: boolean; showSources: boolean; onSelect: () => void; rule?: RuleBadge }) {
+type CellProps = {
+  entry: Entry;
+  selected: boolean;
+  picked?: boolean;
+  showSources: boolean;
+  onSelect: (e: React.MouseEvent) => void;
+  onMenu?: (e: React.MouseEvent) => void;
+  rule?: RuleBadge;
+};
+
+export function Slot({ entry, selected, picked, showSources, onSelect, onMenu, rule }: CellProps) {
   return (
     <button
       type="button"
-      className="inv-slot"
-      aria-pressed={selected}
+      className={picked ? 'inv-slot is-picked' : 'inv-slot'}
+      aria-pressed={selected || !!picked}
       aria-label={`${entry.name} ×${entry.qty}${rule ? `，處置：${rule.label}` : ''}`}
       title={`${entry.name} ×${entry.qty.toLocaleString()}${rule ? `（${rule.label}）` : ''}`}
       style={{ '--inv-c': categoryColor(entry.category) } as React.CSSProperties}
       onClick={onSelect}
+      onContextMenu={onMenu}
     >
       <ItemIcon name={entry.name} meta={entry.meta} size={44} />
       {entry.meta?.no_trade && <span className="inv-bound" />}
@@ -52,9 +61,7 @@ export function Slot({
   );
 }
 
-export function Row({
-  entry, selected, showSources, onSelect, rule,
-}: { entry: Entry; selected: boolean; showSources: boolean; onSelect: () => void; rule?: RuleBadge }) {
+export function Row({ entry, selected, picked, showSources, onSelect, onMenu, rule }: CellProps) {
   const m = entry.meta;
   const sub = [
     m?.type_label,
@@ -66,7 +73,8 @@ export function Row({
     ? entry.sources.map(s => SOURCE_LABEL[s]).join('、')
     : entry.stacks > 1 ? `${entry.stacks} 格` : '';
   return (
-    <button type="button" className="inv-row" aria-pressed={selected} onClick={onSelect}>
+    <button type="button" className={picked ? 'inv-row is-picked' : 'inv-row'}
+      aria-pressed={selected || !!picked} onClick={onSelect} onContextMenu={onMenu}>
       <span className="inv-row-icon">
         <ItemIcon name={entry.name} meta={m} size={36} />
         {m?.no_trade && <span className="inv-bound" />}

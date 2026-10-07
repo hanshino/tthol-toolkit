@@ -27,6 +27,7 @@ CMD_PREFIX = "tthol-cmd-"
 MAX_LINE = 511  # the hook drops longer lines (512 including the newline) without answering
 OPEN_TIMEOUT = 5.0  # another client may hold the single pipe instance for a moment
 OPEN_RETRY = 0.05
+GONE_GRACE = 1.0  # "not found" this long: the pipe is really gone (game closed, no hook)
 REPLY_TIMEOUT = 5.0  # longer than the hook's own 3 s "dispatcher did not run"
 
 
@@ -211,11 +212,19 @@ class CommandChannel:
                 pipe.close()
 
     def _open(self, path: str):
-        deadline = time.monotonic() + self._open_timeout
+        start = time.monotonic()
+        deadline = start + self._open_timeout
         while True:
             try:
                 return self._connect(path)
             except PipeBusy:
                 if time.monotonic() >= deadline:
+                    raise
+                self._sleep(OPEN_RETRY)
+            except PipeGone:
+                # Between two clients the hook re-creates its single pipe
+                # instance; an open in that gap reads "file not found" (live
+                # 2026-10-07). Retry briefly; a closed game stays gone.
+                if time.monotonic() - start >= GONE_GRACE:
                     raise
                 self._sleep(OPEN_RETRY)

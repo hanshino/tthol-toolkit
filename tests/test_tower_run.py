@@ -210,7 +210,7 @@ def make(game=None, combat=None, config=None, hp_items=(24007,)):
     game = game or FakeGame()
     store = GuardStore()
     store.save("寒江孤影", GuardConfig(potion=GuardPotionRule(hp_items=list(hp_items))))
-    store.save_section("寒江孤影", COMBAT_SECTION, combat or CombatRule())
+    store.save_section("寒江孤影", COMBAT_SECTION, combat or CombatRule(basic=True))
     store.save_section("寒江孤影", TOWER_SECTION, config or TowerConfig())
     clock = {"t": 0.0}
 
@@ -1016,3 +1016,60 @@ def test_a_body_that_never_fades_is_not_waited_on_forever():
         if any(line.startswith(f"walk {exit_x} ") for line in game.sent):
             break
     assert any(line.startswith(f"walk {exit_x} ") for line in game.sent)
+
+
+class FakeSupply:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+        self.hosts = []
+
+    def add_host(self, text):
+        self.hosts.append(text)
+
+    def run(self, pid, stop, note=None, host=None):
+        self.calls.append(host)
+        return self.result
+
+
+def with_supply(mgr, result):
+    supply = FakeSupply(result)
+    mgr._supply = supply
+    return supply
+
+
+def test_supply_runs_once_before_the_climb_from_the_lobby():
+    from services.supply import SupplyResult
+
+    mgr, run, game, _ = make()
+    game.stage = LOBBY_STAGE
+    supply = with_supply(mgr, SupplyResult(True, "done", "買 10 個"))
+    mgr._tick(1, run)
+    assert run.supplied  # the next tick goes on to the lobby, not to 補給 again
+    assert supply.calls == ["神武玄天塔"]
+    assert any("補給完成" in line.text for line in run.log)
+
+
+def test_supply_is_skipped_when_started_mid_climb():
+    from services.supply import SupplyResult
+
+    mgr, run, game, _ = make()
+    supply = with_supply(mgr, SupplyResult(True, "done", ""))
+    mgr._tick(1, run)
+    assert supply.calls == []
+
+
+def test_supply_short_stops_the_run_and_a_failed_trip_does_not():
+    from services.supply import SupplyResult
+
+    mgr, run, game, _ = make()
+    game.stage = LOBBY_STAGE
+    with_supply(mgr, SupplyResult(False, "short", "沒補齊：金創藥"))
+    with pytest.raises(_Done, match="補給沒補齊"):
+        mgr._tick(1, run)
+
+    mgr, run, game, _ = make()
+    game.stage = LOBBY_STAGE
+    with_supply(mgr, SupplyResult(False, "error", "找不到商人"))
+    mgr._tick(1, run)
+    assert any("照常登塔" in line.text for line in run.log)

@@ -1,10 +1,12 @@
 import pytest
 
+from services import hook_cmd
 from services.hook_cmd import (
     MAX_LINE,
     CommandChannel,
     NoReply,
     PipeBusy,
+    PipeGone,
     classify_error,
     cmd_pipe_path,
     encode_command,
@@ -130,3 +132,36 @@ def test_send_timeout_propagates_and_closes():
     with pytest.raises(NoReply):
         ch.send(1, "status")
     assert pipe.closed
+
+
+def test_send_retries_through_the_relisten_gap():
+    # The hook re-creates its pipe after each client: an open in between
+    # reads "file not found" for a moment.
+    pipe = FakePipe(b'{"ok":true}\n')
+    calls = {"n": 0}
+
+    def connect(path):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PipeGone(path)
+        return pipe
+
+    ch = CommandChannel(connect=connect, sleep=lambda _s: None)
+    assert ch.send(1, "status") == {"ok": True}
+    assert calls["n"] == 3
+
+
+def test_send_gives_up_on_a_pipe_that_stays_gone(monkeypatch):
+    t = {"now": 0.0}
+    monkeypatch.setattr(hook_cmd.time, "monotonic", lambda: t["now"])
+
+    def connect(path):
+        raise PipeGone(path)
+
+    def sleep(s):
+        t["now"] += s
+
+    ch = CommandChannel(connect=connect, sleep=sleep)
+    with pytest.raises(PipeGone):
+        ch.send(1, "status")
+    assert t["now"] >= hook_cmd.GONE_GRACE

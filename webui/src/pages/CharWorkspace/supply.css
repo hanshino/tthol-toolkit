@@ -1,0 +1,70 @@
+/* 補給 panel (SupplyPanel) in the 輔助 tab, under the guard. Shares the gd-* pieces. */
+.sp { display: grid; gap: 14px; }
+.sp-hosts { display: flex; flex-wrap: wrap; gap: 6px; }
+.sp-chip { font-size: 11.5px; padding: 1px 8px; border: 1px solid var(--tt-accent-dim); color: var(--tt-text); }
+.sp-step { padding: 6px 12px; border-left: 2px solid var(--tt-accent); color: var(--tt-text); font-size: 12.5px; }
+
+.sp-phases { padding: 0; }
+.sp-phase { border-top: 1px solid var(--tt-line-soft); }
+.sp-phase:first-child { border-top: 0; }
+.sp-phase-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 12px 14px 6px; }
+.sp-phase-head h3 { font-family: var(--tt-font-serif); font-size: 14px; letter-spacing: 3px; font-weight: 600; margin: 0; }
+.sp-n { font-family: var(--tt-font-mono); color: var(--tt-gold); }
+.sp-src { flex: 1 1 220px; min-width: 0; }
+.sp-badge { font-size: 11.5px; padding: 1px 8px; border: 1px solid var(--tt-warn); color: var(--tt-warn); }
+.sp-badge.is-info { border-color: var(--tt-accent); color: var(--tt-text); }
+.sp-table tr.is-unsold b, .sp-table tr.is-unsold small { color: var(--tt-bad); }
+.sp-phase-body { display: grid; gap: 8px; padding: 0 14px 12px; }
+.sp-phase.is-dim .sp-scroll { opacity: 0.55; }
+.sp-empty { padding: 2px 0; }
+
+.sp-scroll { overflow-x: auto; }
+.sp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 560px; }
+.sp-table th { text-align: left; font-weight: 400; font-size: 11.5px; letter-spacing: 1px; color: var(--tt-mute); padding: 6px 8px; border-bottom: 1px solid var(--tt-line-soft); white-space: nowrap; }
+.sp-table td { padding: 6px 8px; border-bottom: 1px solid var(--tt-line-soft); vertical-align: middle; }
+.sp-table tr:last-child td { border-bottom: 0; }
+.sp-table .r { text-align: right; }
+.sp-item { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sp-item img { flex: none; image-rendering: pixelated; }
+.sp-noicon { width: 24px; height: 24px; flex: none; border: 1px solid var(--tt-line); background: var(--tt-raised); }
+.sp-item b { font-weight: 500; display: block; }
+.sp-item small { color: var(--tt-mute); font-size: 11px; }
+.sp-split { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.sp-split input, .sp-rule input[type=number] { width: 68px; min-height: 30px; padding: 2px 8px; font-family: var(--tt-font-mono); text-align: right; }
+.sp-need { color: var(--tt-gold); }
+.sp-warn { color: var(--tt-warn); font-size: 12px; }
+
+.sp-search { display: inline-flex; align-items: center; gap: 6px; }
+.sp-search input { width: 160px; min-height: 26px; padding: 2px 8px; font-family: var(--tt-font); }
+
+.sp-lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.sp-rules, .sp-preview { display: grid; gap: 10px; align-content: start; }
+.sp-rule { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; font-size: 12.5px; color: var(--tt-dim); }
+.sp-rule input[type=checkbox] { width: 15px; height: 15px; margin: 0 6px 0 0; vertical-align: -2px; cursor: pointer; }
+.sp-radio { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.sp-radio button { padding: 3px 10px; font-size: 12px; letter-spacing: 1px; }
+.sp-bank { display: grid; gap: 8px; padding: 8px 10px; border: 1px solid var(--tt-line-soft); }
+.sp-bank-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 12.5px; }
+.sp-bank.is-dim .sp-rule { opacity: 0.75; }
+
+.sp-plan { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sp-plan li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; font-size: 12.5px; line-height: 1.6; }
+.sp-dot { width: 8px; height: 8px; margin-top: 6px; border: 1px solid var(--tt-gold); }
+.sp-plan b { font-weight: 500; }
+
+.sp-load { display: grid; gap: 8px; padding-top: 6px; border-top: 1px solid var(--tt-line-soft); }
+.sp-meter { display: grid; gap: 4px; }
+.sp-meter-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-size: 12px; color: var(--tt-dim); }
+.sp-bar { position: relative; height: 8px; background: var(--tt-line-soft); border: 1px solid var(--tt-line); }
+.sp-bar i { position: absolute; top: 0; bottom: 0; left: 0; }
+.sp-bar-now { background: var(--tt-accent); }
+.sp-bar-after { background: var(--tt-gold); opacity: 0.7; }
+.sp-slots { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--tt-dim); }
+
+.sp-radio button:focus-visible, .sp-rule input:focus-visible, input.money-input:focus-visible, .sp-split input:focus-visible, .sp-search input:focus-visible {
+  outline: 1px solid var(--tt-accent); outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .sp-lower { grid-template-columns: 1fr; }
+}

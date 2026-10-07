@@ -1185,7 +1185,7 @@ class CombatRule(_Base):
     fallback. Skills are magic ids; the learned level is cast.
     """
 
-    basic: bool = True
+    basic: bool = False  # a new character starts with skills only (user, 2026-10-07)
     opener: int | None = None
     rotation: list[int] = Field(default_factory=list, max_length=3)
     # Picking a new target (the current one stays until it dies):
@@ -1367,6 +1367,124 @@ class GuardStatus(_Base):
 class GuardStartResult(_Base):
     ok: bool
     reason: str | None = None
+
+
+# ---- 補給 (sell, store, buy at a town NPC) ---------------------------------
+
+
+class SupplyItem(_Base):
+    """One row of the 補貨清單: buy until the bag and the pet bag hold these."""
+
+    item_id: int
+    bag: int = Field(default=0, ge=0, le=9999)
+    pet: int = Field(default=0, ge=0, le=9999)
+
+
+class SupplyConfig(_Base):
+    """Per character (settings section "supply"). Rows are bought top to bottom."""
+
+    items: list[SupplyItem] = []
+    keep_gold: int = Field(default=100_000, ge=0)  # never spend below this
+    extra_stop: bool = False  # an item this shop does not sell: visit another shop
+    pet_summon: bool = True  # no pet out: summon one for the pet bag, dismiss after
+    stop_when_short: bool = False  # not all bought (money / room): stop the module
+    # 錢莊: bring the carried 銀兩 back to `gold_target` when it falls below
+    # `gold_low` (withdraw) or rises above `gold_high` (deposit); None = off.
+    gold_low: int | None = Field(default=None, ge=0)
+    gold_high: int | None = Field(default=None, ge=0)
+    gold_target: int = Field(default=500_000, ge=0)
+
+
+class SupplyRow(_Base):
+    item_id: int
+    name: str
+    icon_url: str | None = None
+    type_label: str | None = None
+    price: int | None = None  # cheapest town shop
+    shops: int = 0  # town shops that sell it
+    bag: int = 0  # held now
+    pet: int = 0
+    need: int = 0  # to buy for both targets
+    unsold: bool = False  # the family shop does not sell it: a trip stops
+
+
+class SupplyMoveRow(_Base):
+    """An item 道具處置 marks sell / store, and how many of it would go."""
+
+    item_id: int
+    name: str
+    icon_url: str | None = None
+    have: int
+    keep: int
+    qty: int
+
+
+class SupplyLoad(_Base):
+    """Bag weight and slots now and after a trip (an estimate: stacks of 200
+    assumed, items.weight taken in the character's weight units)."""
+
+    weight: int
+    weight_max: int
+    weight_after: int
+    weight_peak: int  # while buying: a stack waits in the bag before the pet bag
+    slots: int  # bag stacks now
+    slots_after: int
+    slots_max: int = 40
+    pet_slots: int
+    pet_slots_after: int
+    pet_slots_max: int = 8
+
+
+class SupplyStop(_Base):
+    npc: str
+    stage_name: str
+    tile: tuple[int, int]
+    buys: list[str] = []  # "金創藥 ×443"
+    missing: list[str] = []  # wanted items this shop does not sell
+    actions: list[str] = []  # at a 錢莊伙計: "存 玄鐵礦 ×30", "從錢莊領 460,000"
+
+
+class SupplyLogEntry(_Base):
+    id: int
+    ts: float
+    phase: Literal["sent", "confirmed", "unconfirmed", "error", "info"]
+    text: str
+
+
+class SupplyStatus(_Base):
+    running: bool
+    step: str | None = None
+    host: str | None = None  # the module running it (神武玄天塔), None = the 現在補給 button
+    ended: str | None = None  # how the last run ended
+    log: list[SupplyLogEntry] = []
+
+
+class SupplyView(_Base):
+    character: str | None
+    config: SupplyConfig = SupplyConfig()
+    rows: list[SupplyRow] = []
+    sells: list[SupplyMoveRow] = []
+    stores: list[SupplyMoveRow] = []
+    store_supported: bool = False  # the hook has a warehouse store command
+    bank_supported: bool = False  # the hook has 錢莊 deposit / withdraw commands
+    bank: str | None = None  # what the 錢莊 step would do now ("存 320,000")
+    load: SupplyLoad | None = None
+    hook_ready: bool = False  # the hook lists every command a trip needs
+    gold: int | None = None
+    plan: list[SupplyStop] = []  # where a trip would go from here now
+    merchant: str | None = None  # 家族商人・高級商店 / 一般商人
+    family: bool = False  # buys at the 家族道具商 only
+    hosts: list[str] = []  # modules that run 補給 first, with when
+    status: SupplyStatus = SupplyStatus(running=False)
+
+
+class SupplyBuyable(_Base):
+    item_id: int
+    name: str
+    type_label: str | None = None
+    price: int
+    shops: int
+    icon_url: str | None = None
 
 
 class PotionCandidate(_Base):

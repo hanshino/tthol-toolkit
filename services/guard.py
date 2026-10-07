@@ -957,6 +957,7 @@ class GuardManager:
         self._wall = wall
         self._runs: dict[int, _Run] = {}
         self._quiet: dict[int, int] = {}  # pid -> modules holding casts off
+        self._pet_hold: dict[int, int] = {}  # pid -> modules using the pet themselves
         self._lock = threading.Lock()
 
     # -- API -----------------------------------------------------------------
@@ -977,6 +978,27 @@ class GuardManager:
                     self._quiet[pid] = left
                 else:
                     self._quiet.pop(pid, None)
+            self._pet_hold.pop(pid, None)
+
+    @contextmanager
+    def hold_pets(self, pid: int):
+        """No 寵物取水 for `pid` inside this block: a module (補給) summons,
+        fills and dismisses the pet itself, and two writers on one pet clash."""
+        with self._lock:
+            self._pet_hold[pid] = self._pet_hold.get(pid, 0) + 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                left = self._pet_hold.get(pid, 1) - 1
+                if left > 0:
+                    self._pet_hold[pid] = left
+                else:
+                    self._pet_hold.pop(pid, None)
+
+    def _pets_held(self, pid: int) -> bool:
+        with self._lock:
+            return pid in self._pet_hold
 
     def _is_quiet(self, pid: int) -> bool:
         with self._lock:
@@ -1458,7 +1480,8 @@ class GuardManager:
                 self._drink_up(pid, run, "hp", hp, rule.hp_pct, rule.hp_items, maxes, bag, now)
                 self._cure(pid, run, sample.debuffs, bag, now)
                 self._drink_up(pid, run, "mp", mp, rule.mp_pct, rule.mp_items, maxes, bag, now)
-                self._refill(pid, run, bag, now)
+                if not self._pets_held(pid):
+                    self._refill(pid, run, bag, now)
                 if not self._is_quiet(pid):
                     self._keep_buffs(pid, run, mp, now)
                     self._keep_hero(pid, run, now)

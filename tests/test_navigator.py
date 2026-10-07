@@ -5,7 +5,7 @@ import pytest
 
 from services import route_plan as rp
 from services._paths import bundled
-from services.navigator import Navigator, _Replan, _Run, read_level
+from services.navigator import Navigator, _Replan, _Run, _Stop, read_level
 
 pytestmark = pytest.mark.skipif(
     not bundled("tthol.sqlite").exists(), reason="tthol.sqlite not pulled"
@@ -309,3 +309,148 @@ def test_zero_hp_that_stays_is_a_death():
     with pytest.raises(_Stop) as e:
         run.walk_to((47, 150), CHENGDU)
     assert e.value.reason == "dead"
+
+
+class WindowGame(FakeGame):
+    """A shop window and an NPC dialog the walk has to get out of the way first."""
+
+    def __init__(self, *a, shop=False, dialog_pages=0, options=None, closable=True, **kw):
+        super().__init__(*a, **kw)
+        self.shop, self.pages, self.options, self.closable = shop, dialog_pages, options, closable
+
+    def send(self, pid, line):
+        cmd = line.split()[0]
+        if cmd == "shop":
+            self.sent.append(line)
+            return {"ok": True, "open": self.shop}
+        if cmd == "warehouse":
+            self.sent.append(line)
+            return {"ok": True, "open": False}
+        if cmd == "dialog":
+            self.sent.append(line)
+            open_ = self.pages > 0 or self.options is not None
+            return {"ok": True, "open": open_, "waiting": False, "options": self.options or []}
+        if cmd == "next":
+            self.sent.append(line)
+            self.pages = max(self.pages - 1, 0)
+            return {"ok": True}
+        if cmd == "closepanel":
+            self.sent.append(line)
+            if not self.closable:
+                return {"ok": False, "error": "unknown command"}
+            self.shop = False
+            return {"ok": True, "closed": ["shop"]}
+        if cmd == "walk":
+            assert not self.shop and not self.pages and self.options is None, "walked while busy"
+        return super().send(pid, line)
+
+
+def _run(game):
+    nav = nav_for(game)
+    return _Run(nav, 1, None, lambda t: None)
+
+
+def test_walk_closes_a_shop_window_first():
+    game = WindowGame(1, (5, 5), {}, shop=True)
+    run = _run(game)
+    run.ensure_free()
+    assert "closepanel" in game.sent and not game.shop
+
+
+def test_walk_pushes_a_dialog_without_options_to_its_end():
+    game = WindowGame(1, (5, 5), {}, dialog_pages=2)
+    run = _run(game)
+    run.ensure_free()
+    assert game.sent.count("next") == 2
+
+
+def test_walk_stops_on_a_dialog_that_wants_a_choice():
+    game = WindowGame(1, (5, 5), {}, options=[123, 456])
+    run = _run(game)
+    with pytest.raises(_Stop, match="選選項"):
+        run.ensure_free()
+    assert not any(line.startswith("walk") for line in game.sent)
+
+
+def test_walk_stops_when_the_hook_cannot_close_the_window():
+    game = WindowGame(1, (5, 5), {}, shop=True, closable=False)
+    run = _run(game)
+    with pytest.raises(_Stop, match="關不掉"):
+        run.ensure_free()
+
+
+class StepInGame(FakeGame):
+    """A door that fires only when the character steps into its ring from
+    outside: standing beside it at the start does nothing (杭州城, live)."""
+
+    def _step(self):
+        before = self.pos
+        if self.target is None:
+            return
+        x, y = self.pos
+        tx, ty = self.target
+        self.pos = (x + max(-2, min(2, tx - x)), y + max(-2, min(2, ty - y)))
+        for zone, land in self.zones.items():
+
+            def near(p, z=zone):
+                return max(abs(p[0] - z[0]), abs(p[1] - z[1])) <= 1
+
+            if near(self.pos) and not near(before):
+                self.pos, self.target = land, None
+                return
+
+
+def test_a_door_started_beside_is_walked_into_again():
+    zone, _t = door_into_bank()
+    start = (zone[0] + 1, zone[1] + 1)  # already one tile off the door
+    game = StepInGame(CHENGDU, start, {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result
+    assert math.dist(result.tile, BANK_CLERK) <= 2
+
+
+class SwitchGame(FakeGame):
+    """Doors fire only while the map event switch is on (hook `mapevents`)."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.events = 0
+        self.fired_off = []  # zones crossed while the switch was off
+
+    def send(self, pid, line):
+        if line.startswith("mapevents"):
+            self.sent.append(line)
+            self.events = int(line.split()[1])
+            return {"ok": True, "was": 0, "map_events": self.events}
+        return super().send(pid, line)
+
+    def _step(self):
+        if self.target is None:
+            return
+        x, y = self.pos
+        tx, ty = self.target
+        self.pos = (x + max(-2, min(2, tx - x)), y + max(-2, min(2, ty - y)))
+        for zone, land in self.zones.items():
+            if max(abs(self.pos[0] - zone[0]), abs(self.pos[1] - zone[1])) <= 1:
+                if not self.events:
+                    self.fired_off.append(zone)
+                    continue
+                self.pos, self.target = land, None
+                return
+
+
+def test_door_is_armed_only_near_it():
+    zone, _t = door_into_bank()
+    game = SwitchGame(CHENGDU, (47, 168), {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result
+    on = game.sent.index("mapevents 1")
+    assert "mapevents 0" in game.sent[:on]  # off for the way there
+    assert game.events == 0  # the last walk (to the clerk) switched it off again
+
+
+def test_a_walk_to_an_npc_keeps_events_off():
+    game = SwitchGame(CHENGDU, BANK_CLERK, {})
+    run = _Run(nav_for(game), 1, None, lambda t: None)
+    run.walk_to((BANK_CLERK[0] + 4, BANK_CLERK[1]), CHENGDU)
+    assert "mapevents 1" not in game.sent and game.events == 0

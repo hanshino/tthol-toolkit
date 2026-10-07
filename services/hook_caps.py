@@ -27,6 +27,8 @@ FEATURES: dict[str, tuple[str, ...]] = {
     "guard": ("use",),
     # Ask the server for the family summary (0x31): the manor id is in no login packet.
     "family": ("family",),
+    # 補給 trips; buy / sell / petput are checked per trip (only what it needs).
+    "supply": ("status", "near", "walk", "talk", "dialog", "option", "next", "shop"),
     "daily.tower": (
         "status",
         "near",

@@ -97,3 +97,23 @@ def test_click_zones_are_marked():
     steps = {(e.step.kind, e.step.at): e.step.touch for e in g.edges[202]}
     assert steps[("door", rp._tables().middle(202, "arrival", 258))] is True
     assert all(not touch for (kind, _at), touch in steps.items() if kind == "walk")
+
+
+def test_script_any_of_triggers_and_held_items():
+    class T:
+        # 25100-like: one trigger whose C84s are alternatives; then a C31 gate.
+        msg_triggers = {
+            1: [([(84, 0, 0, 1121), (84, 0, 0, 1122)], [(5, None, 28, None)], True)],
+            2: [
+                ([(31, 1, 28939, 1)], [(12, None, 1, None)], False),
+                ([], [(5, None, 63, None)], False),
+            ],
+        }
+        options: dict = {}
+        jump: dict = {}
+
+    assert rp._Script(T(), 60, 1122).shops_from_msg(1) == [28]
+    assert rp._Script(T(), 60, 1002).shops_from_msg(1) == []
+    # Without a 特貢令 the gate sends back to the plain menu; with one, 特貢.
+    assert rp._Script(T(), 60, 1122, {}).shops_from_msg(2) == [28]
+    assert rp._Script(T(), 60, 1122, {28939: 1}).shops_from_msg(2) == [63]
