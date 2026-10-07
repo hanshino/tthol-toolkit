@@ -440,14 +440,7 @@ function BoxTidy({ config, onChange, busy, onTidy }: {
             onChange={e => onChange({ ...config, tidy_boxes: e.target.checked })} />
           跑完自動整理寶箱
         </label>
-        <span>：開完各關寶箱，寶箱開出的藥每種留</span>
-        <input type="number" min={0} disabled={!on} aria-label="寶箱藥品每種保留"
-          value={config.keep_potions ?? 50}
-          onChange={e => onChange({
-            ...config,
-            keep_potions: Math.min(10000, Math.max(0, Math.floor(Number(e.target.value)) || 0)),
-          })} />
-        <span>個，多的吃掉；蒐藏冊沒收過的神兵先蒐藏，其餘神兵、技能書、覺醒符存倉</span>
+        <span>：開完各關寶箱；蒐藏冊沒收過的神兵先蒐藏；開出的藥在行囊設成自動使用（守護戰鬥時用）；其餘神兵、技能書、覺醒符存倉</span>
         <button type="button" className="dl-btn dl-btn-sm" disabled={busy} onClick={onTidy}
           title="不登塔，現在就照這個設定整理背包裡的關寶箱">現在整理寶箱</button>
       </div>

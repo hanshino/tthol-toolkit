@@ -1232,8 +1232,10 @@ class TowerConfig(_Base):
     # 冽星), as far as level and orbs allow; None = do not use the orbs.
     skip_to: int | None = Field(None, ge=1, le=6)
     # 寶箱整理 after a run that ended the normal way (services.box_tidy): open
-    # the 關 boxes, eat the box potions past keep_potions, store the rest.
+    # the 關 boxes, collect new 神兵, set the box potions to 自動使用, store the rest.
     tidy_boxes: bool = False
+    # Unused since 2026-10-08 (potions are no longer eaten on the spot); kept so
+    # settings saved with it still load.
     keep_potions: int = Field(50, ge=0, le=10000)
 
 

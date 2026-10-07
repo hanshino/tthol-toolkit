@@ -5,15 +5,18 @@ The 關 boxes (辰星 to 颶星, one per 關) open with a plain `use`: no dialog
 DB: items.use_case2 is its mystery_box_items table. The user's rules
 (2026-10-07), for the things those tables hold:
 
-- potions: keep `keep` of each, eat the rest. One on a 補水 whitelist is a
-  supply, not loot, and is never eaten;
+- potions: not eaten on the spot. Set to 自動使用 in the 道具處置 table
+  instead, so the guard uses them in a fight as their buff runs out (user,
+  2026-10-08). One on a 補水 whitelist, or with a rule the user set, is left
+  as it is;
 - 神兵 in the 蒐藏冊 (collect_book_items) not collected yet: collected first
   (one of each; the hook's collection commands, tthol-hook 2026-10-07). 煉化
   waits for a hook command;
 - everything else the warehouse takes (神兵, skill books, 覺醒符, 圖紙): stored;
 - what cannot be stored stays in the bag.
 
-Rounds: open until no box is left or the bag is full (BAG_SLOTS), collect, eat, store
+Rounds: open until no box is left or the bag is full (BAG_SLOTS), collect, set
+potions to 自動使用, store
 (a 補給 trip that stores only these), then open again. It stops with a warning
 when a round frees no slot (the warehouse is full too).
 """
@@ -32,7 +35,7 @@ BOX_NAMES = ("辰星寶箱", "太白寶箱", "熒惑寶箱", "歲星寶箱", "�
 BAG_SLOTS = 40  # the bag holds 40 stacks (user, 2026-10-07)
 CONFIRM_WAIT = 2.0  # for a use to show in the bag
 POLL = 0.2
-MAX_ROUNDS = 10  # open / eat / store rounds in one tidy
+MAX_ROUNDS = 10  # open / collect / store rounds in one tidy
 COLLECT_COMMANDS = ("collection", "collectpage", "collect", "openpanel")
 COLLECT_WAIT = 5.0  # the 蒐藏冊 flags (one BB per group) after asking for every group
 
@@ -40,7 +43,7 @@ COLLECT_WAIT = 5.0  # the 蒐藏冊 flags (one BB per group) after asking for ev
 @dataclass(frozen=True)
 class Loot:
     boxes: tuple[int, ...]  # the box items, in 關 order
-    potions: frozenset[int]  # loot to eat past the keep
+    potions: frozenset[int]  # loot set to 自動使用
     store: frozenset[int]  # loot to store
     names: dict[int, str]  # boxes and loot
     collect: frozenset[int] = frozenset()  # loot in the 蒐藏冊: collected first
@@ -84,17 +87,6 @@ def load_loot(db_path: Path | None = None) -> Loot:
 # ---- pure parts --------------------------------------------------------------
 
 
-def to_eat(
-    bag: dict[int, int], loot: Loot, keep: int, supplies: frozenset[int]
-) -> list[tuple[int, int]]:
-    """(item, how many) of the box potions past `keep`, never a 補水 whitelist one."""
-    return [
-        (item_id, n - keep)
-        for item_id, n in sorted(bag.items())
-        if item_id in loot.potions and item_id not in supplies and n > keep
-    ]
-
-
 def to_store(bag: dict[int, int], loot: Loot) -> dict[int, int]:
     return {item_id: n for item_id, n in sorted(bag.items()) if item_id in loot.store and n > 0}
 
@@ -116,7 +108,7 @@ def bag_view(reply: dict) -> tuple[int, dict[int, int]] | None:
 class TidyResult:
     opened: dict[int, int]  # box -> opened
     got: dict[int, int]  # item -> count that came out
-    eaten: dict[int, int]
+    auto: list[int]  # potions set to 自動使用 this tidy
     stored: int
     collected: dict[int, int]
     boxes_left: int
@@ -124,8 +116,9 @@ class TidyResult:
 
 
 class BoxTidy:
-    """One tidy. The host gives it its command, wait and log hooks, and the
-    store trip (SupplyManager.run with store_only, or None without one)."""
+    """One tidy. The host gives it its command, wait and log hooks, the store
+    trip (SupplyManager.run with store_only, or None without one), and
+    `auto_use`: sets potions to 自動使用 where it may and returns those it set."""
 
     def __init__(
         self,
@@ -135,17 +128,18 @@ class BoxTidy:
         note: Callable[[str, str], None],
         step: Callable[[str], None],
         loot: Loot,
-        keep: int,
         supplies: frozenset[int],
         store_trip: Callable[[dict[int, int]], object] | None,
+        auto_use: Callable[[list[int]], list[int]] | None = None,
     ) -> None:
         self.cmd, self.wait, self.clock = cmd, wait, clock
         self.note, self.step, self.name_of = note, step, loot.name
-        self.loot, self.keep, self.supplies = loot, keep, supplies
-        self.store_trip = store_trip
+        self.loot, self.supplies = loot, supplies
+        self.store_trip, self.auto_use = store_trip, auto_use
         self.opened: dict[int, int] = {}
         self.got: dict[int, int] = {}
-        self.eaten: dict[int, int] = {}
+        self.auto: list[int] = []
+        self.auto_seen: set[int] = set()
         self.stored = 0
         self.collected: dict[int, int] = {}
         self.book_done = False  # the 蒐藏冊 looked at this tidy (nothing to do, or no hook)
@@ -182,7 +176,7 @@ class BoxTidy:
             for _ in range(MAX_ROUNDS):
                 opens = self.open_all()
                 self.collect()
-                self.eat()
+                self.set_auto_use()
                 self.store()
                 slots, counts = self.bag()
                 left = sum(counts.get(b, 0) for b in self.loot.boxes)
@@ -192,7 +186,7 @@ class BoxTidy:
                     problem = f"有寶箱打不開（背包沒有變化），還剩 {left} 個寶箱"
                     break
                 # A free slot lets the next round open more (open_all always
-                # opens one then); none left after eating and storing: stuck.
+                # opens one then); none left after storing: stuck.
                 if slots >= BAG_SLOTS:
                     problem = f"背包滿了，存倉也空不出格子，還剩 {left} 個寶箱"
                     break
@@ -203,7 +197,7 @@ class BoxTidy:
         return TidyResult(
             dict(self.opened),
             dict(self.got),
-            dict(self.eaten),
+            list(self.auto),
             self.stored,
             dict(self.collected),
             left,
@@ -323,26 +317,24 @@ class BoxTidy:
             if self.clock() >= end:
                 return False
 
-    def eat(self) -> None:
+    def set_auto_use(self) -> None:
+        """Box potions in the bag: 自動使用 in the 道具處置 table (not 補水 ones)."""
+        if self.auto_use is None:
+            return
         _slots, counts = self.bag()
-        for item_id, n in to_eat(counts, self.loot, self.keep, self.supplies):
-            name = self.name_of(item_id)
-            self.step(f"吃掉多的 {name}")
-            have, ate = counts[item_id], 0
-            for _ in range(n):
-                after = self.use(item_id, have)
-                if after is None:
-                    break
-                ate += have - after.get(item_id, 0)
-                have = after.get(item_id, 0)
-                if have <= self.keep:
-                    break
-            if ate:
-                self.eaten[item_id] = self.eaten.get(item_id, 0) + ate
-                self.note("confirmed", f"吃掉 {name} ×{ate}（留 {have}）")
-            if ate < n:
-                self.note("unconfirmed", f"{name} 吃不下了，先留著")
-            _slots, counts = self.bag()
+        new = [
+            i
+            for i in sorted(counts)
+            if i in self.loot.potions and i not in self.supplies and i not in self.auto_seen
+        ]
+        if not new:
+            return
+        self.auto_seen |= set(new)
+        done = self.auto_use(new)
+        if done:
+            self.auto += done
+            names = "、".join(self.name_of(i) for i in done)
+            self.note("confirmed", f"行囊設成自動使用（守護戰鬥時用）：{names}")
 
     def store(self) -> None:
         """Store the box loot in the bag."""

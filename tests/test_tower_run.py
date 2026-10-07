@@ -1224,3 +1224,19 @@ def test_tidy_now_is_refused_while_climbing():
     ok, reason = mgr.tidy_now(1)
     assert not ok and "還在進行" in reason
     run.stop.set()
+
+
+def test_box_potions_get_auto_use_unless_the_user_set_a_rule():
+    from services.api_types import ItemRule, ItemRules
+    from services.item_rules import ItemFact
+
+    game = BoxGame()
+    mgr, run, _game, guard = make(game)
+    guard.set_items = lambda pid, rules: None  # guard not running: saved to the store
+    periodic = ItemFact("丹", True, True, True, None, None)
+    plain = ItemFact("回血", True, True, False, None, None)
+    mgr._item_facts = lambda i: {1: periodic, 2: periodic, 3: plain}.get(i)
+    mgr._store.save_items("寒江孤影", ItemRules(items={2: ItemRule(action="store")}))
+    assert mgr._auto_use(1, run, [1, 2, 3, 4]) == [1]
+    rules = mgr._store.load_items("寒江孤影").items
+    assert rules[1].action == "use_periodic" and rules[2].action == "store" and 3 not in rules

@@ -27,6 +27,7 @@ from services.api_types import (
     DailyMetric,
     DailySegment,
     DailySummary,
+    ItemRule,
     TowerConfig,
     TowerFloor,
     TowerLogEntry,
@@ -55,6 +56,7 @@ from services.game_input import leave_game
 from services.guard import GuardManager, GuardStore, read_holdings, read_learned, read_stage_id
 from services import run_log
 from services.box_tidy import BoxTidy, Loot, load_loot
+from services.item_rules import KEEP, USE_PERIODIC, load_item_facts
 from services.hook_caps import FEATURES, HookCaps
 from services.hook_cmd import CommandChannel, NoReply, PipeBusy, PipeGone
 from services.tower import (
@@ -286,6 +288,7 @@ class TowerManager:
             supply.add_host("神武玄天塔 · 寶箱整理")
         self._load_loot = loot
         self._loot: Loot | None = None
+        self._item_facts = None  # services.item_rules.load_item_facts, loaded on first use
         self._leave_game = leave_game
         self._navigator = navigator
         self._guard = guard
@@ -897,9 +900,9 @@ class TowerManager:
                 note=lambda phase, text: self._note(run, phase, text),
                 step=lambda text: self._set_step(run, text),
                 loot=self._loot,
-                keep=run.config.keep_potions,
                 supplies=frozenset(potion.hp_items) | frozenset(potion.mp_items),
                 store_trip=self._store_trip(pid, run) if self._supply is not None else None,
+                auto_use=lambda items: self._auto_use(pid, run, items),
             ).run()
         except _Done as done:
             self._note(run, "error", f"寶箱整理中斷：{done.reason}")
@@ -913,10 +916,8 @@ class TowerManager:
         parts = [f"開了 {opened} 個寶箱"] if opened else ["沒有寶箱可開"]
         if result.collected:
             parts.append("蒐藏 " + "、".join(loot.name(i) for i in result.collected))
-        if result.eaten:
-            parts.append(
-                "吃掉 " + "、".join(f"{loot.name(i)} ×{n}" for i, n in result.eaten.items())
-            )
+        if result.auto:
+            parts.append("設成自動使用 " + "、".join(loot.name(i) for i in result.auto))
         if result.stored:
             parts.append(f"存倉 {result.stored} 個")
         summary = "，".join(parts)
@@ -924,6 +925,28 @@ class TowerManager:
             self._note(run, "error", f"寶箱整理停下：{result.problem}（{summary}）")
         else:
             self._note(run, "confirmed", f"寶箱整理完成：{summary}")
+
+    def _auto_use(self, pid: int, run: _Run, items: list[int]) -> list[int]:
+        """道具處置 自動使用 (use_periodic) for these box potions, where the item
+        allows it and the user set no rule of their own; the running guard
+        picks the rules up at once."""
+        if self._item_facts is None:
+            self._item_facts = load_item_facts()
+        rules = self._store.load_items(run.name)
+        new: dict[int, ItemRule] = {}
+        for item_id in items:
+            fact = self._item_facts(item_id)
+            if fact is None or USE_PERIODIC not in fact.actions:
+                continue
+            old = rules.items.get(item_id)
+            if old is not None and old.action != KEEP:
+                continue
+            new[item_id] = ItemRule(action=USE_PERIODIC)
+        if new:
+            saved = rules.model_copy(update={"items": {**rules.items, **new}})
+            if self._guard.set_items(pid, saved) is None:
+                self._store.save_items(run.name, saved)
+        return list(new)
 
     def _store_trip(self, pid: int, run: _Run):
         def trip(want: dict[int, int]):

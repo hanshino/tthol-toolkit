@@ -1,7 +1,7 @@
 import pytest
 
 from services._paths import bundled
-from services.box_tidy import BAG_SLOTS, BoxTidy, Loot, bag_view, load_loot, to_eat, to_store
+from services.box_tidy import BAG_SLOTS, BoxTidy, Loot, bag_view, load_loot, to_store
 
 BOX_A, BOX_B = 31620, 31621  # 歲星寶箱, 鎮星寶箱
 HELMET, BOOK, PILL, HEAL, CHARM = 23292, 50001, 28150, 24008, 26966
@@ -24,6 +24,7 @@ class FakeGame:
         self.store_room = store_room
         self.sent = []
         self.trips = []
+        self.auto_calls = []
 
     def counts(self):
         out = {}
@@ -59,6 +60,10 @@ class FakeGame:
                 self.give(*self.drops.pop(0))
         return {"ok": True}
 
+    def set_auto(self, items):
+        self.auto_calls.append(list(items))
+        return [i for i in items if i != HEAL]  # HEAL: the user has a rule of their own
+
     def trip(self, want):
         self.trips.append(dict(want))
         stored = 0
@@ -78,7 +83,7 @@ class FakeGame:
         return r
 
 
-def tidy(game, keep=50, supplies=frozenset(), store=True):
+def tidy(game, supplies=frozenset(), store=True, auto=True):
     notes = []
     t = BoxTidy(
         cmd=game.cmd,
@@ -87,9 +92,9 @@ def tidy(game, keep=50, supplies=frozenset(), store=True):
         note=lambda phase, text: notes.append((phase, text)),
         step=lambda text: None,
         loot=LOOT,
-        keep=keep,
         supplies=supplies,
         store_trip=game.trip if store else None,
+        auto_use=game.set_auto if auto else None,
     )
     return t.run(), notes
 
@@ -114,12 +119,6 @@ def test_the_db_sorts_box_loot_into_eat_and_store():
 # ---- pure parts --------------------------------------------------------------
 
 
-def test_to_eat_keeps_the_keep_and_never_a_whitelisted_potion():
-    bag = {PILL: 80, HEAL: 300, HELMET: 1}
-    assert to_eat(bag, LOOT, 50, frozenset()) == [(HEAL, 250), (PILL, 30)]
-    assert to_eat(bag, LOOT, 50, frozenset({HEAL})) == [(PILL, 30)]
-
-
 def test_to_store_takes_only_box_loot():
     assert to_store({HELMET: 1, BOOK: 2, 99999: 5, PILL: 9}, LOOT) == {HELMET: 1, BOOK: 2}
 
@@ -133,20 +132,27 @@ def test_bag_view_counts_stacks_and_items():
 # ---- a tidy ------------------------------------------------------------------
 
 
-def test_opens_every_box_eats_the_extra_and_stores_the_rest():
+def test_opens_every_box_sets_potions_to_auto_use_and_stores_the_rest():
     game = FakeGame(
-        [[BOX_A, 2], [BOX_B, 1], [PILL, 45]],
+        [[BOX_A, 2], [BOX_B, 1], [PILL, 45], [HEAL, 9]],
         drops=[(HELMET, 1), (PILL, 10), (BOOK, 1)],
     )
-    result, notes = tidy(game)
+    result, notes = tidy(game, supplies=frozenset())
     assert result.opened == {BOX_A: 2, BOX_B: 1}
     assert result.got == {HELMET: 1, PILL: 10, BOOK: 1}
-    assert result.eaten == {PILL: 5}  # 55 -> 50
+    assert not any(line == f"use {PILL}" for line in game.sent)  # nothing eaten
+    assert game.auto_calls == [[HEAL, PILL]] and result.auto == [PILL]
+    assert ("confirmed", "行囊設成自動使用（守護戰鬥時用）：賞善寧心符") in notes
     assert game.trips == [{HELMET: 1, BOOK: 1}]
     assert result.stored == 2 and result.boxes_left == 0 and result.problem is None
-    assert game.counts() == {PILL: 50}
+    assert game.counts() == {PILL: 55, HEAL: 9}
     assert result.collected == {}  # no collection commands on this hook
-    assert ("confirmed", "開歲星寶箱：聖曦頭盔 ×1") in notes
+
+
+def test_a_supply_potion_is_never_set_to_auto_use():
+    game = FakeGame([[BOX_A, 1], [PILL, 5]], drops=[(HELMET, 1)])
+    result, _notes = tidy(game, supplies=frozenset({PILL}))
+    assert game.auto_calls == [] and result.auto == []
 
 
 def test_a_full_bag_stores_and_opens_the_rest():
@@ -176,14 +182,6 @@ def test_a_box_that_does_not_open_stops():
     assert ("error", "開歲星寶箱沒有反應") in notes
 
 
-def test_a_potion_that_will_not_go_down_is_left():
-    game = FakeGame([[PILL, 60]], stuck={PILL})
-    result, notes = tidy(game)
-    assert result.eaten == {} and result.problem is None
-    assert ("unconfirmed", "賞善寧心符 吃不下了，先留著") in notes
-    assert game.sent.count(f"use {PILL}") == 1  # one try, not ten
-
-
 def test_without_a_supply_module_the_loot_stays():
     game = FakeGame([[BOX_A, 1]], drops=[(HELMET, 1)])
     result, notes = tidy(game, store=False)
@@ -198,16 +196,6 @@ def test_even_the_last_box_waits_for_a_free_slot():
     assert "use 31620" not in game.sent
     assert result.opened == {} and result.boxes_left == 1
     assert "背包滿了" in result.problem
-
-
-def test_a_round_of_only_potions_still_goes_on_while_a_slot_is_free():
-    # keep=0: the eaten potions free their slots, nothing is stored, and the
-    # boxes left still open in the next round.
-    filler = [[90000 + i, 1] for i in range(BAG_SLOTS - 2)]
-    game = FakeGame(filler + [[BOX_A, 3]], drops=[(PILL, 10)] * 3)
-    result, _notes = tidy(game, keep=0, store=False)
-    assert result.opened == {BOX_A: 3} and result.boxes_left == 0
-    assert result.problem is None and result.eaten == {PILL: 30}
 
 
 class LateLootGame(FakeGame):
