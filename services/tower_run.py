@@ -235,6 +235,7 @@ class _Run:
         self.potions_at = -POTION_EVERY  # clock of the last potion count
         self.start_since: float | None = None  # clock we got to the 關 start
         self.navigated = False  # walked to 玄天之境 from elsewhere (once a run)
+        self.supplied = False  # 補給 ran (or was skipped) before the first floor
         self.skip_tried = False  # 狐光靈珠 skips looked at (once a run, before entering)
         self.moving = False  # the navigator is walking us to 玄天之境
         self.user_stop = False  # stop() was called (the 日常 tab or the queue)
@@ -260,7 +261,11 @@ class TowerManager:
         leave_game: Callable[[int], bool] = leave_game,
         navigator=None,  # services.navigator.Navigator: walks to 玄天之境 from elsewhere
         hook_caps: HookCaps | None = None,  # shared with the other modules
+        supply=None,  # services.supply.SupplyManager: a 補給 trip before each run
     ) -> None:
+        self._supply = supply
+        if supply is not None:
+            supply.add_host("神武玄天塔 · 出發前")
         self._leave_game = leave_game
         self._navigator = navigator
         self._guard = guard
@@ -744,6 +749,12 @@ class TowerManager:
         if stage is None:
             return WAIT_MAP
         stage_id, stage_name = stage
+        if not run.supplied:
+            run.supplied = True
+            if self._supply is not None and self._tower(stage_id) is None:
+                # Not mid-climb: a run starts here.
+                self._resupply(pid, run)
+                return WAIT_MAP
         if stage_id == LOBBY_STAGE:
             if run.cleared:
                 raise _Done("被送出塔：等級不夠進下一層，或已經是最後一關", complete=True)
@@ -763,6 +774,32 @@ class TowerManager:
             return self._at_start(pid, run, tower)
         run.start_since = None
         return self._room_tick(pid, run, tower, st, tile, objs)
+
+    def _resupply(self, pid: int, run: _Run) -> None:
+        """補給 before the climb, every run (user, 2026-10-07): sell, store, buy."""
+        self._set_step(run, "補給")
+        self._note(run, "info", "出發前先補給")
+        with run.lock:
+            run.moving = True
+        try:
+            result = self._supply.run(
+                pid, run.stop, note=lambda text: self._set_step(run, text), host="神武玄天塔"
+            )
+        finally:
+            with run.lock:
+                run.moving = False
+        if result.reason == "stopped":
+            raise _Done("已停止")
+        if result.reason == "nothing":
+            return
+        if result.reason == "short":
+            raise _Done(f"補給沒補齊：{result.detail}", "error")
+        if not result.ok:
+            # A failed trip (no shop reachable, an old hook) does not block the
+            # climb: the potion floors still guard it.
+            self._note(run, "error", f"補給沒完成，照常登塔：{result.detail}")
+            return
+        self._note(run, "confirmed", f"補給完成：{result.detail}")
 
     def _go_to_lobby(self, pid: int, run: _Run, stage_name: str) -> float:
         """Started somewhere else: walk to 玄天之境 once, before any floor."""

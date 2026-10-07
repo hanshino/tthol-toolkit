@@ -73,6 +73,9 @@ COST_DOOR = 0.2
 STEP_ON = 2  # map_events.event_kind of zones that fire when walked into
 REGION_SNAP = 4  # exit zones sit on blocked edge cells: look this far for walkable ground
 CALL_MSG = (12, 42)  # actions that continue in a message
+# action: open a shop, a0 = shops.id. Unnamed in op_defs; 85 of the 89 shops are
+# some A5's a0 (2026-10-07), and the speakers are the shopkeepers.
+OPEN_SHOP = 5
 MAX_DEPTH = 14  # menu -> fare choice -> pay -> ride -> warp runs 7-8 deep
 
 
@@ -296,6 +299,29 @@ class _Script:
         jump = self.t.jump.get(msg_id)
         if jump and not out:
             out += self.warps_from_msg(jump, depth + 1, seen)
+        return out
+
+    def shops_from_msg(
+        self, msg_id: int, depth: int = 0, seen: frozenset[int] = frozenset()
+    ) -> list[int]:
+        """shops.id the message opens (A5) for this character, through its options."""
+        if depth > MAX_DEPTH or msg_id in seen:
+            return []
+        seen = seen | {msg_id}
+        triggers = self.t.msg_triggers.get(msg_id)
+        if triggers:
+            acts = self._first(triggers) or []
+            for op, _neg, a0, _a1 in acts:
+                if op == OPEN_SHOP and a0:
+                    return [a0]
+                if op in CALL_MSG and a0:
+                    return self.shops_from_msg(a0, depth + 1, seen)
+        out: list[int] = []
+        for jump in self.t.options.get(msg_id, []):
+            out += self.shops_from_msg(jump, depth + 1, seen)
+        jump = self.t.jump.get(msg_id)
+        if jump and not out:
+            out += self.shops_from_msg(jump, depth + 1, seen)
         return out
 
     def _run(
