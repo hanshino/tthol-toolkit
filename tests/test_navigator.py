@@ -640,3 +640,37 @@ def test_a_stuck_warehouse_flag_does_not_stop_the_walk():
     game = StuckFlagGame(CHENGDU, (47, 168), {zone: (12, 13)})
     result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
     assert result.ok, result
+
+
+class LateDoorGame(FakeGame):
+    """A door that sends us through one read after we reach it: the walk has
+    already read "arrived" (live 2026-10-08, 杭州城 bank (36, 107) -> (29, 3))."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.pending = None
+
+    def _step(self):
+        if self.pending is not None:
+            self.pos, self.pending = self.pending, None
+            return
+        if self.target is None:
+            return
+        x, y = self.pos
+        tx, ty = self.target
+        self.pos = (x + max(-2, min(2, tx - x)), y + max(-2, min(2, ty - y)))
+        for zone, land in self.zones.items():
+            if max(abs(self.pos[0] - zone[0]), abs(self.pos[1] - zone[1])) <= 1:
+                self.pending, self.target = land, None
+                return
+
+
+def test_a_door_that_fires_just_after_the_walk_arrives_counts_as_taken():
+    zone, _t = door_into_bank()
+    game = LateDoorGame(CHENGDU, (47, 168), {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result
+    walks_to_door = [
+        line for line in game.sent if line == f"walk {zone[0] * 40 + 20} {zone[1] * 40 + 20}"
+    ]
+    assert len(walks_to_door) == 1  # taken the first time, no back-off and retry

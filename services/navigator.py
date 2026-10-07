@@ -592,12 +592,32 @@ class _Run:
         a few tiles, a random way the next time, and walk in again (the user's
         way: step off, then click back)."""
         for n in range(DOOR_TRIES):
+            before = self.me()
             r = self.walk_to(at, here, slack=0, zone=True, cells=cells)
-            if r in ("map", "jump") or self.jumped(self.me(), DOOR_WAIT if n == 0 else MAP_WAIT):
+            # The door often fires the moment the walk reads "arrived": by the
+            # next read we are already through (live 2026-10-08, 杭州城 bank
+            # (36, 107) -> (29, 3)), so compare with where the walk started.
+            if r in ("map", "jump") or self.went_through(here, before, at):
+                return True
+            if self.jumped(self.me(), DOOR_WAIT if n == 0 else MAP_WAIT):
                 return True
             if n + 1 < DOOR_TRIES and not self.back_off(cells, here, shuffle=n > 0):
                 run_log.note("navigator", self.pid, None, f"no tile to back off to from {at}")
         return False
+
+    def went_through(self, here: int, before: Tile | None, door: Tile) -> bool:
+        """Are we past the door already: on another map, in another space of
+        this one than where the walk started, or (no space data) far off the door."""
+        stage = self.stage()
+        if stage is not None and stage != here:
+            return True
+        now = self.me()
+        if now is None:
+            return False
+        a, b = self.region(here, before), self.region(here, now)
+        if a is not None and b is not None:
+            return a != b
+        return math.dist(door, now) > JUMP
 
     def back_off(self, cells: tuple[Tile, ...], stage: int, shuffle: bool = False) -> bool:
         """Walk a few tiles off the zone, so the next walk steps into it."""
