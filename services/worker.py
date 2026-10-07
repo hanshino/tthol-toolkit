@@ -3,7 +3,8 @@
 States:
     DISCONNECTED  - process not found
     CONNECTING    - process found, scanning for character struct
-    WAITING       - process found but character not yet located (waiting for login)
+    WAITING       - process found but character not yet located (waiting for login;
+                    at the login / select screens it waits there without a limit)
     LOCATED       - polling every 3s from known address; position every 0.1s
     READ_ERROR    - validation failed 3x, triggers rescan
     RESCANNING    - re-running locate_character
@@ -51,6 +52,7 @@ from reader import (
 )
 from services import diagnostics
 from services.api_types import EquipSlot
+from services.login_screen import PRE_GAME, screen_kind
 from services.equip_stats import enhance_bonus, enhance_extra, inlays, to_stats
 from services.diag_events import ErrorCode
 from services.map_db import all_stage_names, minimap_base, stage_names_by_id
@@ -75,6 +77,18 @@ QUICK_RETRIES = 4
 # A lock outside a CCharObject is provisional (seen: a look-alike block found
 # while the client was still logging in); look for the real one this often.
 PROVISIONAL_RECHECK_EVERY = 5  # polls (~15 s)
+# At the login / character select / protection password screens there is no
+# character to find: watch the screen this often instead of scanning, without
+# spending the locate retries.
+SCREEN_POLL_INTERVAL = 1.0
+# Right after a character switch the CCharObject shows up 5-15 s after the
+# look-alike block, so the first polls of a provisional lock all look for it.
+PROVISIONAL_FAST_POLLS = 6  # polls (~18 s)
+
+
+def _provisional_recheck_due(map_tick: int) -> bool:
+    """Whether this poll of a provisional lock looks for the CCharObject."""
+    return map_tick <= PROVISIONAL_FAST_POLLS or map_tick % PROVISIONAL_RECHECK_EVERY == 0
 
 
 class RelocateWindow:
@@ -286,7 +300,7 @@ class ReaderWorker(threading.Thread):
 
         self._log.info("located character at 0x%08X (compat=%s)", hp_addr, self._compat_mode)
         self._cb_state("LOCATED")
-        char_name = read_character_name(pm, hp_addr)
+        char_name = self._lock_name(pm, hp_addr)
         failure_count = 0
         map_name = ""
         stage_id = None
@@ -338,7 +352,7 @@ class ReaderWorker(threading.Thread):
                             "re-acquired at 0x%08X (compat=%s)", hp_addr, self._compat_mode
                         )
                         self._cb_state("LOCATED")
-                        char_name = read_character_name(pm, hp_addr)
+                        char_name = self._lock_name(pm, hp_addr)
                         failure_count = 0
                         map_name = ""
                         stage_id = None
@@ -354,17 +368,20 @@ class ReaderWorker(threading.Thread):
                         stage_id = None
                         map_name = locate_map_name(pm, valid_names=self._stage_names)
                     map_tick += 1
-                    if not self._lock_is_obj and map_tick % PROVISIONAL_RECHECK_EVERY == 0:
+                    if not self._lock_is_obj and _provisional_recheck_due(map_tick):
                         better = self._find_char_object(pm, hp_addr)
                         if better is not None:
                             hp_addr = better
-                            char_name = read_character_name(pm, hp_addr)
+                            char_name = self._lock_name(pm, hp_addr)
                             self._log.info(
                                 "moved provisional lock to CCharObject at 0x%08X",
                                 hp_addr,
                                 extra={"cat": "locate"},
                             )
                             continue
+                    if not char_name and map_tick > PROVISIONAL_FAST_POLLS:
+                        # No CCharObject turned up: take the provisional lock as is.
+                        char_name = read_character_name(pm, hp_addr)
                     # HP comes straight from the engine charobject pointer chain
                     # (no scan): authoritative and independent of the flat-struct
                     # lock, so it stays correct even if the scan locked a wrong
@@ -385,7 +402,11 @@ class ReaderWorker(threading.Thread):
                     self._cb_buffs(
                         [(g, self._status_db.get(g, f"group {g}"), kind) for g, kind in statuses]
                     )
-                    self._auto_read_items(pm, hp_addr)
+                    # A provisional lock publishes no name, so the session still
+                    # carries the previous character's: reads from the look-alike
+                    # block would be filed under it.
+                    if self._lock_is_obj or map_tick > PROVISIONAL_FAST_POLLS:
+                        self._auto_read_items(pm, hp_addr)
 
             except Exception as exc:
                 failure_count += 1
@@ -403,7 +424,7 @@ class ReaderWorker(threading.Thread):
                         return
                     self._log.info("re-acquired at 0x%08X (compat=%s)", hp_addr, self._compat_mode)
                     self._cb_state("LOCATED")
-                    char_name = read_character_name(pm, hp_addr)
+                    char_name = self._lock_name(pm, hp_addr)
                     failure_count = 0
                     map_name = ""
                     stage_id = None
@@ -426,7 +447,7 @@ class ReaderWorker(threading.Thread):
                     extra={"cat": "locate"},
                 )
                 self._cb_state("LOCATED")
-                char_name = read_character_name(pm, hp_addr)
+                char_name = self._lock_name(pm, hp_addr)
                 failure_count = 0
                 map_name = ""
                 stage_id = None
@@ -462,11 +483,31 @@ class ReaderWorker(threading.Thread):
         the new one is not yet valid. Retrying a bounded number of times lets a
         moved struct self-heal, without spinning forever for a genuinely
         logged-out character (recovery past the bound is via the UI 重偵 button).
+        At the login / select / protection screens nothing is scanned and no
+        retry is spent: the screen is watched until the game shows, so logging
+        in later needs no 重偵 (a disconnect box still reads as in game).
         Emits `waiting_state` after the first miss. Returns the address or None.
         `quick` shortens the first few waits, for a relocate known to be due to
         a map change (the new struct appears once the map has loaded).
         """
-        for attempt in range(LOCATE_MAX_RETRIES + 1):
+        attempt = 0
+        pre_game = False
+        while attempt <= LOCATE_MAX_RETRIES:
+            kind = screen_kind(pm)
+            if kind in PRE_GAME:
+                if not pre_game:
+                    pre_game = True
+                    self._log.info(
+                        "at the %s screen; waiting for the game", kind, extra={"cat": "locate"}
+                    )
+                    self._cb_state(waiting_state)
+                attempt = 0  # the retries are for after entering the game
+                if self._stop_event.wait(SCREEN_POLL_INTERVAL):
+                    return None
+                continue
+            if pre_game:
+                pre_game = False
+                self._log.info("left the pre-game screens (%s)", kind, extra={"cat": "locate"})
             addr = self._locate(pm, silent=True)
             if addr is not None:
                 self._lock_is_obj = is_char_object(pm, addr)
@@ -483,6 +524,7 @@ class ReaderWorker(threading.Thread):
                 self._cb_state(waiting_state)
             quick_wait = quick and attempt < QUICK_RETRIES
             self._stop_event.wait(QUICK_RETRY_INTERVAL if quick_wait else LOCATE_RETRY_INTERVAL)
+            attempt += 1
         self._report_locate_exhausted(pm)
         return None
 
@@ -558,6 +600,17 @@ class ReaderWorker(threading.Thread):
         fields = self._knowledge["character_structure"]["fields"]
         verify = verify_structure_shifted if self._compat_mode else verify_structure
         return verify(pm, hp_addr, fields)
+
+    def _lock_name(self, pm, hp_addr: int) -> str:
+        """The character name, or "" while the lock is provisional.
+
+        The look-alike block a provisional lock sits in holds garbage where the
+        name goes (";w9w", "2", live 2026-10-06/07). Publishing it reported a
+        switch to that "character" and saved settings under it; with "" the
+        session keeps the previous name until the CCharObject lock is found
+        (or PROVISIONAL_FAST_POLLS pass without one).
+        """
+        return read_character_name(pm, hp_addr) if self._lock_is_obj else ""
 
     def _find_char_object(self, pm, current: int) -> int | None:
         """A CCharObject lock for the character, if one now exists and differs from `current`."""
