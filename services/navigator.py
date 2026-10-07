@@ -364,8 +364,8 @@ class _Run:
             if step.touch and self.touch_zone(step.at, here):
                 return
             cells = step.cells or (step.at,)
-            for _ in range(EXIT_TRIES):
-                r = self.walk_to(step.at, here, slack=0, zone=True, cells=cells)
+            for n in range(EXIT_TRIES):
+                r = self.walk_to(step.at, here, slack=0, zone=True, cells=cells, early=n > 0)
                 if r == "map":
                     return  # the exit, or another one on the way: the next plan sorts it out
                 if r == "jump":
@@ -524,8 +524,14 @@ class _Run:
 
         start = self.me()  # so a zone on the very first steps still reads as a jump
         self._trace(start)
-        armed = zone and (early or close(start))
-        self.map_events(armed)
+        # Close to the zone already: leave the switch as the game has it (user,
+        # 2026-10-08; a closepanel or a click left it on). Farther: off for the
+        # way, on near the zone. A walk back in after backing off turns it on.
+        if zone and close(start) and not early:
+            armed = True
+        else:
+            armed = zone and early
+            self.map_events(armed)
         line = f"walk {tile[0] * TILE_PX + TILE_PX // 2} {tile[1] * TILE_PX + TILE_PX // 2}"
         space = src if src is not None else self.stage()
         for _ in range(WALK_TRIES):

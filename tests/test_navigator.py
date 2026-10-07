@@ -517,7 +517,7 @@ def exit_step(dst):
 def test_an_exit_is_armed_before_its_edge_not_its_middle():
     # From the left the edge (19, 2) is 2 tiles nearer than the middle: armed
     # by the middle, the character stood on the edge with the switch off.
-    game = ExitGame(HANGZHOU, (15, 2), EXIT_CELLS, dst=1)
+    game = ExitGame(HANGZHOU, (9, 2), EXIT_CELLS, dst=1)
     run = _Run(exit_nav(game), 1, None, lambda t: None)
     run.take(exit_step(1), HANGZHOU)
     assert game.stage == 1 and game.fired_off == []
@@ -531,12 +531,22 @@ def test_an_exit_stood_on_is_backed_off_and_walked_into():
     assert game.sent.count("mapevents 0") >= 1  # the back-off walk had it off
 
 
-def test_a_zone_walk_starting_close_is_armed_at_once():
+def test_a_zone_walk_starting_close_leaves_the_switch_alone():
+    # Close to the zone: no switching at all, the game's state stands (user,
+    # 2026-10-08); here it is on, as a click or a closepanel leaves it.
     game = ExitGame(HANGZHOU, (17, 2), EXIT_CELLS, dst=1)
+    game.events = 1
     run = _Run(exit_nav(game), 1, None, lambda t: None)
     run.walk_to((21, 2), HANGZHOU, slack=0, zone=True, cells=EXIT_CELLS)
-    assert game.sent[: game.sent.index("mapevents 1") + 1].count("mapevents 0") == 0
+    assert not any(line.startswith("mapevents") for line in game.sent)
     assert game.stage == 1
+
+
+def test_close_with_the_switch_off_the_walk_back_in_turns_it_on():
+    game = ExitGame(HANGZHOU, (17, 2), EXIT_CELLS, dst=1)  # switch off (a panel cleared it)
+    run = _Run(exit_nav(game), 1, None, lambda t: None)
+    run.take(exit_step(1), HANGZHOU)
+    assert game.stage == 1 and "mapevents 1" in game.sent
 
 
 def test_backing_off_an_exit_at_the_map_edge_stays_on_the_map():
