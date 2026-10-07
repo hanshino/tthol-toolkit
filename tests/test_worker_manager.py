@@ -187,3 +187,41 @@ def test_family_is_asked_once_per_login_where_the_hook_has_it(
     wm.world_snapshot()
     wm.world_snapshot()  # a new name is trusted on its second read
     assert asked == [7, 7]  # a new login on the window
+
+
+@patch("services.worker_manager.find_tthol_processes")
+def test_a_snapshot_during_rescan_makes_no_second_session(mock_find):
+    """rescan used to pop the session and add the new one later; a snapshot in
+    between started a session of its own that rescan then overwrote, and its
+    worker ran on unowned (live 2026-10-07, pid 2716: one more per login)."""
+    mock_find.return_value = [{"pid": 4242}]
+    wm = WorkerManager()
+    made = []
+
+    class Sess:
+        last_hp = None
+        name = None
+        link = "weak"
+        last_error = None
+
+        def __init__(self, pid):
+            made.append(self)
+            self.stopped = False
+            if len(made) == 2:  # rescan is building its new session: a snapshot lands
+                wm.world_snapshot()
+
+        def start(self, hp=None, compat_mode=False):
+            pass
+
+        def stop(self):
+            self.stopped = True
+
+        def row(self):
+            return None
+
+    with patch("services.worker_manager.CharSession", Sess):
+        wm.world_snapshot()  # the first session
+        wm.rescan(4242)
+    assert len(made) == 2
+    assert made[0].stopped and not made[1].stopped
+    assert wm._sessions[4242] is made[1]
