@@ -34,9 +34,10 @@ import random
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from services import route_plan as rp
+from services import run_log
 from services.hook_cmd import NoReply, PipeBusy, PipeGone
 
 log = logging.getLogger("tthol.navigator")
@@ -155,6 +156,15 @@ class Navigator:
             return NavResult(False, s.reason, s.detail, stage, tile)
 
 
+@dataclass
+class _Trail:
+    """One walk, for the run record."""
+
+    t0: float
+    path: list = field(default_factory=list)
+    events: list = field(default_factory=list)
+
+
 class _Run:
     def __init__(self, nav: Navigator, pid: int, stop, note) -> None:
         self.nav = nav
@@ -168,6 +178,7 @@ class _Run:
         self.names = rp._tables().stages
         self.zero_hp_at: float | None = None  # clock HP first read 0 (see DEATH_CONFIRM)
         self.events_ok = True  # the hook has `mapevents` (an older one does not)
+        self._trail: _Trail | None = None  # the walk in progress, for the run record
 
     # -- plumbing ----------------------------------------------------------------
 
@@ -285,6 +296,16 @@ class _Run:
                 return NavResult(True, "arrived", f"抵達{self.name(dest)}", stage, tile)
             step = route.steps[0]
             self.note(self.describe(step))
+            run_log.note(
+                "navigator",
+                self.pid,
+                None,
+                f"step {step.kind} at {step.at} to {self.name(step.dst)}",
+                stage=here,
+                pos=pos,
+                cells=list(step.cells),
+                route=[[s.kind, s.at, s.dst] for s in route.steps],
+            )
             try:
                 self.take(step, here)
             except _Replan:
@@ -418,6 +439,10 @@ class _Run:
         if not self.events_ok:
             return
         r = self.cmd(f"mapevents {1 if on else 0}")
+        if self._trail is not None:
+            self._trail.events.append(
+                [round(self.nav._clock() - self._trail.t0, 1), int(on), bool(r.get("ok"))]
+            )
         if not r.get("ok"):
             # An older hook without the command: zones fire as the switch is.
             self.events_ok = False
@@ -454,6 +479,36 @@ class _Run:
         zone: bool = False,
         cells: tuple[Tile, ...] = (),
     ) -> str:
+        """_walk_to, written to the run record: where it started, the cells it
+        went through, when map events were switched, and how it ended."""
+        trail = self._trail = _Trail(self.nav._clock())
+        result = "stopped"
+        try:
+            result = self._walk_to(tile, src, slack, zone, cells)
+            return result
+        finally:
+            self._trail = None
+            run_log.note(
+                "navigator",
+                self.pid,
+                None,
+                f"walk to {tile}: {result}",
+                stage=src,
+                zone=zone,
+                cells=list(cells) if zone else None,
+                secs=round(self.nav._clock() - trail.t0, 1),
+                path=trail.path,  # [seconds, x, y] each time the cell changed
+                events=trail.events,  # [seconds, on, hook ok]
+            )
+
+    def _walk_to(
+        self,
+        tile: Tile,
+        src: int | None,
+        slack: int = ARRIVE_SLACK,
+        zone: bool = False,
+        cells: tuple[Tile, ...] = (),
+    ) -> str:
         """arrived / jump (teleported on this map) / map (the stage changed) / stuck.
         The target is clicked again every few seconds, and at once when the walk stalls.
 
@@ -467,6 +522,7 @@ class _Run:
             return pos is not None and min(math.dist(pos, c) for c in zone_cells) <= ARM_TILES
 
         start = self.me()  # so a zone on the very first steps still reads as a jump
+        self._trace(start)
         # Already that close: the first steps may reach the zone before a read.
         armed = zone and close(start)
         self.map_events(armed)
@@ -485,6 +541,7 @@ class _Run:
             if src is not None and self.stage() not in (src, None):
                 return "map"
             pos = self.me()
+            self._trace(pos)
             if zone and not armed and close(pos):
                 armed = True
                 self.map_events(True)
@@ -517,6 +574,11 @@ class _Run:
             if self.nav._clock() >= reclick:
                 reclick = self.nav._clock() + self.nav._rng.uniform(*RECLICK)
         return "stuck"
+
+    def _trace(self, pos: Tile | None) -> None:
+        t = self._trail
+        if t is not None and pos is not None and (not t.path or tuple(t.path[-1][1:]) != pos):
+            t.path.append([round(self.nav._clock() - t.t0, 1), pos[0], pos[1]])
 
     def reach(self, goal: Tile) -> bool:
         """Onto `goal` (within ARRIVE_SLACK); a "jump" right after a door is a stale read."""
@@ -576,9 +638,13 @@ class _Run:
         for _ in range(int(timeout / 0.3)):
             p = self.me()
             if self.teleported(space, last, p):
+                run_log.note("navigator", self.pid, None, f"jumped {last} -> {p}", stage=space)
                 return True
             last = p or last
             self.wait(0.3)
+        run_log.note(
+            "navigator", self.pid, None, f"no jump in {timeout:g}s, at {last}", stage=space
+        )
         return False
 
     def wait_map(self, src: int, timeout: float) -> int | None:
