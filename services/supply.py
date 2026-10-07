@@ -55,6 +55,7 @@ from services.api_types import (
 from services.guard import load_pet_items, read_holdings, read_stage_id
 from services.hook_cmd import NoReply, PipeBusy, PipeGone
 from services.item_rules import SELL, STORE, ItemFact
+from services.market_survey import MARKET_STAGE_IDS
 
 log = logging.getLogger("tthol.supply")
 
@@ -328,6 +329,15 @@ def pick_stop(
         if best is None or c < best[1]:
             best = (rank, c, npc, covered)
     return (best[2], best[3]) if best else None
+
+
+# A stop on a 市集 map counts one map farther: the stalls crowd it (user,
+# 2026-10-08: in 成都, 成都太城's shop rather than 成都市集's).
+MARKET_COST = 1.0
+
+
+def crowd(point: SupplyPoint) -> float:
+    return MARKET_COST if point.stage in MARKET_STAGE_IDS else 0.0
 
 
 # ---- a trip ------------------------------------------------------------------
@@ -852,7 +862,7 @@ class SupplyManager:
             first = rp.plan(graph, here, keeper.stage, None, keeper.tile)
             if first is None:
                 continue
-            cost = first.cost
+            cost = first.cost + crowd(keeper)
             if shop is not None and shop.stage != keeper.stage:
                 then = rp.plan(graph, keeper.stage, shop.stage, keeper.tile, shop.tile)
                 if then is None:
@@ -867,7 +877,7 @@ class SupplyManager:
 
         def cost(point: SupplyPoint) -> float | None:
             route = rp.plan(graph, here, point.stage, None, point.tile)
-            return None if route is None else route.cost
+            return None if route is None else route.cost + crowd(point)
 
         def shops_of(point: SupplyPoint) -> frozenset[int]:
             shop = market.shop_of(point)

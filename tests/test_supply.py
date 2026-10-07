@@ -151,6 +151,13 @@ def test_pick_stop_prefers_a_shop_in_town_over_a_cheaper_ride():
     assert pick(lambda n: None if n.npc_id == 1 else costs[n.npc_id]) == (away, {POTION, SCROLL})
 
 
+def test_a_market_map_counts_one_map_farther():
+    # 成都市集 is crowded with stalls: 成都太城's shop wins (user, 2026-10-08).
+    market = next(p for p in sp.POINTS if p.kind == "general" and p.stage == 173)
+    town = next(p for p in sp.POINTS if p.kind == "general" and p.stage == 54)
+    assert sp.crowd(market) == sp.MARKET_COST and sp.crowd(town) == 0.0
+
+
 # ---- a trip -------------------------------------------------------------------
 
 
