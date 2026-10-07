@@ -377,3 +377,33 @@ def test_walk_stops_when_the_hook_cannot_close_the_window():
     run = _run(game)
     with pytest.raises(_Stop, match="關不掉"):
         run.ensure_free()
+
+
+class StepInGame(FakeGame):
+    """A door that fires only when the character steps into its ring from
+    outside: standing beside it at the start does nothing (杭州城, live)."""
+
+    def _step(self):
+        before = self.pos
+        if self.target is None:
+            return
+        x, y = self.pos
+        tx, ty = self.target
+        self.pos = (x + max(-2, min(2, tx - x)), y + max(-2, min(2, ty - y)))
+        for zone, land in self.zones.items():
+
+            def near(p, z=zone):
+                return max(abs(p[0] - z[0]), abs(p[1] - z[1])) <= 1
+
+            if near(self.pos) and not near(before):
+                self.pos, self.target = land, None
+                return
+
+
+def test_a_door_started_beside_is_walked_into_again():
+    zone, _t = door_into_bank()
+    start = (zone[0] + 1, zone[1] + 1)  # already one tile off the door
+    game = StepInGame(CHENGDU, start, {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result
+    assert math.dist(result.tile, BANK_CLERK) <= 2

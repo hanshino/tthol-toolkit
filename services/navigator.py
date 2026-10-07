@@ -71,6 +71,8 @@ SETTLE = 1.5  # after a map change, before reading `near` again
 # HP 0 this long in a row is a death. A map load reads 0 for a moment (live
 # 2026-10-07: 聖火狂狐 stopped as dead entering 探幽曲徑 at full health).
 DEATH_CONFIRM = 3.0
+DOOR_WAIT = 3.0  # a door walked onto teleports at once; longer means we stopped beside it
+AWAY_MIN, AWAY_MAX = 3, 4  # tiles to back off from a door that did not fire
 FREE_TRIES = 12  # reads (0.3 s apart) to get a window or dialog out of the way before a walk
 
 
@@ -316,8 +318,17 @@ class _Run:
             if step.touch and self.touch_zone(step.at, here):
                 return
             r = self.walk_to(step.at, here, slack=0)
-            if r == "map" or r == "jump" or self.jumped(self.me()):
+            if r == "map" or r == "jump" or self.jumped(self.me(), DOOR_WAIT):
                 return
+            # Started next to the zone: "one off" counts as arrived, but the
+            # zone fires only on stepping in (live 2026-10-07, 杭州城 (36, 107)).
+            # Back off a few tiles and walk in again.
+            away = self.step_away(step.at, here)
+            if away is not None:
+                self.walk_to(away, here, slack=0)
+                r = self.walk_to(step.at, here, slack=0)
+                if r == "map" or r == "jump" or self.jumped(self.me()):
+                    return
             raise _Stop("stuck", f"傳點 {step.at} 沒有傳送")
         if step.kind == "walk":
             if step.touch and self.touch_zone(step.at, here):
@@ -473,12 +484,32 @@ class _Run:
             return ra != rb
         return math.dist(a, b) > JUMP
 
-    def jumped(self, before: Tile | None) -> bool:
+    def step_away(self, zone: Tile, stage: int) -> Tile | None:
+        """A walkable tile in our own space, AWAY_MIN..AWAY_MAX from `zone`."""
+        pos = self.me()
+        if pos is None:
+            return None
+        mine = self.region(stage, pos)
+        best: tuple[float, Tile] | None = None
+        for dx in range(-AWAY_MAX, AWAY_MAX + 1):
+            for dy in range(-AWAY_MAX, AWAY_MAX + 1):
+                t = (pos[0] + dx, pos[1] + dy)
+                gap = max(abs(t[0] - zone[0]), abs(t[1] - zone[1]))
+                if not AWAY_MIN <= gap <= AWAY_MAX:
+                    continue
+                if mine is not None and self.region(stage, t) != mine:
+                    continue
+                d = math.dist(pos, t)
+                if best is None or d < best[0]:
+                    best = (d, t)
+        return best[1] if best else None
+
+    def jumped(self, before: Tile | None, timeout: float = MAP_WAIT) -> bool:
         """Wait for a teleport on this map: a jump between two reads (walking is
         2 tiles a poll at most; a door moves us across the map)."""
         last = before
         space = self.stage()
-        for _ in range(int(MAP_WAIT / 0.3)):
+        for _ in range(int(timeout / 0.3)):
             p = self.me()
             if self.teleported(space, last, p):
                 return True
