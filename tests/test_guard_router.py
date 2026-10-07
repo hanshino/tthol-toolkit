@@ -47,7 +47,7 @@ async def test_config_round_trip(client):
             "refill_summon": False,
             "refill_qty": 50,
         },
-        "buff": {"skills": [713], "hero": True, "travel": True},
+        "buff": {"skills": [713], "hero": True, "travel": True, "love": True},
     }
     resp = await client.put("/api/characters/1/guard/config", json=cfg)
     assert resp.status_code == 200

@@ -84,7 +84,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
               {t.k === 'damage' && <DamageTab pid={char.pid} active={tab === 'damage'} />}
               {t.k === 'assist' && (
                 <div style={{ display: 'grid', gap: 14 }}>
-                  <GuardPanel pid={char.pid} active={tab === 'assist'} />
+                  <GuardPanel pid={char.pid} active={tab === 'assist'} canLove={can(char, 'love')} />
                   <SupplyPanel pid={char.pid} active={tab === 'assist'} />
                   {can(char, 'handoff') && <HandoffPanel pid={char.pid} active={tab === 'assist'} />}
                   <AutoClickTab pid={char.pid} />

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import sqlite3
 import struct
@@ -47,7 +48,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from reader import read_inventory, read_pet_inventory, read_skills, read_stage
+from reader import read_inventory, read_pet_inventory, read_skills, read_stage, scan_nearby
 from services._paths import app_root, bundled
 from services.api_types import (
     BuffInfo,
@@ -74,6 +75,7 @@ from services.item_rules import (
 )
 from services import run_log
 from services.hook_caps import FEATURES, HookCaps
+from services.nearby import PLAYER_NPC_IDS
 from services.hook_cmd import (
     CommandChannel,
     NoReply,
@@ -96,6 +98,16 @@ BUFF_COMMANDS = ("cast", "status")  # what keeping buffs up needs on top
 HERO_COMMANDS = ("hero",)  # what 自動變身 needs on top
 CAPS_RETRY = 2.0  # re-read a dropped manifest at most this often
 HERO_CODE = 30295  # 英雄無雙: the `buffs` code of a hero transform
+# 把愛傳出去: `love <h>` sends 0x4A with the target's key and the server takes
+# one heart from the bag (tthol-hook b3438fa, live 2026-10-08: 3 -> 2, own
+# charm +1). One comes an hour, 3 or 6 at most, so a full bag wastes them.
+LOVE_ITEM = 25098
+LOVE_COMMANDS = ("love",)
+LOVE_GAP = 2.0  # between two hearts
+LOVE_LOOK = 2.0  # no player on screen: look again after this long (a memory scan)
+LOVE_CONFIRM = 5.0  # for the bag to show the heart gone
+LOVE_SKIP = 600.0  # a player whose heart never left the bag is passed over this long
+LOVE_TRIES = 3  # hearts in a row that never leave the bag before resting
 # 趕路 buff (無名島), cast in this order while a module walks the character:
 # 疾風身法 speeds the walk; 黯影 hides it from monsters, but below Lv7 moving
 # ends it (magic.help). Casting any skill ends 黯影 too, so 疾風身法 goes
@@ -369,6 +381,27 @@ def load_pet_items(db_path: Path | None = None) -> frozenset[int]:
     finally:
         con.close()
     return frozenset(r[0] for r in rows)
+
+
+@dataclass(frozen=True)
+class Player:
+    handle: int
+    name: str | None
+    dist: float  # map pixels from the own character
+
+
+def read_players(pm, hp_addr, _compat_mode) -> list[Player] | None:
+    """Other players on screen, nearest first (the sprite table, ~25 ms)."""
+    objects = scan_nearby(pm, hp_addr)
+    me = next((o for o in objects if o.is_self), None)
+    if me is None:
+        return None
+    out = [
+        Player(o.handle, o.name, math.hypot(o.px - me.px, o.py - me.py))
+        for o in objects
+        if o.npc_id in PLAYER_NPC_IDS and not o.is_self
+    ]
+    return sorted(out, key=lambda p: p.dist)
 
 
 def read_stage_id(pm, _hp_addr, _compat_mode) -> tuple[int, str] | None:
@@ -897,6 +930,13 @@ class _Run:
         self.refill_unsupported = False
         self.summon_noted: str | None = None  # why auto summon is off, noted once
         self.refills = 0
+        self.love_line: _LogLine | None = None  # the heart waiting to leave the bag
+        self.love_sent: tuple[int, int, float] | None = None  # (handle, bag before, clock)
+        self.love_next = 0.0  # clock before which no heart goes
+        self.love_skip: dict[int, float] = {}  # handle -> clock it is tried again
+        self.love_misses = 0
+        self.love_unsupported = False
+        self.loves = 0
         self.cure_state = CureState()
         self.cure_lines: dict[int, _LogLine] = {}  # status group -> its open cure line
         self.debuffs: tuple[int, ...] = ()
@@ -1282,7 +1322,7 @@ class GuardManager:
             entries = [line.entry(self._item_name) for line in run.log]
             problem, drinks, cures, debuffs = run.problem, run.drinks, run.cures, run.debuffs
             casts, uses, transforms = run.casts, run.uses, run.transforms
-            refills = run.refills
+            refills, loves = run.refills, run.loves
         return GuardStatus(
             running=running,
             hook_cmd=hook_cmd,
@@ -1294,6 +1334,7 @@ class GuardManager:
             uses=uses,
             transforms=transforms,
             refills=refills,
+            loves=loves,
             debuffs=[self._status_name(g) for g in dict.fromkeys(debuffs)] if running else [],
             log=entries[::-1],
             config=config,
@@ -1500,6 +1541,7 @@ class GuardManager:
                 elif run.config.buff.travel:
                     self._keep_buffs(pid, run, mp, now, travel=True)
                 self._keep_items(pid, run, bag, now)
+                self._give_love(pid, run, bag, now)
         except _Stop as stop:
             return stop.wait
         self._set_problem(run, None)
@@ -1956,6 +1998,68 @@ class GuardManager:
                 )
             elif tries > 1:
                 line.text = f"用 {name} ×{tries}"
+
+    def _give_love(self, pid: int, run: _Run, bag: dict[int, int], now: float) -> None:
+        """Give each 把愛傳出去 in the bag to the nearest player on screen
+        (anyone: user, 2026-10-08), one at a time, each confirmed by the bag."""
+        if not run.config.buff.love:
+            return
+        have = bag.get(LOVE_ITEM, 0)
+        if run.love_sent is not None:
+            handle, before, at = run.love_sent
+            if have < before:
+                with run.lock:
+                    run.loves += 1
+                    if run.love_line is not None:
+                        run.love_line.phase = "confirmed"
+                        run.love_line.text += f"（背包 {before} → {have}）"
+                run.love_sent, run.love_line, run.love_misses = None, None, 0
+                run.love_next = now + LOVE_GAP
+            elif now - at >= LOVE_CONFIRM:
+                run.love_skip[handle] = now + LOVE_SKIP
+                run.love_misses += 1
+                rest = run.love_misses >= LOVE_TRIES
+                with run.lock:
+                    if run.love_line is not None:
+                        run.love_line.phase = "unconfirmed"
+                        run.love_line.text += f"（{LOVE_CONFIRM:g} 秒內背包數量沒變）"
+                        if rest:
+                            run.love_line.text += f"，連續 {LOVE_TRIES} 次，{CAST_PAUSE:g} 秒後再試"
+                run.love_sent, run.love_line = None, None
+                if rest:
+                    run.love_misses = 0
+                    run.love_next = now + CAST_PAUSE
+            else:
+                return
+        if have <= 0 or now < run.love_next:
+            return
+        if not self._has_commands(pid, LOVE_COMMANDS):
+            if not run.love_unsupported:
+                run.love_unsupported = True
+                self._note(run, "error", "這個 hook 沒有把愛傳出去要用的指令：love", rule="love")
+            return
+        try:
+            players = self._read_locked(pid, read_players)
+        except Exception:
+            players = None
+        target = next((p for p in players or () if run.love_skip.get(p.handle, 0.0) <= now), None)
+        if target is None:
+            run.love_next = now + LOVE_LOOK
+            return
+        who = target.name or "附近玩家"
+        what = f"把愛傳出去給 {who}"
+        sent: list[bool] = []
+        if not self._send_cast(
+            pid, run, f"love {target.handle}", what, lambda: sent.append(True), rule="love"
+        ):
+            run.love_skip[target.handle] = now + LOVE_SKIP  # refused (gone, out of view)
+            run.love_next = now + LOVE_GAP
+            return
+        run.love_sent = (target.handle, have, now)
+        with run.lock:
+            run.next_id += 1
+            run.love_line = _LogLine(run.next_id, self._wall(), "love", "sent", what)
+            run.log.append(run.love_line)
 
     def _own_handle(self, pid: int, run: _Run, what: str) -> int | None:
         """The character's own handle for `cast`, from `status` (changes on a map change)."""

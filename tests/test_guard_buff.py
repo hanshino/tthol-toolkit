@@ -8,7 +8,13 @@ from services.guard import (
     CAST_PAUSE,
     CAST_TRIES,
     HERO_CODE,
+    LOVE_CONFIRM,
+    LOVE_GAP,
+    LOVE_ITEM,
+    LOVE_LOOK,
+    LOVE_TRIES,
     BuffState,
+    Player,
     GuardManager,
     GuardStore,
     Sample,
@@ -18,6 +24,7 @@ from services.guard import (
     newest_in_group,
     next_cast,
     read_learned,
+    read_players,
     read_stage_id,
     record_cast,
     settle_casts,
@@ -154,6 +161,7 @@ def make(
     hero=False,
     travel=False,
     learned=None,
+    love=False,
 ):
     clock = {"t": 100.0}
     store = GuardStore()
@@ -161,17 +169,20 @@ def make(
         "寒江孤影",
         GuardConfig(
             potion=GuardPotionRule(hp_items=[], mp_items=[]),
-            buff=GuardBuffRule(skills=skills, hero=hero, travel=travel),
+            buff=GuardBuffRule(skills=skills, hero=hero, travel=travel, love=love),
         ),
     )
-    state = {"buffs": buffs, "stage": (1, "莫愁谷入口")}
+    state = {"buffs": buffs, "stage": (1, "莫愁谷入口"), "bag": {}, "players": []}
 
     def read_locked(pid, fn):
         if fn is read_learned:
             return dict(learned or LEARNED)
         if fn is read_stage_id:
             return state["stage"]
-        return Sample(1000, 1000, mp, 6000, {})
+        if fn is read_players:
+            state["scans"] = state.get("scans", 0) + 1
+            return list(state["players"])
+        return Sample(1000, 1000, mp, 6000, dict(state["bag"]))
 
     mgr = GuardManager(
         read_locked=read_locked,
@@ -561,3 +572,125 @@ def test_stealth_off_casts_nothing_while_walking(tmp_path):
     with mgr.quiet(1):
         mgr._tick(1, run)
     assert casts(mgr) == []
+
+
+# ---- 把愛傳出去 --------------------------------------------------------------------
+
+LOVE_CAPS = ("use", "cast", "status", "love")
+NEAR, FAR = Player(501, "乖乖連羽", 40.0), Player(502, "路人甲", 300.0)
+
+
+def loves(mgr):
+    return [line for line in mgr._channel.sent if line.startswith("love")]
+
+
+def test_love_gives_each_heart_to_the_nearest_player_and_confirms(tmp_path):
+    mgr, run, clock, state = make(tmp_path, [], buffs=[], caps=LOVE_CAPS, love=True)
+    state["bag"], state["players"] = {LOVE_ITEM: 2}, [NEAR, FAR]
+    mgr._tick(1, run)
+    assert loves(mgr) == ["love 501"]
+    (line,) = [e for e in run.log if e.rule == "love"]
+    assert line.text == "把愛傳出去給 乖乖連羽" and line.phase == "sent"
+    clock["t"] += 0.5
+    mgr._tick(1, run)
+    assert loves(mgr) == ["love 501"]  # waits for the bag
+    state["bag"] = {LOVE_ITEM: 1}
+    mgr._tick(1, run)
+    assert line.phase == "confirmed" and line.text.endswith("（背包 2 → 1）")
+    assert run.loves == 1 and mgr.status(1).loves == 1
+    mgr._tick(1, run)
+    assert loves(mgr) == ["love 501"]  # the gap between two hearts
+    clock["t"] += LOVE_GAP
+    mgr._tick(1, run)
+    assert loves(mgr) == ["love 501", "love 501"]
+
+
+def test_love_off_by_default_needs_hearts_and_the_command(tmp_path):
+    mgr, run, _, state = make(tmp_path, [], buffs=[], caps=LOVE_CAPS)
+    state["bag"], state["players"] = {LOVE_ITEM: 3}, [NEAR]
+    mgr._tick(1, run)
+    assert loves(mgr) == []
+    mgr, run, _, state = make(tmp_path, [], buffs=[], caps=LOVE_CAPS, love=True)
+    state["players"] = [NEAR]
+    mgr._tick(1, run)
+    assert loves(mgr) == [] and state.get("scans", 0) == 0  # no heart: no scan either
+    mgr, run, _, state = make(tmp_path, [], buffs=[], love=True)  # hook without `love`
+    state["bag"], state["players"] = {LOVE_ITEM: 3}, [NEAR]
+    mgr._tick(1, run)
+    mgr._tick(1, run)
+    assert loves(mgr) == []
+    assert [e.text for e in run.log if e.rule == "love"] == [
+        "這個 hook 沒有把愛傳出去要用的指令：love"
+    ]
+
+
+def test_love_with_nobody_around_looks_again_later(tmp_path):
+    mgr, run, clock, state = make(tmp_path, [], buffs=[], caps=LOVE_CAPS, love=True)
+    state["bag"] = {LOVE_ITEM: 1}
+    mgr._tick(1, run)
+    mgr._tick(1, run)
+    assert loves(mgr) == [] and state["scans"] == 1  # one memory scan, not one a pass
+    state["players"] = [FAR]
+    clock["t"] += LOVE_LOOK
+    mgr._tick(1, run)
+    assert loves(mgr) == ["love 502"]
+
+
+def test_love_that_never_leaves_the_bag_passes_the_player_over_then_rests(tmp_path):
+    mgr, run, clock, state = make(tmp_path, [], buffs=[], caps=LOVE_CAPS, love=True)
+    state["bag"], state["players"] = {LOVE_ITEM: 3}, [NEAR, FAR]
+    mgr._tick(1, run)
+    clock["t"] += LOVE_CONFIRM
+    mgr._tick(1, run)  # not gone: 乖乖連羽 is passed over, 路人甲 next
+    assert loves(mgr) == ["love 501", "love 502"]
+    first = [e for e in run.log if e.rule == "love"][0]
+    assert first.phase == "unconfirmed"
+    clock["t"] += LOVE_CONFIRM
+    mgr._tick(1, run)  # both passed over now
+    assert loves(mgr) == ["love 501", "love 502"]
+    state["players"] = [NEAR, FAR, Player(503, None, 500.0)]
+    clock["t"] += LOVE_LOOK
+    mgr._tick(1, run)
+    assert loves(mgr)[-1] == "love 503"
+    clock["t"] += LOVE_CONFIRM
+    mgr._tick(1, run)  # the third miss in a row: rest
+    assert len(loves(mgr)) == LOVE_TRIES
+    last = [e for e in run.log if e.rule == "love"][-1]
+    assert last.text.startswith("把愛傳出去給 附近玩家") and "秒後再試" in last.text
+
+
+def test_refused_love_is_logged_and_the_player_passed_over(tmp_path):
+    class NoLove(FakeChannel):
+        def send(self, pid, line, priority=0):
+            if line.startswith("love"):
+                self.sent.append(line)
+                return {"ok": False, "error": "handle not found (gone, out of view or self)"}
+            return super().send(pid, line, priority)
+
+    mgr, run, clock, state = make(
+        tmp_path, [], buffs=[], channel=NoLove(), caps=LOVE_CAPS, love=True
+    )
+    state["bag"], state["players"] = {LOVE_ITEM: 1}, [NEAR, FAR]
+    mgr._tick(1, run)
+    clock["t"] += LOVE_GAP
+    mgr._tick(1, run)
+    assert loves(mgr) == ["love 501", "love 502"]
+    assert any(e.rule == "love" and "handle not found" in e.text for e in run.log)
+
+
+def test_read_players_lists_other_players_nearest_first(monkeypatch):
+    from reader import NearbyObject
+
+    def obj(h, npc_id, px, name=None, me=False):
+        return NearbyObject(h, npc_id, 1, px, 0, name, 0, 100, None, me)
+
+    objects = [
+        obj(1, 60004, 100, "我", me=True),
+        obj(2, 60002, 400, "遠"),
+        obj(3, 60007, 130, "近"),
+        obj(4, 5050, 101, "怪"),
+    ]
+    monkeypatch.setattr("services.guard.scan_nearby", lambda pm, a: objects)
+    assert [p.name for p in read_players(None, 0, False)] == ["近", "遠"]
+    monkeypatch.setattr("services.guard.scan_nearby", lambda pm, a: objects[1:])
+    assert read_players(None, 0, False) is None  # own object not found
