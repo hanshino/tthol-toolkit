@@ -47,6 +47,15 @@ class AttackSkill:
     mp: int
     area: bool
     gap_ms: int
+    # The skill's hit multiplier: the hit it lands with is the character's hit
+    # times this (user, 2026-10-07; 幽冥刺擊 LV20 = 1.25, most skills 0.8-0.95).
+    hit: float = 1.0
+
+
+def hit_rate(func_hit: int | None, p1: int | None) -> float:
+    """magic.func_hit 1 carries the hit percent in func_hit_p1 (its help text says
+    the same: 追加20%命中 = 120). Multi-hit skills (52) and the rest carry none."""
+    return p1 / 100 if func_hit == 1 and p1 else 1.0
 
 
 def load_attack_skills(db_path: Path | None = None) -> dict[tuple[int, int], AttackSkill]:
@@ -58,16 +67,20 @@ def load_attack_skills(db_path: Path | None = None) -> dict[tuple[int, int], Att
     con.text_factory = lambda b: b.decode("utf-8", errors="replace")
     try:
         rows = con.execute(
-            "SELECT id, level, name, target, spend_mp, recharge_time, stun FROM magic"
-            " WHERE target LIKE 'TARGET_ENEMY%'"
+            "SELECT id, level, name, target, spend_mp, recharge_time, stun, func_hit,"
+            " func_hit_p1 FROM magic WHERE target LIKE 'TARGET_ENEMY%'"
         ).fetchall()
     finally:
         con.close()
     return {
         (mid, level): AttackSkill(
-            name, mp or 0, target == "TARGET_ENEMYEX", (recharge or 0) + (stun or 0)
+            name,
+            mp or 0,
+            target == "TARGET_ENEMYEX",
+            (recharge or 0) + (stun or 0),
+            hit_rate(func_hit, p1),
         )
-        for mid, level, name, target, mp, recharge, stun in rows
+        for mid, level, name, target, mp, recharge, stun, func_hit, p1 in rows
     }
 
 

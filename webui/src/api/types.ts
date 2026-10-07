@@ -122,6 +122,7 @@ export type TowerConfig = S['TowerConfig'];
 export type TowerStatus = S['TowerStatus'];
 export type TowerView = S['TowerView'];
 export type TowerSettings = S['TowerSettings'];
+export type TowerAttackReach = S['TowerAttackReach'];
 export type TowerEstimate = S['TowerEstimate'];
 export type SupplyBuyable = S['SupplyBuyable'];
 export type SupplyConfig = S['SupplyConfig'];

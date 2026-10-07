@@ -690,6 +690,25 @@ def test_estimate_sets_the_stop_floor():
     assert mgr.view(1).config.stop_floor == 70
 
 
+def test_estimate_lists_each_attack_at_its_hit_rate():
+    from services.tower_run import read_hit_level
+
+    combat = CombatRule(basic=True, opener=751, rotation=[754, 999])  # 999 not learned
+    mgr, _, game, guard = make(combat=combat)
+    guard.missing_buffs = lambda pid: []
+    mgr._attack_skills = {
+        (751, 10): AttackSkill("劍盪千秋", 20, False, 400, 0.9),
+        (754, 15): AttackSkill("瞬影斬", 24, False, 0, 1.25),
+    }
+    real = mgr._read_locked
+    mgr._read_locked = lambda pid, fn: (1000, 150) if fn is read_hit_level else real(pid, fn)
+    mgr._gates = [0] * 70
+    est = mgr.estimate(1, apply=False)
+    assert [(a.name, a.rate, a.hit) for a in est.attacks][0] == ("瞬影斬", 1.25, 1250)
+    assert {a.name for a in est.attacks} == {"普攻", "劍盪千秋", "瞬影斬"}
+    assert est.max_floor == max(a.max_floor for a in est.attacks)
+
+
 def outside(mgr, game):
     """Stand in 成都少城, which is not a tower map."""
     game.stage = 53

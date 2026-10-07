@@ -264,6 +264,37 @@ class Reach:
     blocker: str | None  # why the next floor is out of reach, in user words
 
 
+@dataclass
+class AttackReach:
+    name: str
+    rate: float  # hit multiplier
+    hit: int  # the character's hit times rate
+    max_floor: int
+    blocker: str | None
+
+
+def attack_reach(
+    hit: int,
+    level: int,
+    stages: list[TowerStage],
+    gates: list[int],
+    attacks: list[tuple[str, float]],
+    ratio: float = HIT_RATIO,
+) -> tuple[Reach, list[AttackReach]]:
+    """Reach with each attack the character fights with ((name, hit multiplier)),
+    and overall: a floor is cleared while any one of them lands, so the best
+    hitting attack carries it (user, 2026-10-07); the others only slow it down.
+    No attacks: the bare hit, as before."""
+    if not attacks:
+        attacks = [("命中", 1.0)]
+    each = []
+    for name, rate in attacks:
+        r = estimate_reach(int(hit * rate), level, stages, gates, ratio)
+        each.append(AttackReach(name, rate, int(hit * rate), r.max_floor, r.blocker))
+    best = max(each, key=lambda a: (a.max_floor, a.rate))
+    return Reach(best.max_floor, best.blocker), each
+
+
 def estimate_reach(
     hit: int,
     level: int,

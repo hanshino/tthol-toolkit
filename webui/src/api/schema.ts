@@ -2087,7 +2087,7 @@ export interface components {
         CombatRule: {
             /**
              * Basic
-             * @default true
+             * @default false
              */
             basic: boolean;
             /** Opener */
@@ -4192,6 +4192,19 @@ export interface components {
              */
             status: components["schemas"]["SupplyStatus"];
         };
+        /** TowerAttackReach */
+        TowerAttackReach: {
+            /** Name */
+            name: string;
+            /** Rate */
+            rate: number;
+            /** Hit */
+            hit: number;
+            /** Max Floor */
+            max_floor: number;
+            /** Blocker */
+            blocker?: string | null;
+        };
         /**
          * TowerConfig
          * @description 神武玄天塔 module settings, per character name.
@@ -4244,6 +4257,11 @@ export interface components {
             max_floor: number;
             /** Blocker */
             blocker?: string | null;
+            /**
+             * Attacks
+             * @default []
+             */
+            attacks: components["schemas"]["TowerAttackReach"][];
             /** Missing Buffs */
             missing_buffs?: string[] | null;
             /**
@@ -4354,7 +4372,7 @@ export interface components {
             status: components["schemas"]["TowerStatus"];
             /**
              * @default {
-             *       "basic": true,
+             *       "basic": false,
              *       "rotation": [],
              *       "target": "nearest",
              *       "avoid_packs": false

@@ -31,6 +31,7 @@ from services.api_types import (
     TowerFloor,
     TowerLogEntry,
     TowerRecord,
+    TowerAttackReach,
     TowerEstimate,
     TowerSettings,
     TowerStatus,
@@ -74,7 +75,7 @@ from services.tower import (
     YAN_AVOID,
     YAN_WANT,
     TowerStage,
-    estimate_reach,
+    attack_reach,
     floor_gates,
     load_tower,
     pick_option,
@@ -462,7 +463,8 @@ class TowerManager:
         if self._gates is None:
             self._gates = floor_gates()
         stages = [self._tower(s) for s in sorted(set(FOX_STAGE.values()))]
-        reach = estimate_reach(hit, level, [s for s in stages if s], self._gates)
+        attacks = self._attacks(pid, name)
+        reach, each = attack_reach(hit, level, [s for s in stages if s], self._gates, attacks)
         missing = self._guard.missing_buffs(pid)
         applied = False
         if apply and reach.max_floor > 0:
@@ -481,9 +483,33 @@ class TowerManager:
             level=level,
             max_floor=reach.max_floor,
             blocker=reach.blocker,
+            attacks=[
+                TowerAttackReach(
+                    name=a.name, rate=a.rate, hit=a.hit, max_floor=a.max_floor, blocker=a.blocker
+                )
+                for a in sorted(each, key=lambda a: (-a.max_floor, -a.rate))
+            ]
+            if attacks
+            else [],
             missing_buffs=missing,
             applied=applied,
         )
+
+    def _attacks(self, pid: int, name: str) -> list[tuple[str, float]]:
+        """(name, hit multiplier) of each attack the combat settings use, at the
+        learned level; a skill not learned is left out."""
+        combat = self._store.load_section(name, COMBAT_SECTION, CombatRule)
+        try:
+            learned = self._read_locked(pid, read_learned) or {}
+        except Exception:
+            learned = {}
+        out: list[tuple[str, float]] = [("普攻", 1.0)] if combat.basic else []
+        for mid in [combat.opener, *combat.rotation]:
+            level = learned.get(mid) if mid else None
+            skill = self._defs().get((mid, level)) if level else None
+            if skill is not None and all(n != skill.name for n, _ in out):
+                out.append((skill.name, skill.hit))
+        return out
 
     # -- 日常 module (services/daily.py) ----------------------------------------
 
