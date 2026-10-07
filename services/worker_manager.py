@@ -38,6 +38,11 @@ class WorkerManager:
         family=None,
     ) -> None:
         self._sessions: dict[int, CharSession] = {}
+        # Every create / replace / drop of a session. rescan used to pop the old
+        # one and add the new one later; a snapshot in between made a session of
+        # its own that rescan then overwrote, and that worker ran on unowned (live
+        # 2026-10-07: one more worker per dispatch login, each logging the same).
+        self._sessions_lock = threading.RLock()
         self._db = snapshot_db
         self._autoclick = autoclick_manager
         self._hook = hook_hub
@@ -201,15 +206,14 @@ class WorkerManager:
         procs = find_tthol_processes()
         live_pids = {p["pid"] for p in procs}
 
-        for pid in live_pids:
-            sess = self._sessions.get(pid)
-            if sess is None:
-                sess = CharSession(pid)
-                self._sessions[pid] = sess
-                sess.start()
-
-        for dead_pid in list(self._sessions.keys() - live_pids):
-            self._sessions.pop(dead_pid).stop()
+        with self._sessions_lock:
+            for pid in live_pids:
+                if self._sessions.get(pid) is None:
+                    sess = CharSession(pid)
+                    self._sessions[pid] = sess
+                    sess.start()
+            for dead_pid in list(self._sessions.keys() - live_pids):
+                self._sessions.pop(dead_pid).stop()
 
         self._keep_active_default(live_pids)
         self._watch_names(live_pids)
@@ -237,10 +241,11 @@ class WorkerManager:
         return WorldSnapshot(chars=rows, server_ts=time.time())
 
     def character_detail(self, pid: int) -> CharacterDetail:
-        sess = self._sessions.get(pid)
-        if sess is None:
-            sess = CharSession(pid)
-            self._sessions[pid] = sess
+        with self._sessions_lock:
+            sess = self._sessions.get(pid)
+            if sess is None:
+                sess = CharSession(pid)
+                self._sessions[pid] = sess
         return self._with_hook_buffs(pid, sess.detail())
 
     def _with_hook_buffs(self, pid: int, model):
@@ -253,15 +258,17 @@ class WorkerManager:
         return model.model_copy(update={"buffs": merge_buffs(hooked, model.buffs)})
 
     def connect(self, pid: int, body: ConnectRequest) -> ConnectResult:
-        sess = self._sessions.get(pid)
-        if sess is None:
-            sess = CharSession(pid)
-            self._sessions[pid] = sess
-        sess.start(hp=body.hp, compat_mode=body.options.compat_mode)
+        with self._sessions_lock:
+            sess = self._sessions.get(pid)
+            if sess is None:
+                sess = CharSession(pid)
+                self._sessions[pid] = sess
+            sess.start(hp=body.hp, compat_mode=body.options.compat_mode)
         return ConnectResult(ok=True)
 
     def disconnect(self, pid: int) -> None:
-        sess = self._sessions.pop(pid, None)
+        with self._sessions_lock:
+            sess = self._sessions.pop(pid, None)
         if sess:
             sess.stop()
 
@@ -311,13 +318,14 @@ class WorkerManager:
         return list(sess._latest_wh) if sess else []
 
     def relocate(self, pid: int, hp: int) -> ConnectResult:
-        sess = self._sessions.get(pid)
-        if sess is None:
-            return ConnectResult(ok=False, error="No session for pid")
-        sess.stop()
-        new_sess = CharSession(pid)
-        new_sess.start(hp=hp)
-        self._sessions[pid] = new_sess
+        with self._sessions_lock:
+            sess = self._sessions.get(pid)
+            if sess is None:
+                return ConnectResult(ok=False, error="No session for pid")
+            sess.stop()
+            new_sess = CharSession(pid)
+            new_sess.start(hp=hp)
+            self._sessions[pid] = new_sess
         return ConnectResult(ok=True)
 
     def rescan(self, pid: int) -> ConnectResult:
@@ -330,17 +338,19 @@ class WorkerManager:
         live_pids = {p["pid"] for p in find_tthol_processes()}
         if pid not in live_pids:
             return ConnectResult(ok=False, error="Process not running")
-        old = self._sessions.pop(pid, None)
-        hp = None
-        if old is not None:
-            hp = old.last_hp
-            old.stop()
-        new_sess = CharSession(pid)
-        self._sessions[pid] = new_sess
-        # Carry the manual HP over: when the pointer chain has gone stale it is
-        # the only input that can locate, and dropping it made 重偵 a button
-        # that could never succeed.
-        new_sess.start(hp=hp)
+        # Replaced in one step (see _sessions_lock): never a moment with none.
+        with self._sessions_lock:
+            old = self._sessions.get(pid)
+            hp = None
+            if old is not None:
+                hp = old.last_hp
+                old.stop()
+            new_sess = CharSession(pid)
+            self._sessions[pid] = new_sess
+            # Carry the manual HP over: when the pointer chain has gone stale it
+            # is the only input that can locate, and dropping it made 重偵 a
+            # button that could never succeed.
+            new_sess.start(hp=hp)
         return ConnectResult(ok=True)
 
     def focus(self, pid: int) -> None:

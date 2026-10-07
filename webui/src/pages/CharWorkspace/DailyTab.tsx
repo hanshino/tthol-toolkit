@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, put } from '../../api/client';
-import type { AttackSkillCandidate, CombatRule, DailyQueueItem, DailyView, GuardStartResult, TowerConfig, TowerEstimate, TowerStatus, TowerView } from '../../api/types';
+import type { AttackSkillCandidate, CombatRule, DailyQueueItem, DailyView, GuardStartResult, TowerAttackReach, TowerConfig, TowerEstimate, TowerStatus, TowerView } from '../../api/types';
 import { reportClientError } from '../../diag/report';
 import './guard.css';
 import './daily.css';
@@ -35,6 +35,7 @@ export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
   const [estimating, setEstimating] = useState(false);
   const [estimateText, setEstimateText] = useState<string | null>(null);
   const [estimateWarn, setEstimateWarn] = useState(false);
+  const [estimateAttacks, setEstimateAttacks] = useState<TowerAttackReach[]>([]);
   const dirty = useRef(false);
   const saveTimer = useRef<number | null>(null);
 
@@ -97,18 +98,23 @@ export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
       if (!r.ok) {
         setEstimateText(r.reason ?? '估算不出來');
         setEstimateWarn(true);
+        setEstimateAttacks([]);
         return;
       }
+      setEstimateAttacks(r.attacks ?? []);
       const why = r.blocker ? `（${r.blocker}）` : '';
       const buffs = r.missing_buffs == null
         ? '　讀不到 buff 清單，無法確認 buff 是否上滿。'
         : r.missing_buffs.length
           ? `　還沒上的 buff：${r.missing_buffs.join('、')}，上滿後命中可能更高，建議補完再估一次。`
           : '';
+      // The best hitting attack carries the climb; with none set, the bare hit.
+      const best = r.attacks?.[0];
+      const by = best ? `用${best.name}（命中 ${r.hit} × ${Math.round(best.rate * 100)}% = ${best.hit}）` : `依目前命中 ${r.hit}`;
       setEstimateText(
         r.max_floor > 0
-          ? `依目前命中 ${r.hit}（LV${r.level}），預估可打到第 ${r.max_floor} 層${why}${r.applied ? '，已設為停止層。' : '。'}${buffs}`
-          : `依目前命中 ${r.hit}（LV${r.level}），第 1 層就可能打不贏${why}。${buffs}`,
+          ? `${by}（LV${r.level}），預估可打到第 ${r.max_floor} 層${why}${r.applied ? '，已設為停止層。' : '。'}${buffs}`
+          : `${by}（LV${r.level}），第 1 層就可能打不贏${why}。${buffs}`,
       );
       setEstimateWarn(!!r.missing_buffs?.length || r.max_floor === 0);
       dirty.current = false;
@@ -190,7 +196,23 @@ export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
             依目前命中估算
           </button>
         </div>
-        {estimateText && <div className={`dl-estimate${estimateWarn ? ' is-warn' : ''}`} role="status">{estimateText}</div>}
+        {estimateText && (
+          <div className={`dl-estimate${estimateWarn ? ' is-warn' : ''}`} role="status">
+            {estimateText}
+            {estimateAttacks.length > 1 && (
+              <ul className="dl-attacks">
+                {estimateAttacks.map(a => (
+                  <li key={a.name}>
+                    <span>{a.name}</span>
+                    <span className="dl-dim">命中 ×{Math.round(a.rate * 100)}% = {a.hit}</span>
+                    <span>{a.max_floor > 0 ? `到第 ${a.max_floor} 層` : '第 1 層就打不中'}</span>
+                    {a.blocker && <span className="dl-dim">{a.blocker}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <div className="dl-row dl-skip">
           <label htmlFor="dl-skip">狐光靈珠</label>
           <select id="dl-skip" className="dl-select" value={settings.config.skip_to ?? ''}

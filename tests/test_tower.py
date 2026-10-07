@@ -79,3 +79,47 @@ def test_reach_stops_at_the_first_floor_out_of_reach():
     r = estimate_reach(300, 200, [s], [0] * 70)
     assert r.max_floor == 3 and r.blocker == "第 4 層 怪4 迴避 500，命中不夠"
     assert estimate_reach(600, 200, [s], [0] * 70).max_floor == 10
+
+
+def test_the_best_hitting_attack_carries_the_climb():
+    from services.tower import ROOMS, TowerStage, attack_reach
+
+    rooms = range(1, ROOMS + 1)
+    dodges = [100, 100, 100, 500, 100, 100, 100, 100, 100, 100]
+    s = TowerStage(
+        stage_id=1704,
+        starts={r: (r, 0) for r in rooms},
+        exits={r: [(r, 1)] for r in rooms},
+        monsters={r: frozenset({170400 + r}) for r in rooms},
+        expect={r: 1 for r in rooms},
+        npc_dodge={170400 + r: d for r, d in zip(rooms, dodges)},
+        npc_name={170400 + r: f"怪{r}" for r in rooms},
+    )
+    # hit 420: 普攻 stops at floor 4 (dodge 500); 幽冥刺擊 x1.25 lands 525.
+    reach, each = attack_reach(420, 200, [s], [0] * 70, [("普攻", 1.0), ("幽冥刺擊", 1.25)])
+    assert reach.max_floor == 10 and reach.blocker is None
+    by = {a.name: a for a in each}
+    assert by["幽冥刺擊"].hit == 525 and by["普攻"].max_floor == 3
+    # A 0.9 skill alone does worse than the bare hit would: hit 540 -> 486.
+    low, _ = attack_reach(540, 200, [s], [0] * 70, [("穿雲箭", 0.9)])
+    assert low.max_floor == 3 and "迴避 500" in low.blocker
+    # No attack set: the bare hit, as before.
+    bare, each = attack_reach(540, 200, [s], [0] * 70, [])
+    assert bare.max_floor == 10 and each[0].rate == 1.0
+
+
+def test_hit_rate_from_the_magic_columns():
+    from services.combat import hit_rate
+
+    assert hit_rate(1, 125) == 1.25
+    assert hit_rate(1, 95) == 0.95
+    assert hit_rate(52, None) == 1.0  # multi-hit (落英繽紛): no multiplier
+    assert hit_rate(None, None) == 1.0
+
+
+@needs_db
+def test_skill_hit_rates_load_from_the_db():
+    from services.combat import load_attack_skills
+
+    skills = load_attack_skills()
+    assert skills[(722, 20)].hit == 1.25 and skills[(722, 1)].hit == 1.2  # 幽冥刺擊

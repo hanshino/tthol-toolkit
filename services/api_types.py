@@ -479,6 +479,7 @@ class DispatchWindow(_Base):
     step: str | None = None
     done: int = 0
     problem: str | None = None  # why it took no (more) work
+    active: bool = False  # its thread is working the queue
 
 
 class DispatchStatus(_Base):
@@ -487,6 +488,10 @@ class DispatchStatus(_Base):
     started_at: float | None = None
     rows: list[DispatchRow] = []
     windows: list[DispatchWindow] = []
+
+
+class MarkDoneRequest(_Base):
+    done: bool = True  # False: take a mark (or a finished run) back
 
 
 class DispatchRequest(_Base):
@@ -1272,6 +1277,14 @@ class TowerStatus(_Base):
     log: list[TowerLogEntry] = []
 
 
+class TowerAttackReach(_Base):
+    name: str  # 普攻, or the skill
+    rate: float  # hit multiplier (幽冥刺擊 LV20: 1.25)
+    hit: int  # the character's hit times rate
+    max_floor: int
+    blocker: str | None = None
+
+
 class TowerEstimate(_Base):
     """How far the character is expected to climb with its current hit."""
 
@@ -1279,8 +1292,11 @@ class TowerEstimate(_Base):
     reason: str | None = None  # why there is no estimate
     hit: int = 0
     level: int = 0
-    max_floor: int = 0
+    max_floor: int = 0  # with the best hitting attack
     blocker: str | None = None
+    # Each attack it fights with (普攻, opener, rotation), best first; empty when
+    # none is set and the bare hit was used.
+    attacks: list[TowerAttackReach] = []
     missing_buffs: list[str] | None = None  # ticked buffs not on now (None: unknown)
     applied: bool = False  # written into stop_floor
 

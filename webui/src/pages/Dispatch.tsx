@@ -43,6 +43,7 @@ export function Dispatch() {
   const [editing, setEditing] = useState<LoginEntry | null>(null);
   const [transfer, setTransfer] = useState<'export' | 'import' | null>(null);
   const [busy, setBusy] = useState(false);
+  const [joining, setJoining] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const loadPlan = useCallback(() => {
@@ -108,6 +109,23 @@ export function Dispatch() {
     }
   };
 
+  // A window opened after the start joins the running dispatch.
+  const join = async (pid: number) => {
+    setJoining(pid);
+    setMessage(null);
+    try {
+      const r = await post<GuardStartResult>(`/api/dispatch/windows/${pid}`);
+      if (!r.ok) setMessage(r.reason ?? '加不進派發');
+      loadStatus();
+      loadPlan();
+    } catch (e) {
+      setMessage(`加不進派發：${describeError(e)}`);
+      reportClientError(e, { component: 'Dispatch.join' });
+    } finally {
+      setJoining(null);
+    }
+  };
+
   const stop = async () => {
     setBusy(true);
     try {
@@ -134,6 +152,18 @@ export function Dispatch() {
     }
   };
 
+  // 標記今日完成: finished outside the toolkit (in game, another PC). Works
+  // during a dispatch too: a queued character marked done is not logged in.
+  const markDone = async (entry: LoginEntry, done: boolean) => {
+    try {
+      await put(`/api/logins/${encodeURIComponent(entry.character)}/done`, { done });
+      loadPlan();
+    } catch (e) {
+      setMessage(`標記失敗：${describeError(e)}`);
+      reportClientError(e, { component: 'Dispatch.markDone' });
+    }
+  };
+
   const remove = async (entry: LoginEntry) => {
     if (!window.confirm(`把 ${entry.character} 從自動登入移除？帳密會一起刪掉。`)) return;
     try {
@@ -146,6 +176,12 @@ export function Dispatch() {
   };
 
   const canStart = !running && !busy && chosen.size > 0 && chosenWindows.size > 0;
+  const working = new Set((status?.windows ?? []).filter(w => w.active).map(w => w.pid));
+  // Who a joining window would run: rows still queued or running, and the
+  // ones skipped only because that window held their account (join reopens them).
+  const willRun = (pid: number, name: string) => (status?.rows ?? []).some(r => r.character === name && (
+    ['pending', 'login', 'running'].includes(r.state)
+    || (r.state === 'skipped' && (r.reason ?? '').includes(`pid ${pid}`))));
 
   return (
     <div className="dp">
@@ -174,10 +210,25 @@ export function Dispatch() {
                     <span className="dp-dim">pid {w.pid}</span>
                     {w.problem
                       ? <span className="dp-why">{w.problem}</span>
-                      : w.name && (chosen.has(w.name)
-                        ? <span className="dp-dim">先跑這隻，不用重新登入</span>
-                        : <span className="dp-why">不在這次名單，勾了會被登出</span>)}
+                      : running
+                        ? (working.has(w.pid)
+                          ? <span className="dp-dim">派發中</span>
+                          : w.name && (willRun(w.pid, w.name)
+                            ? <span className="dp-dim">加入後先跑這隻</span>
+                            : <span className="dp-why">不在這次名單，加入會被登出</span>))
+                        : w.name && (chosen.has(w.name)
+                          ? <span className="dp-dim">先跑這隻，不用重新登入</span>
+                          : <span className="dp-why">不在這次名單，勾了會被登出</span>)}
                   </label>
+                  {running && !w.problem && !working.has(w.pid) && (
+                    <button
+                      type="button" className="dp-join" onClick={() => join(w.pid)}
+                      disabled={joining !== null}
+                      title="這個視窗也從排隊中的角色接著跑"
+                    >
+                      {joining === w.pid ? '加入中…' : '加入派發'}
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -234,6 +285,21 @@ export function Dispatch() {
                     <td>
                       <span className={`dp-chip dp-${v.tone}`}>{v.text}</span>
                       {c.reason && c.verdict !== 'run' && <span className="dp-why">{c.reason}</span>}
+                      {c.verdict === 'done' ? (
+                        <button
+                          type="button" className="dp-link dp-mark" onClick={() => markDone(e, false)}
+                          title="今天其實還沒做完：派發會再登入這隻"
+                        >
+                          取消完成
+                        </button>
+                      ) : c.verdict !== 'no-login' && (
+                        <button
+                          type="button" className="dp-link dp-mark" onClick={() => markDone(e, true)}
+                          title="在遊戲裡或別台電腦做完了：今天派發跳過這隻"
+                        >
+                          標記完成
+                        </button>
+                      )}
                     </td>
                     <td className="dp-dim">{e.has_protect ? '有' : '—'}</td>
                     <td className="dp-ops">
@@ -269,7 +335,8 @@ export function Dispatch() {
           {message && <span className="dp-msg" role="alert">{message}</span>}
         </div>
         <p className="dp-dim dp-foot">
-          停止後不再派新的角色，正在跑的角色停在原地，不會被登出。同一個帳號同時只會在一個視窗登入。
+          停止後不再派新的角色；正在跑的日常會繼續跑完，角色留在原地，不會被登出。同一個帳號同時只會在一個視窗登入。
+          派發中多開的視窗，按視窗旁的「加入派發」幫忙消化。
         </p>
       </Panel>
 

@@ -18,6 +18,7 @@ from services.api_types import (
     LoginForm,
     LoginImportRequest,
     LoginImportResult,
+    MarkDoneRequest,
     OkResponse,
 )
 from services.login_screen import KNOWN_SERVERS
@@ -131,6 +132,17 @@ async def hook_packets(pid: int, request: Request) -> HookPackets:
     )
 
 
+@router.put("/api/logins/{character}/done", response_model=OkResponse)
+async def mark_done(character: str, body: MarkDoneRequest, request: Request) -> OkResponse:
+    """標記今日完成: the character's 日常 was finished outside the toolkit."""
+    daily = request.app.state.services.get("daily_manager")
+    if daily is None:
+        raise HTTPException(status_code=503, detail="daily queue unavailable")
+    if not daily.mark_done(character, body.done):
+        raise HTTPException(status_code=409, detail="日常清單是空的")
+    return OkResponse(ok=True)
+
+
 @router.get("/api/dispatch/plan", response_model=DispatchPlan)
 async def dispatch_plan(request: Request) -> DispatchPlan:
     mgr = _dispatch(request)
@@ -153,6 +165,16 @@ async def dispatch_start(body: DispatchRequest, request: Request) -> GuardStartR
     if mgr is None:
         return GuardStartResult(ok=False, reason="派發未啟用")
     ok, reason = mgr.start(body.characters, body.pids, dry_run=body.dry_run)
+    return GuardStartResult(ok=ok, reason=reason)
+
+
+@router.post("/api/dispatch/windows/{pid}", response_model=GuardStartResult)
+async def dispatch_join(pid: int, request: Request) -> GuardStartResult:
+    """加入派發: a window opened after the start takes from the same queue."""
+    mgr = _dispatch(request)
+    if mgr is None:
+        return GuardStartResult(ok=False, reason="派發未啟用")
+    ok, reason = mgr.join(pid)
     return GuardStartResult(ok=ok, reason=reason)
 
 

@@ -995,6 +995,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/logins/{character}/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark Done
+         * @description 標記今日完成: the character's 日常 was finished outside the toolkit.
+         */
+        put: operations["mark_done_api_logins__character__done_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dispatch/plan": {
         parameters: {
             query?: never;
@@ -1024,6 +1044,26 @@ export interface paths {
         put?: never;
         /** Dispatch Start */
         post: operations["dispatch_start_api_dispatch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dispatch/windows/{pid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dispatch Join
+         * @description 加入派發: a window opened after the start takes from the same queue.
+         */
+        post: operations["dispatch_join_api_dispatch_windows__pid__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2087,7 +2127,7 @@ export interface components {
         CombatRule: {
             /**
              * Basic
-             * @default true
+             * @default false
              */
             basic: boolean;
             /** Opener */
@@ -2617,6 +2657,11 @@ export interface components {
             done: number;
             /** Problem */
             problem?: string | null;
+            /**
+             * Active
+             * @default false
+             */
+            active: boolean;
         };
         /** DispatchWindowOption */
         DispatchWindowOption: {
@@ -3300,6 +3345,14 @@ export interface components {
             dst_name?: string | null;
             /** Dst Tag */
             dst_tag?: number | null;
+        };
+        /** MarkDoneRequest */
+        MarkDoneRequest: {
+            /**
+             * Done
+             * @default true
+             */
+            done: boolean;
         };
         /** MarketCurrentStall */
         MarketCurrentStall: {
@@ -4192,6 +4245,19 @@ export interface components {
              */
             status: components["schemas"]["SupplyStatus"];
         };
+        /** TowerAttackReach */
+        TowerAttackReach: {
+            /** Name */
+            name: string;
+            /** Rate */
+            rate: number;
+            /** Hit */
+            hit: number;
+            /** Max Floor */
+            max_floor: number;
+            /** Blocker */
+            blocker?: string | null;
+        };
         /**
          * TowerConfig
          * @description 神武玄天塔 module settings, per character name.
@@ -4244,6 +4310,11 @@ export interface components {
             max_floor: number;
             /** Blocker */
             blocker?: string | null;
+            /**
+             * Attacks
+             * @default []
+             */
+            attacks: components["schemas"]["TowerAttackReach"][];
             /** Missing Buffs */
             missing_buffs?: string[] | null;
             /**
@@ -4354,7 +4425,7 @@ export interface components {
             status: components["schemas"]["TowerStatus"];
             /**
              * @default {
-             *       "basic": true,
+             *       "basic": false,
              *       "rotation": [],
              *       "target": "nearest",
              *       "avoid_packs": false
@@ -6371,6 +6442,41 @@ export interface operations {
             };
         };
     };
+    mark_done_api_logins__character__done_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                character: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkDoneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dispatch_plan_api_dispatch_plan_get: {
         parameters: {
             query?: never;
@@ -6423,6 +6529,37 @@ export interface operations {
                 "application/json": components["schemas"]["DispatchRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dispatch_join_api_dispatch_windows__pid__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

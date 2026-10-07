@@ -47,6 +47,8 @@ class DailyModule(Protocol):
     # By character name, with no game: the batch dispatch asks before a login.
     def done_for(self, name: str) -> bool: ...
     def config_problem(self, name: str) -> str | None: ...
+    # By hand: finished outside the toolkit (in game, another PC), or undone.
+    def mark_done(self, name: str, done: bool) -> None: ...
 
 
 class _Item:
@@ -145,6 +147,15 @@ class DailyQueueManager:
             p.thread.start()
         log.info("daily queue started pid=%d %s", pid, keys, extra={"cat": "daily"})
         return True, None
+
+    def mark_done(self, name: str, done: bool) -> bool:
+        """Mark every module on `name`'s list done today (or not). False: the
+        list is empty."""
+        keys = self.config(name).modules
+        for key in keys:
+            self._modules[key].mark_done(name, done)
+        log.info("daily marked %s done=%s %s", name, done, keys, extra={"cat": "daily"})
+        return bool(keys)
 
     def precheck(self, name: str) -> tuple[str, str | None]:
         """Before logging `name` in: ("run", None), ("done", why) when every
