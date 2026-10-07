@@ -911,6 +911,8 @@ class TowerManager:
         loot = self._loot
         opened = sum(result.opened.values())
         parts = [f"開了 {opened} 個寶箱"] if opened else ["沒有寶箱可開"]
+        if result.collected:
+            parts.append("蒐藏 " + "、".join(loot.name(i) for i in result.collected))
         if result.eaten:
             parts.append(
                 "吃掉 " + "、".join(f"{loot.name(i)} ×{n}" for i, n in result.eaten.items())

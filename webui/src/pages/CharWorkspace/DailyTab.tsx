@@ -447,7 +447,7 @@ function BoxTidy({ config, onChange, busy, onTidy }: {
             ...config,
             keep_potions: Math.min(10000, Math.max(0, Math.floor(Number(e.target.value)) || 0)),
           })} />
-        <span>個，多的吃掉；神兵、技能書、覺醒符存倉</span>
+        <span>個，多的吃掉；蒐藏冊沒收過的神兵先蒐藏，其餘神兵、技能書、覺醒符存倉</span>
         <button type="button" className="dl-btn dl-btn-sm" disabled={busy} onClick={onTidy}
           title="不登塔，現在就照這個設定整理背包裡的關寶箱">現在整理寶箱</button>
       </div>

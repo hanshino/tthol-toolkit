@@ -10,6 +10,7 @@ LOOT = Loot(
     potions=frozenset({PILL, HEAL}),
     store=frozenset({HELMET, BOOK, CHARM}),
     names={BOX_A: "歲星寶箱", BOX_B: "鎮星寶箱", HELMET: "聖曦頭盔", PILL: "賞善寧心符"},
+    collect=frozenset({HELMET}),
 )
 
 
@@ -47,6 +48,8 @@ class FakeGame:
 
     def cmd(self, line):
         self.sent.append(line)
+        if line.split()[0] in ("collection", "collectpage", "collect", "openpanel", "closepanel"):
+            return {"ok": False, "error": "unknown command"}
         if line == "bag":
             return {"ok": True, "bag": [{"item": i, "inst": 0, "count": n} for i, n in self.stacks]}
         verb, item = line.split()[0], int(line.split()[1])
@@ -99,6 +102,7 @@ def test_the_db_sorts_box_loot_into_eat_and_store():
     loot = load_loot()
     assert loot.boxes == tuple(range(31617, 31624))  # 辰星 .. 颶星
     assert HELMET in loot.store  # 聖曦頭盔, opened live from a 歲星寶箱
+    assert HELMET in loot.collect and not loot.collect - loot.store  # in the 蒐藏冊
     assert PILL in loot.potions
     assert 24852 not in loot.store and 24852 not in loot.potions  # 賞善蒼天庇祐: no_store
     assert loot.name(BOX_A) == "歲星寶箱"
@@ -141,6 +145,7 @@ def test_opens_every_box_eats_the_extra_and_stores_the_rest():
     assert game.trips == [{HELMET: 1, BOOK: 1}]
     assert result.stored == 2 and result.boxes_left == 0 and result.problem is None
     assert game.counts() == {PILL: 50}
+    assert result.collected == {}  # no collection commands on this hook
     assert ("confirmed", "開歲星寶箱：聖曦頭盔 ×1") in notes
 
 
@@ -230,3 +235,74 @@ def test_loot_that_lands_a_read_later_is_still_named():
     result, notes = tidy(game, store=False)
     assert result.got == {HELMET: 1}
     assert ("confirmed", "開歲星寶箱：聖曦頭盔 ×1") in notes
+
+
+class BookGame(FakeGame):
+    """FakeGame with the hook's 蒐藏冊 commands. `fresh`: just logged in, the
+    read has the count but no ids until every group is asked for."""
+
+    def __init__(self, *a, have=(), fresh=False, **kw):
+        super().__init__(*a, **kw)
+        self.have = set(have)
+        self.asked = set()
+        self.fresh = fresh
+        self.window = False
+
+    def cmd(self, line):
+        verb, *args = line.split()
+        if verb == "collection":
+            self.sent.append(line)
+            shown = self.have if not self.fresh or self.asked >= {100, 200} else set()
+            return {
+                "ok": True,
+                "count": len(self.have),
+                "groups": [100, 200],
+                "collected": sorted(shown),
+            }
+        if verb == "collectpage":
+            self.sent.append(line)
+            self.asked.add(int(args[0]))
+            return {"ok": True, "group": int(args[0]), "window": False}
+        if verb == "openpanel":
+            self.sent.append(line)
+            self.window = True
+            return {"ok": True, "opened": True, "open": True}
+        if verb == "closepanel":
+            self.sent.append(line)
+            self.window = False
+            return {"ok": True}
+        if verb == "collect":
+            self.sent.append(line)
+            item = int(args[0])
+            assert self.window, "collect with the window closed crashes the client"
+            if item in self.have:
+                return {"ok": False, "error": "already collected"}
+            self.take(item, 1)
+            self.have.add(item)
+            return {"ok": True, "item": item}
+        return super().cmd(line)
+
+
+def test_box_gear_not_in_the_book_is_collected_once_and_the_rest_stored():
+    game = BookGame([[BOX_A, 2]], drops=[(HELMET, 1), (HELMET, 1)])
+    result, notes = tidy(game)
+    assert result.collected == {HELMET: 1}
+    assert game.trips == [{HELMET: 1}]  # the second one is stored
+    assert ("confirmed", "蒐藏 聖曦頭盔") in notes
+    assert game.sent.index("openpanel collection") < game.sent.index(f"collect {HELMET}")
+    assert game.sent[game.sent.index(f"collect {HELMET}") + 1 :].count("closepanel collection") >= 1
+    assert not game.window
+
+
+def test_gear_already_in_the_book_is_just_stored():
+    game = BookGame([[BOX_A, 1]], drops=[(HELMET, 1)], have={HELMET})
+    result, _notes = tidy(game)
+    assert result.collected == {} and game.trips == [{HELMET: 1}]
+    assert "openpanel collection" not in game.sent
+
+
+def test_right_after_login_every_group_is_asked_for_first():
+    game = BookGame([[BOX_A, 1]], drops=[(HELMET, 1)], have={HELMET}, fresh=True)
+    result, _notes = tidy(game)
+    assert {"collectpage 100", "collectpage 200"} <= set(game.sent)
+    assert result.collected == {}  # it was in the book after all
