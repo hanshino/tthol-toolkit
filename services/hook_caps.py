@@ -29,6 +29,20 @@ FEATURES: dict[str, tuple[str, ...]] = {
     "family": ("family",),
     # 補給 trips; buy / sell / petput are checked per trip (only what it needs).
     "supply": ("status", "near", "walk", "talk", "dialog", "option", "next", "shop"),
+    # 分身交貨: player trade between two windows, the receiver's store trip is 補給's.
+    "handoff": (
+        "status",
+        "near",
+        "bag",
+        "trade",
+        "tradeinvite",
+        "tradeaccept",
+        "tradeput",
+        "tradelock",
+        "tradeconfirm",
+        "tradecancel",
+        "closepanel",
+    ),
     "daily.tower": (
         "status",
         "near",

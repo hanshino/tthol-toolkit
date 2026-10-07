@@ -24,6 +24,14 @@ def items_by_id(ids: str = Query(..., description="Comma-separated item ids")) -
     return item_catalog.lookup(parsed)
 
 
+@router.get("/search", response_model=list[ItemMeta])
+def search_items(
+    q: str = Query(..., min_length=1), tradable: bool = False, limit: int = Query(30, ge=1, le=100)
+) -> list[ItemMeta]:
+    """Items by name substring; `tradable` leaves out no_trade ones."""
+    return item_catalog.search(q, limit, tradable)
+
+
 @router.get(
     "/{item_id}/icon",
     responses={200: {"content": {"image/png": {}}}, 404: {"description": "No icon available"}},

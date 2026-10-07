@@ -1586,3 +1586,94 @@ class CopySettingsRequest(_Base):
 
 class CopySettingsResult(_Base):
     copied: int
+
+
+# ---- 分身交貨 (services.handoff) ------------------------------------------
+
+
+class HandoffItem(_Base):
+    item_id: int
+    store: bool = True  # store it right after the round it came in; False: keep it on the body
+
+
+class HandoffConfig(_Base):
+    """A receiver's whitelist (character_settings section "handoff")."""
+
+    items: list[HandoffItem] = []
+    # Stacks this character's bag holds (惡人谷 has more, user 2026-10-07).
+    bag_slots: int = Field(40, ge=1, le=200)
+
+
+class HandoffLogEntry(_Base):
+    id: int
+    ts: float
+    phase: Literal["info", "confirmed", "unconfirmed", "error"]
+    text: str
+
+
+class HandoffCount(_Base):
+    item_id: int
+    name: str
+    count: int
+    store: bool | None = None  # receiver: stored (True) or kept (False)
+
+
+class HandoffStatus(_Base):
+    running: bool
+    role: Literal["receive", "send"] | None = None
+    character: str | None = None
+    step: str | None = None
+    problem: str | None = None
+    stopping: bool = False  # receiver: stops once the round in hand is stored
+    ended: str | None = None
+    free: int | None = None  # receiver: free bag slots at its last turn
+    queue: list[str] = []  # receiver: senders waiting
+    turn_with: str | None = None
+    moved: list[HandoffCount] = []  # received / sent this run
+    log: list[HandoffLogEntry] = []
+
+
+class HandoffReceiver(_Base):
+    pid: int
+    character: str
+    same_account: bool  # same account as the viewer: it cannot trade with it
+    stage_name: str | None = None
+    tile: list[int] | None = None
+    free: int | None = None
+    items: int  # whitelist entries
+    state: Literal["waiting", "trading", "storing", "busy", "stopped"]
+    busy_with: str | None = None
+    queue: int = 0
+    stacks: int = 0  # the viewer's bag stacks going to it
+
+
+class HandoffPlanRow(_Base):
+    item_id: int
+    name: str
+    count: int
+    receiver_pid: int
+    receiver: str
+    store: bool  # the receiver stores it (else keeps it)
+
+
+class HandoffBagItem(_Base):
+    item_id: int
+    name: str
+    count: int
+    stacks: int
+    no_trade: bool = False
+    no_store: bool = False
+
+
+class HandoffView(_Base):
+    character: str | None
+    config: HandoffConfig
+    status: HandoffStatus
+    receivers: list[HandoffReceiver] = []  # open receivers, in the order senders serve them
+    plan: list[HandoffPlanRow] = []  # what the viewer's bag would send
+    bag: list[HandoffBagItem] = []
+    bag_used: int | None = None
+
+
+class HandoffStart(_Base):
+    role: Literal["receive", "send"]

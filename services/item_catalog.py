@@ -158,6 +158,19 @@ class ItemCatalog:
         items = self._ensure()
         return [items[i] for i in dict.fromkeys(ids) if i in items]
 
+    def search(self, q: str, limit: int = 30, tradable: bool = False) -> list[ItemMeta]:
+        """Items whose name holds `q`, shortest names first."""
+        q = q.strip()
+        if not q:
+            return []
+        hits = [
+            m
+            for m in self._ensure().values()
+            if q in m.name and m.name and not (tradable and m.no_trade)
+        ]
+        hits.sort(key=lambda m: (len(m.name), m.item_id))
+        return hits[:limit]
+
     def icon_url(self, item_id: int) -> str | None:
         """Remote URL of an item's inventory icon, or None if it has none."""
         self._ensure()
@@ -173,3 +186,7 @@ def lookup(ids: list[int]) -> list[ItemMeta]:
 
 def icon_url(item_id: int) -> str | None:
     return _catalog.icon_url(item_id)
+
+
+def search(q: str, limit: int = 30, tradable: bool = False) -> list[ItemMeta]:
+    return _catalog.search(q, limit, tradable)

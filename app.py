@@ -38,6 +38,8 @@ from services.guard import (
 )
 from services.item_rules import load_item_facts
 from services.supply import SupplyManager
+from services.handoff import TRADE_PACKET, HandoffManager
+from services.map_db import stage_names_by_id
 from services.tower_run import ATTACK_PACKET, CAST_START_PACKET, TowerManager
 from services.buff_tracker import BUFF_PACKET, BuffTracker
 from services.hook_cmd import CommandChannel
@@ -151,10 +153,45 @@ def _build_services(dev: bool) -> dict:
     hook.add_packet_listener(ATTACK_PACKET, tower.on_attack_packet)
     hook.add_packet_listener(CAST_START_PACKET, tower.on_cast_packet)
     daily = DailyQueueManager([tower], character_name=wm.character_name, store=GuardStore(db))
+
+    # 分身交貨: never on a character another module is driving.
+    def handoff_busy(pid: int) -> str | None:
+        if daily.status(pid).running:
+            return "這隻角色正在跑日常"
+        if tower.status(pid).running:
+            return "這隻角色正在登塔"
+        if supply.status(pid).running:
+            return "這隻角色正在補給"
+        return None
+
+    def account_of(name: str) -> int | None:
+        row = db.get_character_account(name)
+        return row["id"] if row else None
+
+    def item_info(item_id: int) -> tuple[str, bool, bool] | None:
+        meta = item_catalog.lookup([item_id])
+        return (meta[0].name, meta[0].no_trade, meta[0].no_store) if meta else None
+
+    stage_names = stage_names_by_id()
+    handoff = HandoffManager(
+        guard=guard,
+        character_name=wm.character_name,
+        channel=channel,
+        store=GuardStore(db),
+        navigator=navigator,
+        supply=supply,
+        read_stage=lambda pid: (wm.read_locked(pid, read_stage_id) or (None,))[0],
+        stage_name=stage_names.get,
+        account_of=account_of,
+        busy=handoff_busy,
+        item_info=item_info,
+        hook_caps=hook_caps,
+    )
+    hook.add_packet_listener(TRADE_PACKET, handoff.on_trade_packet)
     wm.set_daily_queue(daily)
     wm.set_family_query(lambda pid: channel.send(pid, "family"))
     # Another character on the same game window starts clean (queue first: it stops the tower).
-    for forget in (daily.forget, tower.forget, supply.forget, guard.forget):
+    for forget in (daily.forget, tower.forget, handoff.forget, supply.forget, guard.forget):
         wm.add_forget(forget)
     # 帳號派發: log characters in on the hooked windows, run their 日常, log out.
     logins = LoginStore(db)
@@ -215,6 +252,7 @@ def _build_services(dev: bool) -> dict:
         "guard_manager": guard,
         "tower_manager": tower,
         "supply_manager": supply,
+        "handoff_manager": handoff,
         "daily_manager": daily,
         "login_store": logins,
         "dispatch_manager": dispatch,
@@ -361,6 +399,7 @@ def main() -> int:
         services["dispatch_manager"].shutdown()
         services["daily_manager"].shutdown()
         services["tower_manager"].shutdown()
+        services["handoff_manager"].shutdown()
         services["guard_manager"].shutdown()
         services["buff_tracker"].shutdown()
     return 0
