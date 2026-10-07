@@ -55,6 +55,7 @@ from services.api_types import (
 from services.guard import load_pet_items, read_holdings, read_stage_id
 from services.hook_cmd import NoReply, PipeBusy, PipeGone
 from services.item_rules import SELL, STORE, ItemFact
+from services.market_survey import MARKET_STAGE_IDS
 
 log = logging.getLogger("tthol.supply")
 
@@ -300,8 +301,11 @@ def pick_stop(
     cost: Callable[[object], float | None],
     skip: set[tuple[int, int]],
     any_shop: bool,
+    in_town: Callable[[object], bool] = lambda _npc: False,
 ) -> tuple[object, set[int]] | None:
-    """The shop selling the most of `wanted`, then the cheapest to reach.
+    """The shop selling the most of `wanted`; then one in the town we stand in
+    (user, 2026-10-08: in 成都, the 成都道具商, not a horse to 曼陀羅城 that
+    the planner reckons a little cheaper); then the cheapest to reach.
 
     `any_shop`: there is something to sell, so a shop selling none of `wanted`
     still serves. Reachability is checked best-first: one route search each.
@@ -312,19 +316,28 @@ def pick_stop(
             continue
         covered = sold_by(shops_of(npc)) & wanted
         if covered or any_shop:
-            scored.append((-len(covered), npc, covered))
+            scored.append(((-len(covered), not in_town(npc)), npc, covered))
     if not scored:
         return None
-    best: tuple[int, float, object, set[int]] | None = None
-    for count, npc, covered in sorted(scored, key=lambda s: s[0]):
-        if best is not None and count > best[0]:
-            break  # covers fewer than a reachable shop already found
+    best: tuple[tuple[int, bool], float, object, set[int]] | None = None
+    for rank, npc, covered in sorted(scored, key=lambda s: s[0]):
+        if best is not None and rank > best[0]:
+            break  # covers fewer, or out of town, than a reachable shop already found
         c = cost(npc)
         if c is None:
             continue
         if best is None or c < best[1]:
-            best = (count, c, npc, covered)
+            best = (rank, c, npc, covered)
     return (best[2], best[3]) if best else None
+
+
+# A stop on a 市集 map counts one map farther: the stalls crowd it (user,
+# 2026-10-08: in 成都, 成都太城's shop rather than 成都市集's).
+MARKET_COST = 1.0
+
+
+def crowd(point: SupplyPoint) -> float:
+    return MARKET_COST if point.stage in MARKET_STAGE_IDS else 0.0
 
 
 # ---- a trip ------------------------------------------------------------------
@@ -849,7 +862,7 @@ class SupplyManager:
             first = rp.plan(graph, here, keeper.stage, None, keeper.tile)
             if first is None:
                 continue
-            cost = first.cost
+            cost = first.cost + crowd(keeper)
             if shop is not None and shop.stage != keeper.stage:
                 then = rp.plan(graph, keeper.stage, shop.stage, keeper.tile, shop.tile)
                 if then is None:
@@ -864,13 +877,21 @@ class SupplyManager:
 
         def cost(point: SupplyPoint) -> float | None:
             route = rp.plan(graph, here, point.stage, None, point.tile)
-            return None if route is None else route.cost
+            return None if route is None else route.cost + crowd(point)
 
         def shops_of(point: SupplyPoint) -> frozenset[int]:
             shop = market.shop_of(point)
             return frozenset() if shop is None else frozenset({shop})
 
-        return pick_stop(market.points, shops_of, cat.sold_by, wanted, cost, skip, any_shop)
+        groups = rp.stage_groups()
+        town = groups.get(here)
+
+        def in_town(point: SupplyPoint) -> bool:
+            return town is not None and groups.get(point.stage) == town
+
+        return pick_stop(
+            market.points, shops_of, cat.sold_by, wanted, cost, skip, any_shop, in_town
+        )
 
 
 class _Trip:
