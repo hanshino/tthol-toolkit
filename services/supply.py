@@ -60,7 +60,19 @@ log = logging.getLogger("tthol.supply")
 
 SUPPLY_SECTION = "supply"
 # What a trip cannot do without (walking comes from the navigator's own needs).
-SUPPLY_COMMANDS = ("status", "near", "walk", "talk", "dialog", "option", "next", "shop")
+# closepanel: a shop or warehouse window is closed before walking on (user: a
+# player never walks off with one open, 2026-10-07).
+SUPPLY_COMMANDS = (
+    "status",
+    "near",
+    "walk",
+    "talk",
+    "dialog",
+    "option",
+    "next",
+    "shop",
+    "closepanel",
+)
 PET_COMMANDS = ("pet", "petput")
 STORE_COMMANDS = ("warehouse", "store")
 BANK_COMMANDS = ("warehouse", "bank", "bankin", "bankout")
@@ -899,6 +911,7 @@ class _Trip:
             raise _Abort("no-hook", f"這個 hook 缺少補給要用的指令：{'、'.join(missing)}")
         if self.m._navigator is None:
             raise _Abort("error", "沒有導航模組")
+        self.close_windows()  # one the user (or a last trip) left open
 
         market = self.m.market(self.pid, bag, ask=True)
         if needs:
@@ -915,7 +928,7 @@ class _Trip:
             # 錢莊 silver comes out before the buying needs it.
             self.warehouse_stop(market, graph, stores, bank, bool(sells or needs))
         if not sells and not needs:
-            self.shop_left_open()
+            self.close_windows()
             return SupplyResult(True, "done", self.summary([]), self.sold, self.bought, self.put)
         self.line("info", f"在{market.label}補給")
         graph = rp.cached_graph(market.script.level, market.script.manor)
@@ -950,6 +963,7 @@ class _Trip:
                 sells = []
             rest = [(i, b, p) for i, b, p in needs if i in covered]
             short += self.buy_all(rest, cfg)
+            self.close_windows()
             wanted -= covered
             needs = [(i, b, p) for i, b, p in needs if i not in covered]
             if not needs:
@@ -962,18 +976,37 @@ class _Trip:
             self.line("info", f"{npc.name}沒賣：{names}，再找下一間")
         else:
             short += [self.name(i) for i, _b, _p in needs]
-        self.shop_left_open()
+        self.close_windows()
         detail = self.summary(short)
         if short and cfg.stop_when_short:
             return SupplyResult(False, "short", detail, self.sold, self.bought, self.put)
         return SupplyResult(True, "done", detail, self.sold, self.bought, self.put)
 
-    def shop_left_open(self) -> None:
-        """Say whether the shop window stayed open: the hook cannot close it,
-        and whoever walks next (the module) has to cope with it."""
-        shop = self.cmd("shop")
-        if shop.get("open"):
-            self.line("info", "商店視窗還開著（hook 沒有關閉商店的指令）")
+    def open_windows(self) -> list[str]:
+        out = []
+        if self.cmd("shop").get("open"):
+            out.append("商店")
+        if "warehouse" in self.caps and self.cmd("warehouse").get("open"):
+            out.append("倉庫")
+        return out
+
+    def close_windows(self) -> None:
+        """Close the shop / warehouse window before walking on (or handing the
+        character back to the module), and see it close."""
+        left = self.open_windows()
+        if not left:
+            return
+        self.step(f"關閉{'、'.join(left)}視窗")
+        r = self.cmd("closepanel")
+        end = self.m._clock() + CONFIRM_WAIT
+        while True:
+            self.wait(POLL)
+            left = self.open_windows()
+            if not left:
+                return
+            if self.m._clock() >= end:
+                detail = r.get("error") or "送出後視窗還開著"
+                raise _Abort("error", f"{'、'.join(left)}視窗關不掉（{detail}），先停下不走")
 
     def summary(self, short: list[str]) -> str:
         parts = []
@@ -1027,6 +1060,7 @@ class _Trip:
         self.store_all(stores)
         if bank is not None:
             self.settle_bank(bank)
+        self.close_windows()
 
     def open_warehouse(self, npc: SupplyPoint, script) -> None:
         self.step(f"和{npc.name}對話")

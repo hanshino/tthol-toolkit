@@ -140,6 +140,7 @@ class FakeGame:
         self.stage = 51
         self.refuse_buy = False
         self.warehouse_open = False
+        self.stuck_window = False
         self.vault: dict[int, int] = {}
         self.balance = 0
 
@@ -161,6 +162,12 @@ class FakeGame:
             if args[0] == "8":
                 self.warehouse_open = True  # the 錢莊伙計 opens it on talk
             return {"ok": True}
+        if cmd == "closepanel":
+            if self.stuck_window:
+                return {"ok": True}
+            was = self.shop_open or self.warehouse_open
+            self.shop_open = self.warehouse_open = False
+            return {"ok": True} if was else {"ok": False, "error": "no panel open"}
         if cmd == "warehouse":
             return {"ok": True, "open": self.warehouse_open, "items": []}
         if cmd == "store":
@@ -260,6 +267,8 @@ class FakeNav:
         self.went: list[tuple[int, tuple[int, int]]] = []
 
     def go(self, pid, dest, goal=None, stop=None, note=None):
+        # A player never walks off with a shop / warehouse window open.
+        assert not self.game.shop_open and not self.game.warehouse_open, "walked with a window open"
         self.went.append((dest, goal))
         self.game.stage = dest
         return NavResult(True, "arrived", "", dest, goal)
@@ -448,7 +457,7 @@ def test_a_shop_window_left_open_is_not_taken_for_this_one():
     assert result.ok and game.bag[POTION] == 10
     first_buy = next(i for i, line in enumerate(game.sent) if line.startswith("buy"))
     assert game.sent.index("option 1") < first_buy
-    assert any("商店視窗還開著" in line.text for line in mgr.status(1).log)
+    assert not game.shop_open  # the stale window was closed before the walk
 
 
 def test_a_second_trip_waits_for_the_first():
@@ -533,3 +542,23 @@ def test_same_npc_checks_id_and_instance():
     assert not sp.same_npc({"id": 6130, "instance": 2}, {"id": 6130, "inst": 1})
     assert not sp.same_npc({"id": 6121}, {"id": 6130, "inst": 1})
     assert sp.same_npc({"id": 6130}, {"id": 6130, "inst": 1})  # no instance: id alone
+
+
+def test_a_window_that_will_not_close_stops_before_walking():
+    game = FakeGame({POTION: 0})
+    game.shop_open, game.shop_npc = True, 6121
+    game.stuck_window = True
+    mgr, nav, _ = make(game, SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)]))
+    result = mgr.run(1, threading.Event())
+    assert result.reason == "error" and "關不掉" in result.detail
+    assert nav.went == []
+
+
+def test_windows_are_closed_when_the_trip_ends():
+    game = FakeGame({POTION: 0})
+    mgr, _, _ = make(game, SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)]))
+    mgr.run(1, threading.Event())
+    assert not game.shop_open
+    assert game.sent.index("closepanel") > max(
+        i for i, l in enumerate(game.sent) if l.startswith("buy")
+    )
