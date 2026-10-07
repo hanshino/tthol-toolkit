@@ -50,7 +50,9 @@ SECTION = "handoff"
 HOST = "分身交貨 · 存倉"
 TRADE_PACKET = 0x1F
 EV_INVITE, EV_OPEN, EV_PUT, EV_LOCK, EV_CANCEL, EV_DONE = 1, 2, 3, 5, 6, 8
-# Stacks in one trade: 3 went through on 2026-10-05; the real limit is unknown.
+# Stacks in one trade for a hook without `capacity`: the window holds 10 (the
+# server ignores an 11th put the client already moved: tthol-hook 2026-10-07);
+# 3 is what went through first, on 2026-10-05.
 TRADE_STACKS = 3
 LOG_KEEP = 200
 PIPE_RETRIES = 5
@@ -241,6 +243,7 @@ class _Run:
         self.received: dict[int, int] = {}
         # sender
         self.sent: dict[int, int] = {}
+        self.refused: set[int] = set()  # tradeput said it cannot be traded
         self.now_with: str | None = None
 
     def wants(self) -> set[int]:
@@ -872,7 +875,7 @@ class HandoffManager:
         # had no room for goes on to the next one that wants it too.
         for r in receivers:
             wants = r.wants()
-            if not for_receiver(self._bag(run), wants, self._untradable):
+            if not for_receiver(self._bag(run), wants, self._cannot(run)):
                 continue
             with self._hub:
                 run.now_with = r.name
@@ -887,9 +890,14 @@ class HandoffManager:
                     if run.pid in r.queue:
                         r.queue.remove(run.pid)
                     self._hub.notify_all()
-        left = plan(self._bag(run), [(r.pid, r.wants()) for r in receivers], self._untradable)
+        left = plan(self._bag(run), [(r.pid, r.wants()) for r in receivers], self._cannot(run))
         n = sum(len(v) for v in left.values())
         return "全部交完" if not n else f"還有 {n} 格沒交出去"
+
+    def _cannot(self, run: _Run) -> Callable[[int], bool]:
+        # The DB's no_trade misses many (賞善 / quest items: tthol-hook
+        # 2026-10-07), so what tradeput refused is skipped for the rest of the run.
+        return lambda item: self._untradable(item) or item in run.refused
 
     def _deliver(self, run: _Run, r: _Run, wants: set[int]) -> None:
         with self._hub:
@@ -908,7 +916,7 @@ class HandoffManager:
                 raise _Fail(f"走不到 {r.name} 旁邊：{result.detail or result.reason}")
         rounds = 0
         while True:
-            mine = for_receiver(self._bag(run), wants, self._untradable)
+            mine = for_receiver(self._bag(run), wants, self._cannot(run))
             if not mine:
                 self._note(run, "confirmed", f"交給 {r.name} 的都交完了（{rounds} 輪）")
                 return
@@ -973,18 +981,35 @@ class HandoffManager:
         self._event(run, mark, {EV_OPEN}, self.t.invite, "對方接受交易（太遠，或對方開著視窗？）")
         run.trading = True
         self._await(run, turn, {"open"}, self.t.open, "對方打開交易視窗")
-        # Past the offer's capacity the client dies (a fatal error, no reply:
-        # tthol-hook 2026-10-07), so put no more than the window holds.
+        # No more than the window holds: past it the server drops the put the
+        # client already made (10 slots), past 40 the client dies.
         take = batch(mine, turn.free, trade_cap(self._cmd(run, "trade")))
-        expect = counts(take)
-        with self._hub:
-            turn.stacks, turn.items = len(take), expect
         self._set_step(run, "放東西")
-        for item, _n in take:
+        placed: list[tuple[int, int]] = []
+        for item, n in take:
+            if item in run.refused:
+                continue
             reply = self._cmd(run, f"tradeput {item}")
             if not reply.get("ok"):
-                raise _Fail(f"放 {self._name(item)} 沒成功：{reply.get('error')}")
+                error = str(reply.get("error") or "")
+                if "cannot be traded" in error:
+                    run.refused.add(item)
+                    self._note(run, "unconfirmed", f"{self._name(item)} 不能交易，跳過")
+                    continue
+                if "offer full" in error:
+                    break
+                raise _Fail(f"放 {self._name(item)} 沒成功：{error}")
+            placed.append((item, n))
             self._wait(run, self.t.put_gap)
+        expect = counts(placed)
+        if not expect:
+            # Nothing this round could go: close the empty trade, the next
+            # round picks again without the refused items.
+            self._cancel(run)
+            self._fail_turn(turn, "這輪的東西都不能交易")
+            return True
+        with self._hub:
+            turn.stacks, turn.items = len(placed), expect
         offer = self._cmd(run, "trade").get("offer") or []
         put = counts([(int(o["item"]), int(o["count"])) for o in offer])
         if put != expect:

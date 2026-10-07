@@ -32,6 +32,7 @@ class World:
         self.capacity = None
         self.stranger_once = set()  # pids whose next invite comes after a stranger's
         self.refuse_put = set()  # items tradeput refuses
+        self.put_error = {}  # item -> any other tradeput error
         self.drop_invites = 0  # invites that never arrive
         self.mgr = None
 
@@ -110,6 +111,8 @@ class World:
             item = int(args[0])
             if item in self.refuse_put:
                 return {"ok": False, "error": "item cannot be traded"}
+            if item in self.put_error:
+                return {"ok": False, "error": self.put_error[item]}
             stack = next(s for s in me["stacks"] if s[0] == item)
             me["stacks"].remove(stack)
             self.offer[pid].append(tuple(stack))
@@ -380,11 +383,40 @@ def test_two_receivers_in_the_order_they_started():
     mgr.stop(3)
 
 
+def test_an_item_the_game_will_not_trade_is_skipped_and_the_rest_go():
+    world, store, supply, _nav, mgr = setup()
+    world.add(1, "倉庫", [])
+    world.add(2, "送貨", [(B, 1), (A, 1)])
+    world.refuse_put.add(B)
+    whitelist(store, "倉庫", [(A, True), (B, True)])
+    start_receiver(mgr, 1)
+    mgr.start(2, "send")
+    sender = finish(mgr, 2)
+    assert sender.ended == "全部交完"
+    assert world.counts(2) == {B: 1} and supply.trips == [(1, {A: 1})]
+    assert "惡人谷書 不能交易，跳過" in [e.text for e in sender.log]
+    mgr.stop(1)
+
+
+def test_a_round_where_nothing_can_go_closes_the_empty_trade():
+    world, store, supply, _nav, mgr = setup()
+    world.add(1, "倉庫", [])
+    world.add(2, "送貨", [(B, 1)])
+    world.refuse_put.add(B)
+    whitelist(store, "倉庫", [(B, True)])
+    start_receiver(mgr, 1)
+    mgr.start(2, "send")
+    assert finish(mgr, 2).ended == "全部交完"
+    assert (2, "tradecancel") in world.sent and supply.trips == []
+    assert until(lambda: mgr.status(1).step == "等送貨的人")
+    mgr.stop(1)
+
+
 def test_a_refused_put_cancels_the_trade_on_both_sides():
     world, store, supply, _nav, mgr = setup()
     world.add(1, "倉庫", [])
     world.add(2, "送貨", [(A, 1), (B, 1)])
-    world.refuse_put.add(B)
+    world.put_error[B] = "bad quantity 0 (have 1)"
     whitelist(store, "倉庫", [(A, True), (B, True)])
     start_receiver(mgr, 1)
     mgr.start(2, "send")
