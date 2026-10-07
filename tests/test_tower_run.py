@@ -1137,3 +1137,57 @@ def test_a_floor_pass_says_how_hard_it_hit():
     passed = [line.text for line in run.log if "第 1 層通過" in line.text]
     assert passed and passed[0].endswith("，最低血 61%，單下最多 -390（39%））")
     run_log.forget(1)
+
+
+class BoxGame(FakeGame):
+    """FakeGame with a bag of 歲星寶箱 that open into 聖曦頭盔 (hook `bag` / `use`)."""
+
+    def __init__(self, boxes=2):
+        super().__init__()
+        self.stacks = [[31620, boxes]]
+
+    def send(self, pid, line, priority=0):
+        cmd, *args = line.split()
+        if cmd == "bag":
+            self.sent.append(line)
+            return {"ok": True, "bag": [{"item": i, "inst": 0, "count": n} for i, n in self.stacks]}
+        if cmd == "use" and int(args[0]) == 31620:
+            self.sent.append(line)
+            self.stacks[0][1] -= 1
+            self.stacks = [s for s in self.stacks if s[1] > 0] + [[23292, 1]]
+            return {"ok": True}
+        return super().send(pid, line, priority)
+
+
+def _box_loot():
+    from services.box_tidy import Loot
+
+    return Loot((31620,), frozenset(), frozenset({23292}), {31620: "歲星寶箱", 23292: "聖曦頭盔"})
+
+
+def test_a_normal_end_tidies_the_boxes_when_asked():
+    game = BoxGame()
+    mgr, run, _game, _ = make(game, config=TowerConfig(stop_floor=1, tidy_boxes=True))
+    mgr._loot = _box_loot()
+    run_loop(mgr, run)
+    texts = [line.text for line in run.log]
+    assert game.sent.count("use 31620") == 2
+    assert "開歲星寶箱：聖曦頭盔 ×1" in texts
+    assert "寶箱整理完成：開了 2 個寶箱" in texts
+    assert mgr.outcome(1)[0] == "done"  # the tidy does not change how the run ended
+    assert texts.index("寶箱整理完成：開了 2 個寶箱") < len(texts) - 1  # before the end line
+    assert texts[-1].startswith("登塔結束：")
+
+
+def test_no_tidy_when_off_or_after_a_death():
+    game = BoxGame()
+    mgr, run, _game, _ = make(game, config=TowerConfig(stop_floor=1))
+    mgr._loot = _box_loot()
+    run_loop(mgr, run)
+    assert "use 31620" not in game.sent
+    game = BoxGame()
+    game.hp = 0
+    mgr, run, _game, _ = make(game, config=TowerConfig(tidy_boxes=True))
+    mgr._loot = _box_loot()
+    run_loop(mgr, run)
+    assert "use 31620" not in game.sent

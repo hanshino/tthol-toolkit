@@ -597,3 +597,17 @@ def test_windows_are_closed_when_the_trip_ends():
     assert game.sent.index("closepanel") > max(
         i for i, line in enumerate(game.sent) if line.startswith("buy")
     )
+
+
+def test_store_only_stores_just_those_and_nothing_else():
+    game = FakeGame({ORE: 30, JUNK: 46, POTION: 0}, gold=40_000)
+    game.balance = 1_000_000
+    cfg = SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)], keep_gold=0, gold_low=100_000)
+    rules = ItemRules(items={JUNK: ItemRule(action="sell")})
+    mgr, nav, _ = make(game, cfg, rules, caps=WAREHOUSE_CAPS)
+    result = mgr.run(1, threading.Event(), store_only={ORE: 12, 99999: 5})
+    assert result.ok and result.stored == 12, result
+    assert [d for d, _g in nav.went] == [23]  # the 錢莊伙計 only: no shop
+    assert game.vault == {ORE: 12} and game.bag[ORE] == 18
+    assert game.bag[JUNK] == 46 and game.bag[POTION] == 0  # no sell, no buy
+    assert game.gold == 40_000  # no 錢莊 move

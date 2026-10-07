@@ -1231,6 +1231,10 @@ class TowerConfig(_Base):
     # 狐光靈珠: before the day's first entry, skip 關 1..skip_to (1 辰星 ... 6
     # 冽星), as far as level and orbs allow; None = do not use the orbs.
     skip_to: int | None = Field(None, ge=1, le=6)
+    # 寶箱整理 after a run that ended the normal way (services.box_tidy): open
+    # the 關 boxes, eat the box potions past keep_potions, store the rest.
+    tidy_boxes: bool = False
+    keep_potions: int = Field(50, ge=0, le=10000)
 
 
 class TowerRecord(_Base):

@@ -125,6 +125,19 @@ def sell_list(
     return out
 
 
+def store_rows(
+    want: dict[int, int], bag: dict[int, int], facts: Callable[[int], ItemFact | None]
+) -> list[tuple[int, int, int, int]]:
+    """sell_list's rows for a host's own store list: what the bag holds of it and may store."""
+    out = []
+    for item_id, qty in sorted(want.items()):
+        have = bag.get(item_id, 0)
+        fact = facts(item_id)
+        if min(qty, have) > 0 and fact is not None and fact.can_store:
+            out.append((item_id, min(qty, have), 0, have))
+    return out
+
+
 def buy_needs(
     items: list[SupplyItem], bag: dict[int, int], pet: dict[int, int]
 ) -> list[tuple[int, int, int]]:
@@ -318,6 +331,7 @@ class SupplyResult:
     sold: int = 0
     bought: int = 0
     put: int = 0
+    stored: int = 0
 
 
 @dataclass
@@ -657,26 +671,39 @@ class SupplyManager:
         note: Callable[[str], None] | None = None,
         host: str | None = None,
         claimed: bool = False,
+        store_only: dict[int, int] | None = None,
     ) -> SupplyResult:
-        """One trip. `note` gets the step text (a host module shows it as its own step)."""
+        """One trip. `note` gets the step text (a host module shows it as its own step).
+
+        `store_only` (item -> qty): a trip to the warehouse that stores these and
+        nothing else (no 道具處置 sells / stores, no buying, no 錢莊), for a host
+        tidying what it brought in (寶箱整理)."""
         with self._lock:
             if pid in self._hosts_running and not claimed:
                 return SupplyResult(False, "busy", "另一趟補給正在跑")
             self._hosts_running[pid] = host
             self._logs[pid] = _Log()
             self._ended.pop(pid, None)
-        trip = _Trip(self, pid, stop or threading.Event(), note or (lambda _t: None))
+        trip = _Trip(self, pid, stop or threading.Event(), note or (lambda _t: None), store_only)
         try:
             with ExitStack() as hold:
                 hold.enter_context(self._guard.quiet(pid))
                 hold.enter_context(self._guard.hold_pets(pid))
                 result = trip.go()
         except _Abort as a:
-            result = SupplyResult(False, a.reason, a.detail, trip.sold, trip.bought, trip.put)
+            result = SupplyResult(
+                False, a.reason, a.detail, trip.sold, trip.bought, trip.put, trip.stored
+            )
         except Exception:
             log.exception("supply failed pid=%d", pid, extra={"cat": "supply"})
             result = SupplyResult(
-                False, "error", "補給出錯（詳見診斷紀錄）", trip.sold, trip.bought, trip.put
+                False,
+                "error",
+                "補給出錯（詳見診斷紀錄）",
+                trip.sold,
+                trip.bought,
+                trip.put,
+                trip.stored,
             )
         finally:
             trip.dismiss()
@@ -821,11 +848,19 @@ class SupplyManager:
 
 
 class _Trip:
-    def __init__(self, mgr: SupplyManager, pid: int, stop: threading.Event, note) -> None:
+    def __init__(
+        self,
+        mgr: SupplyManager,
+        pid: int,
+        stop: threading.Event,
+        note,
+        store_only: dict[int, int] | None = None,
+    ) -> None:
         self.m = mgr
         self.pid = pid
         self.stop = stop
         self.note = note
+        self.store_only = store_only
         self.sold = 0
         self.bought = 0
         self.put = 0
@@ -890,10 +925,14 @@ class _Trip:
         cfg = self.m.config(name)
         rules = self.m._store.load_items(name)
         bag, pet = self.held()
-        sells = sell_list(rules, bag, self.m._facts, SELL)
-        stores = sell_list(rules, bag, self.m._facts, STORE)
-        needs = buy_needs(cfg.items, bag, pet)
-        bank = bank_action(self.m._gold(self.pid), cfg)
+        if self.store_only is not None:
+            sells, needs, bank = [], [], None
+            stores = store_rows(self.store_only, bag, self.m._facts)
+        else:
+            sells = sell_list(rules, bag, self.m._facts, SELL)
+            stores = sell_list(rules, bag, self.m._facts, STORE)
+            needs = buy_needs(cfg.items, bag, pet)
+            bank = bank_action(self.m._gold(self.pid), cfg)
         if not sells and not needs and not stores and bank is None:
             return SupplyResult(True, "nothing", "沒有要賣、要存或要買的東西")
         caps = self.m._caps(self.pid) or frozenset()
@@ -905,7 +944,9 @@ class _Trip:
             self.line("info", f"錢莊跳過：hook 還沒有錢莊指令（要{bank_text(bank)}）")
             bank = None
         if not sells and not needs and not stores and bank is None:
-            return SupplyResult(True, "done", self.summary([]), self.sold, self.bought, self.put)
+            return SupplyResult(
+                True, "done", self.summary([]), self.sold, self.bought, self.put, self.stored
+            )
         if not caps:
             raise _Abort("no-hook", "讀不到 hook 的指令清單（舊版 hook，或還在登入）")
         missing = [c for c in SUPPLY_COMMANDS if c not in caps]
@@ -935,7 +976,9 @@ class _Trip:
             self.warehouse_stop(market, graph, stores, bank, bool(sells or needs))
         if not sells and not needs:
             self.close_windows()
-            return SupplyResult(True, "done", self.summary([]), self.sold, self.bought, self.put)
+            return SupplyResult(
+                True, "done", self.summary([]), self.sold, self.bought, self.put, self.stored
+            )
         self.line("info", f"在{market.label}補給")
         graph = rp.cached_graph(market.script.level, market.script.manor)
         wanted = {i for i, _b, _p in needs}
@@ -986,7 +1029,7 @@ class _Trip:
         detail = self.summary(short)
         if short and cfg.stop_when_short:
             return SupplyResult(False, "short", detail, self.sold, self.bought, self.put)
-        return SupplyResult(True, "done", detail, self.sold, self.bought, self.put)
+        return SupplyResult(True, "done", detail, self.sold, self.bought, self.put, self.stored)
 
     def open_windows(self) -> list[str]:
         out = []

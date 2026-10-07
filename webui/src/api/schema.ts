@@ -4283,6 +4283,16 @@ export interface components {
             logout_mp_at?: number | null;
             /** Skip To */
             skip_to?: number | null;
+            /**
+             * Tidy Boxes
+             * @default false
+             */
+            tidy_boxes: boolean;
+            /**
+             * Keep Potions
+             * @default 50
+             */
+            keep_potions: number;
         };
         /**
          * TowerEstimate
@@ -4435,7 +4445,9 @@ export interface components {
             /**
              * @default {
              *       "logout": false,
-             *       "logout_hp_at": 0
+             *       "logout_hp_at": 0,
+             *       "tidy_boxes": false,
+             *       "keep_potions": 50
              *     }
              */
             config: components["schemas"]["TowerConfig"];

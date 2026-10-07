@@ -54,6 +54,7 @@ from services.combat import (
 from services.game_input import leave_game
 from services.guard import GuardManager, GuardStore, read_holdings, read_learned, read_stage_id
 from services import run_log
+from services.box_tidy import BoxTidy, Loot, load_loot
 from services.hook_caps import FEATURES, HookCaps
 from services.hook_cmd import CommandChannel, NoReply, PipeBusy, PipeGone
 from services.tower import (
@@ -277,10 +278,14 @@ class TowerManager:
         navigator=None,  # services.navigator.Navigator: walks to 玄天之境 from elsewhere
         hook_caps: HookCaps | None = None,  # shared with the other modules
         supply=None,  # services.supply.SupplyManager: a 補給 trip before each run
+        loot: Callable[[], Loot] = load_loot,  # 寶箱整理: what the 關 boxes hold
     ) -> None:
         self._supply = supply
         if supply is not None:
             supply.add_host("神武玄天塔 · 出發前")
+            supply.add_host("神武玄天塔 · 寶箱整理")
+        self._load_loot = loot
+        self._loot: Loot | None = None
         self._leave_game = leave_game
         self._navigator = navigator
         self._guard = guard
@@ -746,6 +751,8 @@ class TowerManager:
                 self._wait(run, self._tick(pid, run))
         except _Done as done:
             ended, phase, complete = done.reason, done.phase, done.complete
+            if complete and run.config.tidy_boxes:
+                self._tidy(pid, run)
         except Exception:
             log.exception("tower loop failed pid=%d", pid, extra={"cat": "tower"})
             ended, phase = "登塔出錯停止（詳見診斷紀錄）", "error"
@@ -828,6 +835,66 @@ class TowerManager:
             return self._at_start(pid, run, tower)
         run.start_since = None
         return self._room_tick(pid, run, tower, st, tile, objs)
+
+    def _tidy(self, pid: int, run: _Run) -> None:
+        """寶箱整理 after a run that ended the normal way (services.box_tidy).
+        A stop or a failure here does not undo the run: it stays done."""
+        self._set_step(run, "寶箱整理")
+        self._note(run, "info", "開始整理寶箱")
+        try:
+            if self._loot is None:
+                self._loot = self._load_loot()
+            potion = self._store.load(run.name).potion
+            result = BoxTidy(
+                cmd=lambda line: self._cmd(pid, run, line),
+                wait=lambda secs: self._wait(run, secs),
+                clock=self._clock,
+                note=lambda phase, text: self._note(run, phase, text),
+                step=lambda text: self._set_step(run, text),
+                loot=self._loot,
+                keep=run.config.keep_potions,
+                supplies=frozenset(potion.hp_items) | frozenset(potion.mp_items),
+                store_trip=self._store_trip(pid, run) if self._supply is not None else None,
+            ).run()
+        except _Done as done:
+            self._note(run, "error", f"寶箱整理中斷：{done.reason}")
+            return
+        except Exception:
+            log.exception("box tidy failed pid=%d", pid, extra={"cat": "tower"})
+            self._note(run, "error", "寶箱整理出錯（詳見診斷紀錄）")
+            return
+        loot = self._loot
+        opened = sum(result.opened.values())
+        parts = [f"開了 {opened} 個寶箱"] if opened else ["沒有寶箱可開"]
+        if result.eaten:
+            parts.append(
+                "吃掉 " + "、".join(f"{loot.name(i)} ×{n}" for i, n in result.eaten.items())
+            )
+        if result.stored:
+            parts.append(f"存倉 {result.stored} 個")
+        summary = "，".join(parts)
+        if result.problem:
+            self._note(run, "error", f"寶箱整理停下：{result.problem}（{summary}）")
+        else:
+            self._note(run, "confirmed", f"寶箱整理完成：{summary}")
+
+    def _store_trip(self, pid: int, run: _Run):
+        def trip(want: dict[int, int]):
+            with run.lock:
+                run.moving = True
+            try:
+                return self._supply.run(
+                    pid,
+                    run.stop,
+                    note=lambda text: self._set_step(run, text),
+                    host="神武玄天塔 · 寶箱整理",
+                    store_only=want,
+                )
+            finally:
+                with run.lock:
+                    run.moving = False
+
+        return trip
 
     def _resupply(self, pid: int, run: _Run) -> None:
         """補給 before the climb, every run (user, 2026-10-07): sell, store, buy."""
