@@ -4,6 +4,7 @@ import threading
 import pytest
 
 from services import route_plan as rp
+from services import run_log
 from services._paths import bundled
 from services.navigator import Navigator, _Replan, _Run, _Stop, read_level
 
@@ -694,3 +695,33 @@ def test_a_door_on_the_way_to_an_npc_does_not_fire():
     run = _Run(nav_for(game), 1, None, lambda t: None)
     run.walk_to((BANK_CLERK[0] + 6, BANK_CLERK[1]), CHENGDU)
     assert game.fired_off and game.pos != (12, 13)
+
+
+class LaterDoorGame(LateDoorGame):
+    """A door that sends us through two reads after we reach it: past the
+    walk's own "did it fire" read, before the wait for a jump starts (live
+    2026-10-08, 成都少城 bank (10, 12) -> (61, 155))."""
+
+    def _step(self):
+        if self.pending is not None:
+            land, wait = self.pending
+            if wait:
+                self.pending = (land, wait - 1)
+                return
+            self.pos, self.pending = land, None
+            return
+        super()._step()
+        if self.pending is not None and self.pos != self.pending:
+            self.pending = (self.pending, 1)
+
+
+def test_a_door_that_fires_after_the_arrival_check_counts_as_taken(monkeypatch):
+    notes = []
+    monkeypatch.setattr(run_log, "note", lambda cat, pid, char, text, **kw: notes.append(text))
+    zone, _t = door_into_bank()
+    game = LaterDoorGame(CHENGDU, (47, 168), {zone: (12, 13)})
+    result = nav_for(game).go(7, CHENGDU, BANK_CLERK)
+    assert result.ok, result
+    # No second try from inside the bank: in game it cannot reach the door
+    # from there, and the trip fails.
+    assert not [n for n in notes if n.startswith("no jump")], notes

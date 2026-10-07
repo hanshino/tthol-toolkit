@@ -122,6 +122,35 @@ def test_pick_stop_prefers_coverage_then_cost():
     assert pick == (b, set())
 
 
+def test_pick_stop_prefers_a_shop_in_town_over_a_cheaper_ride():
+    # 成都少城: a horse to 曼陀羅城 reckons a little cheaper than walking into
+    # 成都市集, but the town's own shop wins (user, 2026-10-08).
+    home, away, poor = npc(1, SHOP, stage=173), npc(2, SHOP, stage=264), npc(3, OTHER, stage=54)
+    sells = {SHOP: {POTION: 1, SCROLL: 1}, OTHER: {POTION: 1}}
+    costs = {1: 1.4, 2: 1.3, 3: 1.0}
+
+    def sold_by(shops):
+        return {i for s in shops for i in sells.get(s, {})}
+
+    def pick(cost=lambda n: costs[n.npc_id]):
+        return sp.pick_stop(
+            [home, away, poor],
+            lambda n: n.shop_ids,
+            sold_by,
+            {POTION, SCROLL},
+            cost,
+            set(),
+            False,
+            lambda n: n.stage in (53, 54, 173),
+        )
+
+    assert pick() == (home, {POTION, SCROLL})
+    # Coverage still comes first: the town shop selling less does not win.
+    assert pick()[0] is not poor
+    # No way to the town's shop: the ride.
+    assert pick(lambda n: None if n.npc_id == 1 else costs[n.npc_id]) == (away, {POTION, SCROLL})
+
+
 # ---- a trip -------------------------------------------------------------------
 
 

@@ -406,6 +406,20 @@ def manor_stages(db_path: Path | None = None) -> frozenset[int]:
 
 
 @lru_cache(maxsize=2)
+def stage_groups(db_path: Path | None = None) -> dict[int, int]:
+    """stages.group of each map: a town and its own maps (成都少城, 成都太城
+    and 成都市集 are all 18)."""
+    con = _connect(db_path)
+    try:
+        rows = con.execute(
+            'SELECT id, "group" FROM stages WHERE kind = \'stage\' AND "group" > 0'
+        ).fetchall()
+    finally:
+        con.close()
+    return {sid: grp for sid, grp in rows}
+
+
+@lru_cache(maxsize=2)
 def _tables(db_path: Path | None = None) -> _Tables:
     con = _connect(db_path)
     try:

@@ -35,6 +35,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 
 from services import route_plan as rp
 from services import run_log
@@ -622,7 +623,11 @@ class _Run:
             # (36, 107) -> (29, 3)), so compare with where the walk started.
             if r in ("map", "jump") or self.went_through(here, before, at):
                 return True
-            if self.jumped(self.me(), DOOR_WAIT if n == 0 else MAP_WAIT):
+            # Still against the walk's start: a door that fires between that
+            # check and the first read here would leave both reads past it
+            # (live 2026-10-08, 成都少城 bank (10, 12) -> (61, 155)).
+            past = partial(self.went_through, here, before, at)
+            if self.jumped(self.me(), DOOR_WAIT if n == 0 else MAP_WAIT, past):
                 return True
             if n + 1 < DOOR_TRIES and not self.back_off(cells, here, shuffle=n > 0):
                 run_log.note("navigator", self.pid, None, f"no tile to back off to from {at}")
@@ -680,12 +685,18 @@ class _Run:
                     best = (d, t)
         return best[1] if best else None
 
-    def jumped(self, before: Tile | None, timeout: float = MAP_WAIT) -> bool:
+    def jumped(
+        self, before: Tile | None, timeout: float = MAP_WAIT, past: Callable[[], bool] | None = None
+    ) -> bool:
         """Wait for a teleport on this map: a jump between two reads (walking is
-        2 tiles a poll at most; a door moves us across the map)."""
+        2 tiles a poll at most; a door moves us across the map), or `past` says
+        we are through already."""
         last = before
         space = self.stage()
         for _ in range(int(timeout / 0.3)):
+            if past is not None and past():
+                run_log.note("navigator", self.pid, None, f"through, at {self.me()}", stage=space)
+                return True
             p = self.me()
             if self.teleported(space, last, p):
                 run_log.note("navigator", self.pid, None, f"jumped {last} -> {p}", stage=space)
