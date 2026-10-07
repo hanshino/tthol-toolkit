@@ -546,3 +546,18 @@ def test_the_view_lists_the_bag_and_the_last_seen_warehouse_for_the_pickers():
     assert [(r.item_id, r.count, r.stacks, r.category) for r in view.warehouse] == [
         (B, 7, 2, "book")
     ]
+
+
+def test_an_empty_bag_still_goes_to_the_warehouse():
+    # Just logged in: nothing in the bag, the warehouse never opened this
+    # session. The withdraw trip opens it and reads it then.
+    world, store, supply, _nav, mgr = setup()
+    world.add(1, "倉庫", [])
+    world.add(2, "送貨", [])
+    world.vaults[2] = [[A, 2]]
+    whitelist(store, "倉庫", [(A, True)])
+    start_receiver(mgr, 1)
+    mgr.start(2, "send")
+    assert finish(mgr, 2).ended == "全部交完"
+    assert supply.withdraws[0] == (2, [(A, 2)]) and supply.trips == [(1, {A: 2})]
+    mgr.stop(1)
