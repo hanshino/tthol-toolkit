@@ -1004,7 +1004,7 @@ class TowerManager:
             return
         self._note(run, "error", f"{short}，寵物背包也補不了，登出遊戲")
         if not self._leave_game(pid):
-            raise _Done(f"{short}，要登出但找不到遊戲視窗", "error")
+            raise _Done(f"{short}，要登出但叫不出登出選單（或找不到遊戲視窗）", "error")
         # Logged out = the own character is gone from the hook's `status`.
         end = self._clock() + LOGOUT_WAIT
         while self._clock() < end:
