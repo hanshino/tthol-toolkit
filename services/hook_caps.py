@@ -56,6 +56,28 @@ FEATURES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+MAX_PAGES = 32
+
+
+def read_manifest(send: Callable[[str], dict]) -> dict:
+    """The whole `caps` reply. One reply holds ~8 KB, so newer hooks page the
+    manifest (tthol-hook 2026-10-07): `caps` is page 1 with "pages": N, then
+    `caps 2` .. `caps N`; their `commands` join in order. A hook without
+    "pages" sends it all at once."""
+    first = send("caps")
+    pages = first.get("pages") if first.get("ok") else None
+    if not isinstance(pages, int) or pages <= 1 or not isinstance(first.get("commands"), list):
+        return first
+    commands = list(first["commands"])
+    for n in range(2, min(pages, MAX_PAGES) + 1):
+        page = send(f"caps {n}")
+        if not page.get("ok") or not isinstance(page.get("commands"), list):
+            # A manifest missing a page would hide commands: none at all instead.
+            return {"ok": False, "error": page.get("error") or f"caps page {n} unreadable"}
+        commands += page["commands"]
+    return {**first, "commands": commands}
+
+
 FRESH = 60.0  # a manifest older than this is re-read in the background
 RETRY = 5.0  # after a failed background read (pipe busy, map load)
 
@@ -88,7 +110,7 @@ class HookCaps:
 
         Raises PipeGone / PipeBusy / NoReply when the hook cannot be asked.
         """
-        reply = self._channel.send(pid, "caps")
+        reply = read_manifest(lambda line: self._channel.send(pid, line))
         if str(reply.get("error") or "").startswith("not in game"):
             # v5 at the login screens: nothing to learn yet, read again later.
             raise NoReply("not in game")
