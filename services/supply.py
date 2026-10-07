@@ -31,11 +31,12 @@ import threading
 import time
 from collections.abc import Callable
 from contextlib import ExitStack
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from reader import read_inventory, read_money, read_pet_inventory
 from services import route_plan as rp
 from services import shop_catalog
+from services.supply_points import FAMILY_MENUS, POINTS, SupplyPoint
 from services.api_types import (
     GuardStartResult,
     ItemRules,
@@ -71,6 +72,8 @@ PIPE_RETRIES = 6
 NPC_REACH = 4  # tiles: talk from this close (the game walks the rest)
 TILE_PX = 40
 TYPE_LABELS = {"POTION": "藥品", "RETURN_SCROLL": "捲軸"}
+FAMILY_TIERS = {27: "初級", 28: "中級", 29: "高級", 63: "特貢"}
+FAMILY_WAIT = 2.0  # for the 0x31 a `family` ask brings
 
 Tile = tuple[int, int]
 
@@ -235,14 +238,14 @@ def read_load(pm, hp_addr, _compat_mode):
 
 
 def pick_stop(
-    npcs: list[shop_catalog.ShopNpc],
-    shops_of: Callable[[shop_catalog.ShopNpc], frozenset[int]],
+    npcs: list,
+    shops_of: Callable[[object], frozenset[int]],
     sold_by: Callable[[frozenset[int]], set[int]],
     wanted: set[int],
-    cost: Callable[[shop_catalog.ShopNpc], float | None],
+    cost: Callable[[object], float | None],
     skip: set[tuple[int, int]],
     any_shop: bool,
-) -> tuple[shop_catalog.ShopNpc, set[int]] | None:
+) -> tuple[object, set[int]] | None:
     """The shop selling the most of `wanted`, then the cheapest to reach.
 
     `any_shop`: there is something to sell, so a shop selling none of `wanted`
@@ -257,7 +260,7 @@ def pick_stop(
             scored.append((-len(covered), npc, covered))
     if not scored:
         return None
-    best: tuple[int, float, shop_catalog.ShopNpc, set[int]] | None = None
+    best: tuple[int, float, object, set[int]] | None = None
     for count, npc, covered in sorted(scored, key=lambda s: s[0]):
         if best is not None and count > best[0]:
             break  # covers fewer than a reachable shop already found
@@ -275,11 +278,34 @@ def pick_stop(
 @dataclass
 class SupplyResult:
     ok: bool
-    reason: str  # done / nothing / short / stopped / busy / no-hook / error
+    reason: str  # done / nothing / short / unsold / stopped / busy / no-hook / error
     detail: str = ""
     sold: int = 0
     bought: int = 0
     put: int = 0
+
+
+@dataclass
+class Market:
+    """Where this character buys: the 家族道具商 (a family with a manor) or the
+    town shopkeepers (no family)."""
+
+    family: bool
+    label: str
+    points: list[SupplyPoint]
+    script: rp._Script
+    family_shop: int | None = None
+
+    def shop_of(self, point: SupplyPoint) -> int | None:
+        return self.family_shop if point.kind == "family" else point.shop
+
+
+def unsold_items(market: Market, items: list[SupplyItem], sells: dict[int, dict[int, int]]):
+    """List items the family shop does not sell (user: stop and say so)."""
+    if not market.family or market.family_shop is None:
+        return []
+    stock = sells.get(market.family_shop, {})
+    return [r.item_id for r in items if r.item_id not in stock]
 
 
 class _Abort(Exception):
@@ -318,7 +344,13 @@ class SupplyManager:
         wall: Callable[[], float] = time.time,
         sleep: Callable[[threading.Event | None, float], bool] | None = None,
         pet_items: Callable[[], frozenset[int]] = load_pet_items,
+        manor: Callable[[int], int | None] = lambda _pid: None,  # family manor sestage id
+        ask_family: Callable[[int], dict | None] | None = None,  # hook `family` (0x31 -> manor)
+        points: tuple[SupplyPoint, ...] = POINTS,
     ) -> None:
+        self._manor = manor
+        self._ask_family = ask_family
+        self._points = points
         self._guard = guard
         self._read_locked = read_locked
         self._character_name = character_name
@@ -358,10 +390,20 @@ class SupplyManager:
         self._store.save_section(name, SUPPLY_SECTION, cfg)
         return cfg
 
-    def buyables(self, query: str = "", limit: int = 30) -> list[SupplyBuyable]:
+    def buyables(
+        self, query: str = "", limit: int = 30, pid: int | None = None
+    ) -> list[SupplyBuyable]:
+        """Items to add; with `pid`, a family character sees its family shop's only."""
         q = query.strip()
-        items = self._catalog().items.values()
-        hits = [b for b in items if q in b.name] if q else list(items)
+        cat = self._catalog()
+        items = list(cat.items.values())
+        if pid is not None:
+            held = self._holdings(pid)
+            market = self.market(pid, held[0] if held else {})
+            if market.family and market.family_shop is not None:
+                stock = cat.sells.get(market.family_shop, {})
+                items = [replace(b, price=stock[b.item_id]) for b in items if b.item_id in stock]
+        hits = [b for b in items if q in b.name] if q else items
         hits.sort(key=lambda b: (not b.name.startswith(q), -b.shops, b.price, b.item_id))
         return [
             SupplyBuyable(
@@ -384,6 +426,8 @@ class SupplyManager:
         held = self._holdings(pid)
         bag, pet = held if held else ({}, {})
         cat = self._catalog()
+        market = self.market(pid, bag)
+        unsold = set(unsold_items(market, cfg.items, cat.sells))
         rows = []
         needs = {i: (b, p) for i, b, p in buy_needs(cfg.items, bag, pet)}
         for row in cfg.items:
@@ -400,6 +444,7 @@ class SupplyManager:
                     bag=bag.get(row.item_id, 0),
                     pet=pet.get(row.item_id, 0),
                     need=b + p,
+                    unsold=row.item_id in unsold,
                 )
             )
         rules = self._store.load_items(name)
@@ -419,7 +464,9 @@ class SupplyManager:
             load=self._load(pid, rules, cfg),
             hook_ready=caps is not None and all(c in caps for c in SUPPLY_COMMANDS),
             gold=gold,
-            plan=self._preview(pid, cfg, bag, pet, bool(sells)),
+            plan=self._preview(pid, market, cfg, bag, pet, bool(sells)),
+            merchant=market.label,
+            family=market.family,
             hosts=list(self._hosts),
             status=status,
         )
@@ -453,7 +500,13 @@ class SupplyManager:
         )
 
     def _preview(
-        self, pid: int, cfg: SupplyConfig, bag: dict[int, int], pet: dict[int, int], sells: bool
+        self,
+        pid: int,
+        market: Market,
+        cfg: SupplyConfig,
+        bag: dict[int, int],
+        pet: dict[int, int],
+        sells: bool,
     ) -> list[SupplyStop]:
         needs = buy_needs(cfg.items, bag, pet)
         if not needs and not sells:
@@ -464,16 +517,14 @@ class SupplyManager:
             stage = None
         if not stage:
             return []
-        level = self._level(pid)
-        script = rp._Script(rp._tables(), level, None)
-        graph = rp.cached_graph(level, None)
+        graph = rp.cached_graph(market.script.level, market.script.manor)
         here = stage[0]
         out: list[SupplyStop] = []
         wanted = {i: b + p for i, b, p in needs}
         skip: set[tuple[int, int]] = set()
         first = True
         while first or (cfg.extra_stop and wanted and len(out) < MAX_STOPS):
-            pick = self._pick(script, graph, here, None, set(wanted), skip, sells and first)
+            pick = self._pick(market, graph, here, set(wanted), skip, sells and first)
             if pick is None:
                 break
             npc, covered = pick
@@ -484,7 +535,7 @@ class SupplyManager:
             out.append(
                 SupplyStop(
                     npc=npc.name,
-                    stage_name=rp._tables().stages.get(npc.stage, f"#{npc.stage}"),
+                    stage_name=npc.stage_name,
                     tile=npc.tile,
                     buys=buys,
                     missing=[self._name(i) for i in wanted],
@@ -639,29 +690,63 @@ class SupplyManager:
             self._pet_items = self._pet_items_loader()
         return self._pet_items
 
-    def _shops_of(self, script: rp._Script, npc: shop_catalog.ShopNpc) -> frozenset[int]:
-        """The shop(s) this character gets from `npc`: its A5 messages whose
-        triggers hold. None when no trigger holds for sure (家族道具商 checks
-        the family's level, which no condition here can read): the dialog walk
-        could not find the shop option there either."""
-        return frozenset(s for msg, s in npc.opens if s in script.shops_from_msg(msg))
+    def market(self, pid: int, bag: dict[int, int], ask: bool = False) -> Market:
+        """Family first (user, 2026-10-07): a character whose family has a manor
+        buys only at the 家族道具商, whose shop follows the manor and a 特貢令
+        in the bag. No family: the town shopkeepers."""
+        level = self._level(pid)
+        manor = self._manor(pid)
+        if manor is None and ask:
+            manor = self._learn_manor(pid)
+        script = rp._Script(rp._tables(), level, manor, bag)
+        if manor is not None:
+            shops = [s for m in reversed(FAMILY_MENUS) for s in script.shops_from_msg(m)]
+            if shops:
+                shop = shops[0]  # 特貢 menu first: without a 特貢令 it falls back to the plain one
+                return Market(
+                    family=True,
+                    label=f"家族商人・{FAMILY_TIERS.get(shop, '')}商店",
+                    points=[p for p in self._points if p.kind == "family"],
+                    script=script,
+                    family_shop=shop,
+                )
+        return Market(
+            family=False,
+            label="一般商人（沒有家族莊園）",
+            points=[p for p in self._points if p.kind == "general"],
+            script=script,
+        )
 
-    def _pick(self, script, graph, here: int, pos: Tile | None, wanted, skip, any_shop):
+    def _learn_manor(self, pid: int) -> int | None:
+        if self._ask_family is None:
+            return None
+        try:
+            reply = self._ask_family(pid)
+        except Exception:
+            return None
+        if not reply or not reply.get("ok"):
+            return None
+        end = self._clock() + FAMILY_WAIT
+        while self._clock() < end:
+            manor = self._manor(pid)
+            if manor is not None:
+                return manor
+            if self._sleep(None, 0.1):
+                break
+        return None
+
+    def _pick(self, market: Market, graph, here: int, wanted, skip, any_shop):
         cat = self._catalog()
 
-        def cost(npc: shop_catalog.ShopNpc) -> float | None:
-            route = rp.plan(graph, here, npc.stage, pos, npc.tile)
+        def cost(point: SupplyPoint) -> float | None:
+            route = rp.plan(graph, here, point.stage, None, point.tile)
             return None if route is None else route.cost
 
-        return pick_stop(
-            cat.npcs,
-            lambda n: self._shops_of(script, n),
-            cat.sold_by,
-            wanted,
-            cost,
-            skip,
-            any_shop,
-        )
+        def shops_of(point: SupplyPoint) -> frozenset[int]:
+            shop = market.shop_of(point)
+            return frozenset() if shop is None else frozenset({shop})
+
+        return pick_stop(market.points, shops_of, cat.sold_by, wanted, cost, skip, any_shop)
 
 
 class _Trip:
@@ -765,9 +850,15 @@ class _Trip:
             self.store_phase(stores)
         self.bank_phase(cfg)
 
-        level = self.m._level(self.pid)
-        script = rp._Script(rp._tables(), level, None)
-        graph = rp.cached_graph(level, None)
+        market = self.m.market(self.pid, bag, ask=True)
+        unsold = unsold_items(market, cfg.items, self.m._catalog().sells)
+        if unsold:
+            names = "、".join(self.name(i) for i in unsold)
+            raise _Abort(
+                "unsold", f"{market.label}沒賣：{names}（從補貨清單移除，或換成家族商人有賣的）"
+            )
+        self.line("info", f"在{market.label}補給")
+        graph = rp.cached_graph(market.script.level, market.script.manor)
         wanted = {i for i, _b, _p in needs}
         pet_checked = False
         visited: set[tuple[int, int]] = set()
@@ -780,14 +871,14 @@ class _Trip:
             here = stage[0] if stage else None
             if here is None:
                 raise _Abort("error", "讀不到目前地圖")
-            pick = self.m._pick(script, graph, here, None, wanted, visited, bool(sells))
+            pick = self.m._pick(market, graph, here, wanted, visited, bool(sells))
             if pick is None:
                 if n == 0:
-                    raise _Abort("error", "找不到走得到、又有賣清單道具的城鎮商人")
+                    raise _Abort("error", f"找不到走得到、又有賣清單道具的{market.label}")
                 break
             npc, covered = pick
             visited.add((npc.npc_id, npc.stage))
-            self.visit(npc)
+            self.visit(npc, market)
             if not pet_checked:
                 # At the shop, not before the walk: a summoned pet would trail
                 # the character across the maps.
@@ -854,8 +945,8 @@ class _Trip:
 
     # -- moving --------------------------------------------------------------------
 
-    def visit(self, npc: shop_catalog.ShopNpc) -> None:
-        stage_name = rp._tables().stages.get(npc.stage, f"#{npc.stage}")
+    def visit(self, npc: SupplyPoint, market: Market) -> None:
+        stage_name = npc.stage_name
         self.step(f"前往{stage_name}找{npc.name}")
         self.line("info", f"前往{stage_name}找{npc.name}（{npc.tile[0]}, {npc.tile[1]}）")
         result = self.m._navigator.go(self.pid, npc.stage, npc.tile, stop=self.stop, note=self.step)
@@ -863,7 +954,7 @@ class _Trip:
             raise _Abort("stopped", "已停止")
         if not result.ok:
             raise _Abort("error", f"走不到{npc.name}：{result.detail}")
-        self.open_shop(npc)
+        self.open_shop(npc, market)
 
     def find(self, npc_id: int) -> dict | None:
         st = self.cmd("status")
@@ -878,13 +969,12 @@ class _Trip:
                 best = (d, o)
         return best[1] if best else None
 
-    def open_shop(self, npc: shop_catalog.ShopNpc) -> None:
+    def open_shop(self, npc: SupplyPoint, market: Market) -> None:
         self.step(f"和{npc.name}對話")
         obj = self.find(npc.npc_id)
         if obj is None:
             raise _Abort("error", f"附近找不到{npc.name}")
-        level = self.m._level(self.pid)
-        script = rp._Script(rp._tables(), level, None)
+        script, want = market.script, market.shop_of(npc)
         before = self.cmd("shop")
         stale = (before.get("npc") or {}).get("id") if before.get("open") else None
         self.cmd(f"talk {obj['h']}")
@@ -916,9 +1006,12 @@ class _Trip:
                 continue
             options = d.get("options") or []
             if options:
-                pick = next(
-                    (i for i, j in enumerate(options) if j and script.shops_from_msg(j)), None
-                )
+                # The option that opens this character's shop (the 家族道具商
+                # has a plain and a 特貢 menu); any shop option as a fallback.
+                leads = [(i, script.shops_from_msg(j)) for i, j in enumerate(options) if j]
+                pick = next((i for i, shops in leads if want in shops), None)
+                if pick is None:
+                    pick = next((i for i, shops in leads if shops), None)
                 if pick is None:
                     raise _Abort("error", f"{npc.name}的對話裡沒有開商店的選項")
                 self.cmd(f"option {pick}")

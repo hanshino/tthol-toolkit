@@ -12,6 +12,8 @@
 .sp-n { font-family: var(--tt-font-mono); color: var(--tt-gold); }
 .sp-src { flex: 1 1 220px; min-width: 0; }
 .sp-badge { font-size: 11.5px; padding: 1px 8px; border: 1px solid var(--tt-warn); color: var(--tt-warn); }
+.sp-badge.is-info { border-color: var(--tt-accent); color: var(--tt-text); }
+.sp-table tr.is-unsold b, .sp-table tr.is-unsold small { color: var(--tt-bad); }
 .sp-phase-body { display: grid; gap: 8px; padding: 0 14px 12px; }
 .sp-phase.is-dim .sp-scroll { opacity: 0.55; }
 .sp-empty { padding: 2px 0; }

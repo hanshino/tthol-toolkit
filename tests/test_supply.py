@@ -13,6 +13,7 @@ from services.guard import GuardStore, read_holdings, read_stage_id
 from services.item_rules import ItemFact
 from services.navigator import NavResult
 from services.shop_catalog import Buyable, ShopCatalog, ShopNpc
+from services.supply_points import SupplyPoint
 
 POTION, MP, SCROLL, JUNK, ORE, PET = 24007, 24021, 24037, 900, 901, 7000
 SHOP, OTHER = 7, 27
@@ -254,15 +255,21 @@ class FakeCaps:
 
 
 class FakeScript:
-    def __init__(self, *_a) -> None:
-        pass
+    """Option jump 1 opens SHOP; the family menus open FAMILY_SHOP with a manor."""
+
+    def __init__(self, _t, _level, manor=None, _items=None) -> None:
+        self.level, self.manor = 60, manor
 
     def shops_from_msg(self, msg):
-        return {1: [SHOP], 2: [SHOP]}.get(msg, [])
+        if msg in (25098, 25106):
+            return [FAMILY_SHOP] if self.manor else []
+        return {1: [SHOP if not self.manor else FAMILY_SHOP], 2: [SHOP]}.get(msg, [])
 
 
 ALL = sp.SUPPLY_COMMANDS + ("buy", "sell") + sp.PET_COMMANDS + sp.SUMMON_COMMANDS
-SHOPKEEPER = ShopNpc(6130, "檀泉道具商", 23, (23, 15), ((1, SHOP),))
+FAMILY_SHOP = 29
+SHOPKEEPER = SupplyPoint("general", 6130, "檀泉道具商", 23, "檀泉別苑", (23, 15), shop=SHOP)
+FAMILY_POINT = SupplyPoint("family", 6130, "家族道具商", 51, "洛陽外城", (70, 142))
 
 
 @pytest.fixture(autouse=True)
@@ -277,15 +284,19 @@ def no_db(monkeypatch):
 
 
 def make(
-    game: FakeGame, cfg: SupplyConfig, rules: ItemRules | None = None, caps=ALL, npcs=(SHOPKEEPER,)
+    game: FakeGame,
+    cfg: SupplyConfig,
+    rules: ItemRules | None = None,
+    caps=ALL,
+    manor=None,
+    family_stock=None,
 ):
     store = GuardStore()
     store.save_section("晨曦", sp.SUPPLY_SECTION, cfg)
     if rules is not None:
         store.save_items("晨曦", rules)
     cat = ShopCatalog(
-        npcs=list(npcs),
-        sells={SHOP: dict(game.sells)},
+        sells={SHOP: dict(game.sells), FAMILY_SHOP: dict(family_stock or game.sells)},
         items={
             i: Buyable(i, FACTS[i].name if i in FACTS else f"#{i}", "POTION", p, 1)
             for i, p in game.sells.items()
@@ -313,6 +324,8 @@ def make(
         wall=lambda: 0.0,
         sleep=sleep,
         pet_items=lambda: frozenset({PET}),
+        manor=lambda pid: manor,
+        points=(SHOPKEEPER, FAMILY_POINT),
     )
     return mgr, nav, guard
 
@@ -430,3 +443,31 @@ def test_store_only_needs_no_hook_commands():
     )
     result = mgr.run(1, threading.Event())
     assert result.ok and nav.went == []
+
+
+def test_a_family_buys_only_at_the_family_shop():
+    game = FakeGame({POTION: 0})
+    mgr, nav, _ = make(game, SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)]), manor=1151)
+    result = mgr.run(1, threading.Event())
+    assert result.ok and game.bag[POTION] == 10
+    assert nav.went == [(51, (70, 142))]  # the 家族道具商, not the nearer town shop
+    assert any("家族商人・高級商店" in line.text for line in mgr.status(1).log)
+
+
+def test_an_item_the_family_shop_does_not_sell_stops_before_walking():
+    game = FakeGame({POTION: 0, SCROLL: 0})
+    cfg = SupplyConfig(
+        items=[SupplyItem(item_id=POTION, bag=10), SupplyItem(item_id=SCROLL, bag=5)]
+    )
+    mgr, nav, _ = make(game, cfg, manor=1151, family_stock={POTION: 300})
+    result = mgr.run(1, threading.Event())
+    assert result.reason == "unsold" and not result.ok
+    assert "回城捲軸" in result.detail or f"#{SCROLL}" in result.detail
+    assert nav.went == []
+
+
+def test_no_family_uses_the_town_shopkeepers():
+    game = FakeGame({POTION: 0})
+    mgr, nav, _ = make(game, SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)]))
+    mgr.run(1, threading.Event())
+    assert nav.went == [(23, (23, 15))]

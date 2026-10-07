@@ -114,6 +114,7 @@ export function SupplyPanel({ pid, active }: { pid: number; active: boolean }) {
     [next[i], next[j]] = [next[j], next[i]];
     setItems(next);
   };
+  const unsold = view.rows.filter(r => r.unsold);
   const cost = cfg.items.reduce((sum, it) => {
     const r = rows.get(it.item_id);
     return sum + (r?.price ?? 0) * (r?.need ?? 0);
@@ -161,7 +162,13 @@ export function SupplyPanel({ pid, active }: { pid: number; active: boolean }) {
             <MoveTable rows={view.stores} verb="要存" />
           )}
         </Phase>
-        <Phase n={3} title="買到目標量" src="背包和寵物背包各補到目標；由上往下買，錢或空間不夠時下面的先放棄">
+        <Phase n={3} title="買到目標量" src="背包和寵物背包各補到目標；由上往下買，錢或空間不夠時下面的先放棄"
+          badge={view.merchant ?? undefined} badgeTone="info">
+          {unsold.length > 0 && (
+            <div className="gd-notice">
+              {view.merchant}沒賣：{unsold.map(r => r.name).join('、')}。有家族的角色只在家族商人補給，補給會在出門前停下並提示；把這些從清單移除，或換成家族商人有賣的。
+            </div>
+          )}
           {cfg.items.length > 0 && (
             <div className="sp-scroll">
               <table className="sp-table">
@@ -183,13 +190,15 @@ export function SupplyPanel({ pid, active }: { pid: number; active: boolean }) {
                     const set = (patch: Partial<SupplyConfig['items'][number]>) =>
                       setItems(cfg.items.map((x, k) => (k === i ? { ...x, ...patch } : x)));
                     return (
-                      <tr key={it.item_id}>
+                      <tr key={it.item_id} className={r?.unsold ? 'is-unsold' : undefined}>
                         <td>
                           <div className="sp-item">
                             {r?.icon_url ? <img src={r.icon_url} alt="" width={24} height={24} /> : <span className="sp-noicon" />}
                             <div>
                               <b>{name}</b>
-                              <small>{r?.shops ? `${r.shops} 間城鎮商店有賣` : '城鎮商店沒賣'}</small>
+                              <small>
+                                {r?.unsold ? '家族商人沒賣' : r?.shops ? `${r.shops} 間城鎮商店有賣` : '城鎮商店沒賣'}
+                              </small>
                             </div>
                           </div>
                         </td>
@@ -224,7 +233,7 @@ export function SupplyPanel({ pid, active }: { pid: number; active: boolean }) {
               </table>
             </div>
           )}
-          <Picker taken={cfg.items.map(x => x.item_id)} onAdd={id => setItems([...cfg.items, { item_id: id, bag: 50, pet: 0 }])} />
+          <Picker pid={pid} family={view.family} taken={cfg.items.map(x => x.item_id)} onAdd={id => setItems([...cfg.items, { item_id: id, bag: 50, pet: 0 }])} />
         </Phase>
       </section>
 
@@ -297,8 +306,9 @@ export function SupplyPanel({ pid, active }: { pid: number; active: boolean }) {
   );
 }
 
-function Phase({ n, title, src, badge, dim, children }: {
-  n: number; title: string; src: string; badge?: string; dim?: boolean; children: React.ReactNode;
+function Phase({ n, title, src, badge, badgeTone = 'warn', dim, children }: {
+  n: number; title: string; src: string; badge?: string; badgeTone?: 'warn' | 'info'; dim?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <div className={`sp-phase${dim ? ' is-dim' : ''}`}>
@@ -306,7 +316,7 @@ function Phase({ n, title, src, badge, dim, children }: {
         <span className="sp-n">{n}</span>
         <h3>{title}</h3>
         <span className="gd-dim sp-src">{src}</span>
-        {badge && <span className="sp-badge">{badge}</span>}
+        {badge && <span className={`sp-badge is-${badgeTone}`}>{badge}</span>}
       </div>
       <div className="sp-phase-body">{children}</div>
     </div>
@@ -340,7 +350,9 @@ function MoveTable({ rows, verb }: { rows: SupplyView['sells']; verb: string }) 
   );
 }
 
-function Picker({ taken, onAdd }: { taken: number[]; onAdd: (id: number) => void }) {
+function Picker({ pid, family, taken, onAdd }: {
+  pid: number; family: boolean; taken: number[]; onAdd: (id: number) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<SupplyBuyable[]>([]);
@@ -349,13 +361,13 @@ function Picker({ taken, onAdd }: { taken: number[]; onAdd: (id: number) => void
     if (!open) return;
     const t = window.setTimeout(async () => {
       try {
-        setHits(await get<SupplyBuyable[]>(`/api/supply/items?q=${encodeURIComponent(q)}`));
+        setHits(await get<SupplyBuyable[]>(`/api/supply/items?pid=${pid}&q=${encodeURIComponent(q)}`));
       } catch (e) {
         reportClientError(e, { component: 'SupplyPanel.items', silent: true });
       }
     }, 200);
     return () => window.clearTimeout(t);
-  }, [open, q]);
+  }, [open, q, pid]);
 
   if (!open) {
     return <button type="button" className="gd-add" onClick={() => setOpen(true)}>＋ 加入道具</button>;
@@ -368,7 +380,7 @@ function Picker({ taken, onAdd }: { taken: number[]; onAdd: (id: number) => void
           <span>道具名稱</span>
           <input type="text" value={q} autoFocus onChange={e => setQ(e.target.value)} />
         </label>
-        <span>只列城鎮 NPC 用銀兩賣的道具</span>
+        <span>{family ? '只列你的家族商店有賣的道具' : '只列城鎮 NPC 用銀兩賣的道具'}</span>
         <button type="button" onClick={() => setOpen(false)}>關閉</button>
       </div>
       {shown.length === 0 ? (

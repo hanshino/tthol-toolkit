@@ -794,6 +794,8 @@ class TowerManager:
             return
         if result.reason == "short":
             raise _Done(f"補給沒補齊：{result.detail}", "error")
+        if result.reason == "unsold":
+            raise _Done(f"補給停下：{result.detail}", "error")
         if not result.ok:
             # A failed trip (no shop reachable, an old hook) does not block the
             # climb: the potion floors still guard it.

@@ -65,9 +65,10 @@ async def stop(pid: int, request: Request) -> OkResponse:
 
 
 @router.get("/api/supply/items", response_model=list[SupplyBuyable])
-async def items(request: Request, q: str = "") -> list[SupplyBuyable]:
-    """Items a town NPC sells for 銀兩, matching `q` (name substring)."""
+async def items(request: Request, q: str = "", pid: int | None = None) -> list[SupplyBuyable]:
+    """Items a town NPC sells for 銀兩, matching `q` (name substring). With
+    `pid`, a character in a family sees only what its family shop sells."""
     mgr = _mgr(request)
     if mgr is None:
         return []
-    return await asyncio.to_thread(mgr.buyables, q)
+    return await asyncio.to_thread(mgr.buyables, q, 30, pid)

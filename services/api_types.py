@@ -1405,6 +1405,7 @@ class SupplyRow(_Base):
     bag: int = 0  # held now
     pet: int = 0
     need: int = 0  # to buy for both targets
+    unsold: bool = False  # the family shop does not sell it: a trip stops
 
 
 class SupplyMoveRow(_Base):
@@ -1468,6 +1469,8 @@ class SupplyView(_Base):
     hook_ready: bool = False  # the hook lists every command a trip needs
     gold: int | None = None
     plan: list[SupplyStop] = []  # where a trip would go from here now
+    merchant: str | None = None  # 家族商人・高級商店 / 一般商人
+    family: bool = False  # buys at the 家族道具商 only
     hosts: list[str] = []  # modules that run 補給 first, with when
     status: SupplyStatus = SupplyStatus(running=False)
 

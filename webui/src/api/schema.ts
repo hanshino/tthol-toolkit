@@ -762,7 +762,8 @@ export interface paths {
         };
         /**
          * Items
-         * @description Items a town NPC sells for 銀兩, matching `q` (name substring).
+         * @description Items a town NPC sells for 銀兩, matching `q` (name substring). With
+         *     `pid`, a character in a family sees only what its family shop sells.
          */
         get: operations["items_api_supply_items_get"];
         put?: never;
@@ -4057,6 +4058,11 @@ export interface components {
              * @default 0
              */
             need: number;
+            /**
+             * Unsold
+             * @default false
+             */
+            unsold: boolean;
         };
         /** SupplyStatus */
         SupplyStatus: {
@@ -4151,6 +4157,13 @@ export interface components {
              * @default []
              */
             plan: components["schemas"]["SupplyStop"][];
+            /** Merchant */
+            merchant?: string | null;
+            /**
+             * Family
+             * @default false
+             */
+            family: boolean;
             /**
              * Hosts
              * @default []
@@ -5887,6 +5900,7 @@ export interface operations {
         parameters: {
             query?: {
                 q?: string;
+                pid?: number | null;
             };
             header?: never;
             path?: never;

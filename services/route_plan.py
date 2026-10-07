@@ -60,6 +60,7 @@ STORY_STAGES = frozenset({311})  # 劇情用地圖: a cut-scene map, never a rou
 
 LEVEL = 4  # condition op: character level (cmp, value)
 MANOR = 84  # condition op: family manor sestage id (cmp, value)
+HAS_ITEM = 31  # condition op: holds item a0, at least a1 (checked only with bag counts)
 # Positive conditions taken as met: 銀兩 (C26) — a horse fare is a few thousand.
 ASSUMED = frozenset({26})
 WARP = 3  # action: warp (stage, tag)
@@ -176,8 +177,12 @@ def _compare(cmp: int, have: int, want: int) -> bool | None:
     }.get(cmp)
 
 
-def _holds(op: int, negated: bool, a0, a1, level: int, manor: int | None) -> bool:
-    if op == LEVEL:
+def _holds(
+    op: int, negated: bool, a0, a1, level: int, manor: int | None, items: dict | None = None
+) -> bool:
+    if op == HAS_ITEM and items is not None:
+        ok = items.get(a0, 0) >= max(a1 or 1, 1)
+    elif op == LEVEL:
         ok = _compare(a0, level, a1)
     elif op == MANOR:
         ok = None if manor is None else _compare(a0, manor, a1)
@@ -190,7 +195,15 @@ def _holds(op: int, negated: bool, a0, a1, level: int, manor: int | None) -> boo
     return ok != bool(negated)
 
 
-Trigger = tuple[list, list]  # (conditions, actions), each (op, negated, a0, a1)
+# (conditions, actions, any_of), conditions / actions each (op, negated, a0, a1).
+# any_of: trigger_ops.mode 1, one condition is enough (家族道具商's tier is
+# "manor is one of these": 25100 lists 7 C84s in one trigger).
+Trigger = tuple[list, list, bool]
+
+
+def _trigger(parts: tuple[list, list, list]) -> Trigger:
+    conds, acts, modes = parts
+    return conds, acts, any(m == 1 for m in modes)
 
 
 class _Tables:
@@ -201,22 +214,25 @@ class _Tables:
         self.stages = dict(con.execute("SELECT id, name FROM stages WHERE kind = 'stage'"))
         self.msg_triggers = self._group(
             con.execute(
-                "SELECT msg_id, trigger_idx, kind, op, negated, a0, a1 FROM trigger_ops"
+                "SELECT msg_id, trigger_idx, mode, kind, op, negated, a0, a1 FROM trigger_ops"
                 " ORDER BY msg_id, trigger_idx, kind DESC, seq"
             )
         )
         self.event_triggers: dict[tuple[int, int], list[list[Trigger]]] = {}
         rows = con.execute(
-            "SELECT stage_id, event_tag, event_id, trigger_idx, kind, op, negated, a0, a1"
+            "SELECT stage_id, event_tag, event_id, trigger_idx, mode, kind, op, negated, a0, a1"
             " FROM map_event_ops WHERE stage_kind = 'stage'"
             " ORDER BY stage_id, event_tag, event_id, trigger_idx, kind DESC, seq"
         )
-        events: dict[tuple[int, int], dict[int, dict[int, Trigger]]] = {}
-        for sid, tag, ev, ti, kind, op, neg, a0, a1 in rows:
-            trig = events.setdefault((sid, tag), {}).setdefault(ev, {}).setdefault(ti, ([], []))
+        events: dict[tuple[int, int], dict[int, dict[int, tuple[list, list, list]]]] = {}
+        for sid, tag, ev, ti, mode, kind, op, neg, a0, a1 in rows:
+            trig = events.setdefault((sid, tag), {}).setdefault(ev, {}).setdefault(ti, ([], [], []))
+            trig[2].append(mode)
             (trig[0] if kind == "C" else trig[1]).append((op, neg, a0, a1))
         for key, by_event in events.items():
-            self.event_triggers[key] = [[t[i] for i in sorted(t)] for t in by_event.values()]
+            self.event_triggers[key] = [
+                [_trigger(t[i]) for i in sorted(t)] for t in by_event.values()
+            ]
         self.options: dict[int, list[int]] = {}
         for msg, jump in con.execute(
             "SELECT msg_id, jump_to FROM message_options WHERE jump_to IS NOT NULL"
@@ -244,11 +260,12 @@ class _Tables:
 
     @staticmethod
     def _group(rows) -> dict[int, list[Trigger]]:
-        out: dict[int, dict[int, Trigger]] = {}
-        for msg, ti, kind, op, neg, a0, a1 in rows:
-            trig = out.setdefault(msg, {}).setdefault(ti, ([], []))
+        out: dict[int, dict[int, tuple[list, list, list]]] = {}
+        for msg, ti, mode, kind, op, neg, a0, a1 in rows:
+            trig = out.setdefault(msg, {}).setdefault(ti, ([], [], []))
+            trig[2].append(mode)
             (trig[0] if kind == "C" else trig[1]).append((op, neg, a0, a1))
-        return {m: [t[i] for i in sorted(t)] for m, t in out.items()}
+        return {m: [_trigger(t[i]) for i in sorted(t)] for m, t in out.items()}
 
     def middle(self, stage: int, category: str, key: int) -> Tile | None:
         """The cell nearest the rest of a zone (or an NPC's own tile)."""
@@ -261,14 +278,22 @@ class _Tables:
 class _Script:
     """Message / map-event evaluation against one character (level, manor)."""
 
-    def __init__(self, t: _Tables, level: int, manor: int | None) -> None:
+    def __init__(
+        self, t: _Tables, level: int, manor: int | None, items: dict[int, int] | None = None
+    ) -> None:
         self.t = t
         self.level = level
         self.manor = manor
+        # Bag counts for C31 (holds item); None = unknown, as for routing.
+        self.items = items
 
     def _first(self, triggers: list[Trigger]) -> list | None:
-        for conds, acts in triggers:
-            if all(_holds(op, neg, a0, a1, self.level, self.manor) for op, neg, a0, a1 in conds):
+        for conds, acts, any_of in triggers:
+            held = (
+                _holds(op, neg, a0, a1, self.level, self.manor, self.items)
+                for op, neg, a0, a1 in conds
+            )
+            if not conds or (any(held) if any_of else all(held)):
                 return acts
         return None
 

@@ -135,6 +135,8 @@ def _build_services(dev: bool) -> dict:
         icon_url=lambda item_id: (
             item_catalog.icon_path(item_id) if item_catalog.icon_url(item_id) else None
         ),
+        manor=manor,
+        ask_family=ask_family,
     )
     tower = TowerManager(
         guard=guard,
