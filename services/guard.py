@@ -72,6 +72,7 @@ from services.item_rules import (
     ItemFact,
     load_item_facts,
 )
+from services import run_log
 from services.hook_caps import FEATURES, HookCaps
 from services.hook_cmd import (
     CommandChannel,
@@ -862,6 +863,8 @@ class _LogLine:
 class _Run:
     def __init__(self, name: str, config: GuardConfig, items: ItemRules | None = None) -> None:
         self.name = name
+        self.pid: int | None = None  # for the run record
+        self.vitals: dict[str, int] = {}  # HP / MP of the last pass, for the run record
         self.config = config
         self.items = items or ItemRules()
         self.item_state = BuffState()  # 定期使用, timed like casts
@@ -1022,6 +1025,7 @@ class GuardManager:
                     return GuardStartResult(ok=True)
                 run.thread.join(timeout=2.0)  # a stop is still winding down: let it end first
             run = _Run(name, self._store.load(name), self._store.load_items(name))
+            run.pid = pid
             self._runs[pid] = run
             run.thread = threading.Thread(
                 target=self._loop, args=(pid, run), daemon=True, name=f"guard-{pid}"
@@ -1173,6 +1177,7 @@ class GuardManager:
             run = self._runs.get(pid)
         if run is not None:
             run.live = (hp, mp, self._clock())
+            run_log.vitals(pid, hp, mp, src="packet")
             run.wake.set()
 
     def on_pose_packet(self, pid: int, raw: bytes, _ts: float, own_key: bytes | None) -> None:
@@ -1410,7 +1415,9 @@ class GuardManager:
             run.log.append(line)
             for item_id in line.bag:
                 run.awaiting.setdefault(item_id, deque()).append(line)
-            return line
+            vit = dict(run.vitals)
+        run_log.note("guard", run.pid, run.name, text, rule=rule, phase=phase, **vit)
+        return line
 
     def _set_problem(self, run: _Run, problem: str | None) -> None:
         with run.lock:
@@ -1464,8 +1471,13 @@ class GuardManager:
         now = self._clock()
         hp, mp = sample.hp, sample.mp
         live = run.live
+        src = "read"
         if live is not None and now - live[2] < LIVE_FRESH:
             hp, mp = live[0], live[1]  # the packet is newer than what memory shows yet
+            src = "packet"
+        run_log.vitals(pid, hp, mp, sample.hp_max, sample.mp_max, src)
+        run_log.check(pid, run.name)
+        run.vitals = {"hp": hp, "hp_max": sample.hp_max, "mp": mp, "mp_max": sample.mp_max}
         self._log_bag(run, sample, now)
         self._log_cures(run, sample.debuffs, now)
         with run.lock:
@@ -2034,6 +2046,17 @@ class GuardManager:
                         line.bag[item_id][3] = True
                         line.refresh()
                     del run.awaiting[item_id]
+                    run_log.note(
+                        "guard",
+                        run.pid,
+                        run.name,
+                        f"{self._item_name(item_id)} not seen leaving the bag",
+                        rule="potion",
+                        phase="unconfirmed",
+                        item=item_id,
+                        before=before,
+                        now=count,
+                    )
                     continue
                 drop = before - count
                 while drop > 0 and queue:

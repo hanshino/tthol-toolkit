@@ -650,3 +650,23 @@ def test_pipe_gone_forgets_the_manifest(tmp_path):
     mgr._hook_caps.put(1, frozenset({"pos"}))
     mgr._tick(1, run)
     assert mgr._hook_caps.cached(1) is None
+
+
+def test_ticks_and_packets_feed_the_run_record(tmp_path, caplog):
+    import logging
+
+    from services import run_log
+
+    caplog.set_level(logging.INFO, logger="tthol.run")
+    run_log.forget(1)
+    mgr, run, clock = make_manager(tmp_path, [sample(hp=400)])
+    run.pid = 1
+    mgr._tick(1, run)
+    drink = next(r for r in caplog.records if r.name == "tthol.run" and "×3" in r.getMessage())
+    assert drink.cat == "guard" and drink.char_pid == 1 and drink.char_name == "寒江孤影"
+    assert drink.detail["hp"] == 400 and drink.detail["hp_max"] == 1000
+    assert drink.detail["rule"] == "potion" and drink.detail["phase"] == "sent"
+    mgr.on_vitals(1, 250, 500)  # a hit between two reads, from the packet
+    stats = run_log.floor_stats(1)
+    assert (stats.low_pct, stats.max_drop) == (25, 150)
+    run_log.forget(1)

@@ -119,3 +119,16 @@ def test_filename_is_sortable():
 
     name = bundle_filename(datetime.datetime(2026, 8, 22, 14, 5, 9))
     assert name == "tthol-diag-20260822-140509.zip"
+
+
+def test_bundle_carries_the_two_newest_run_record_days(tmp_path):
+    events_path = tmp_path / "events.jsonl"
+    events_path.write_text("", encoding="utf-8")
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    for day in ("2026-10-05", "2026-10-06", "2026-10-07"):
+        (runs / f"{day}.jsonl").write_text("{}\n", encoding="utf-8")
+    blob = build_bundle(events_path, header={}, sessions=[])
+    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+        got = sorted(n for n in zf.namelist() if n.startswith("runs/"))
+    assert got == ["runs/2026-10-06.jsonl", "runs/2026-10-07.jsonl"]

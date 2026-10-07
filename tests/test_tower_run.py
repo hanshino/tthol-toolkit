@@ -1118,3 +1118,22 @@ def test_supply_short_stops_the_run_and_a_failed_trip_does_not():
     with_supply(mgr, SupplyResult(False, "error", "找不到商人"))
     mgr._tick(1, run)
     assert any("照常登塔" in line.text for line in run.log)
+
+
+def test_a_floor_pass_says_how_hard_it_hit():
+    from services import run_log
+
+    run_log.forget(1)
+    mgr, run, game, _ = make()
+    run.pid = 1
+    ticks(mgr, run, 1)  # into room 1: its HP numbers start here
+    run_log.vitals(1, 1000, 10, hp_max=1000, now=0.0)
+    run_log.vitals(1, 610, 10, now=0.1)
+    run_log.vitals(1, 900, 10, now=0.2)
+    for _ in range(20):
+        mgr._tick(1, run)
+        if run.floors:
+            break
+    passed = [line.text for line in run.log if "第 1 層通過" in line.text]
+    assert passed and passed[0].endswith("，最低血 61%，單下最多 -390（39%））")
+    run_log.forget(1)

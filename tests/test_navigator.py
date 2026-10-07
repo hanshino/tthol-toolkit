@@ -552,3 +552,25 @@ def test_backing_off_an_exit_at_the_map_edge_stays_on_the_map():
         if line.startswith("walk ")
     ]
     assert targets and all(cells.cell(HANGZHOU, t) is not None for t in targets), targets
+
+
+def test_a_zone_walk_is_written_to_the_run_record(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="tthol.run")
+    zone, _t = door_into_bank()
+    game = SwitchGame(CHENGDU, (47, 168), {zone: (12, 13)})
+    assert nav_for(game).go(7, CHENGDU, BANK_CLERK).ok
+    walks = [
+        r for r in caplog.records if r.name == "tthol.run" and r.getMessage().startswith("walk to")
+    ]
+    door = next(r for r in walks if r.detail["zone"])
+    assert door.char_pid == 7 and door.cat == "navigator"
+    assert door.detail["path"][0][1:] == [47, 168]  # where it started
+    assert [e[1] for e in door.detail["events"]] == [0, 1]  # off, then armed near the door
+    steps = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "tthol.run" and r.getMessage().startswith("step")
+    ]
+    assert steps and steps[0].startswith("step door")

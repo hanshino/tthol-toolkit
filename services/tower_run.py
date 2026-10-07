@@ -53,6 +53,7 @@ from services.combat import (
 )
 from services.game_input import leave_game
 from services.guard import GuardManager, GuardStore, read_holdings, read_learned, read_stage_id
+from services import run_log
 from services.hook_caps import FEATURES, HookCaps
 from services.hook_cmd import CommandChannel, NoReply, PipeBusy, PipeGone
 from services.tower import (
@@ -188,6 +189,17 @@ class _Done(Exception):
         self.complete = complete
 
 
+def _hp_summary(run: _Run) -> str:
+    """ "，最低血 39%，單下最多 -9,512（29%）" for the floor so far (run_log), or ""."""
+    s = run_log.floor_stats(run.pid) if run.pid is not None else None
+    if s is None:
+        return ""
+    text = f"，最低血 {s.low_pct}%"
+    if s.max_drop:
+        text += f"，單下最多 -{s.max_drop:,}（{s.max_drop_pct}%）"
+    return text
+
+
 class _Line:
     def __init__(self, id_: int, ts: float, phase: str, text: str) -> None:
         self.id, self.ts, self.phase, self.text = id_, ts, phase, text
@@ -196,6 +208,7 @@ class _Line:
 class _Run:
     def __init__(self, name: str, combat: CombatRule, config: TowerConfig) -> None:
         self.name = name
+        self.pid: int | None = None  # for the run record
         self.combat = combat
         self.config = config
         self.stop = threading.Event()
@@ -214,6 +227,7 @@ class _Run:
         self.run_started: float | None = None
         self.floors: list[TowerFloor] = []
         self.cleared = False  # cleared at least one floor this run
+        self.passed_room: int | None = None  # the room last logged as passed
         self.staged = False
         self.force_exit = False  # the spawn points were empty: try the exit anyway
         self.room_seen: int | None = None  # another room seen once: confirmed on the next look
@@ -368,6 +382,7 @@ class TowerManager:
                 self._store.load_section(name, TOWER_SECTION, TowerConfig),
             )
             run.run_started = self._wall()
+            run.pid = pid
             self._runs[pid] = run
             run.thread = threading.Thread(
                 target=self._loop, args=(pid, run), daemon=True, name=f"tower-{pid}"
@@ -696,6 +711,8 @@ class TowerManager:
         with run.lock:
             run.next_id += 1
             run.log.append(_Line(run.next_id, self._wall(), phase, text))
+            floor = run.stage.floor(run.room) if run.stage and run.room else None
+        run_log.note("tower", run.pid, run.name, text, phase=phase, floor=floor)
 
     def _set_step(self, run: _Run, step: str) -> None:
         with run.lock:
@@ -742,7 +759,9 @@ class TowerManager:
             with run.lock:
                 run.ended, run.outcome, run.moving = ended, outcome, False
             run.stop.set()
-            self._note(run, phase, f"登塔結束：{ended}")
+            # A floor left unfinished (a death, a stop): how hard it hit so far.
+            hp = _hp_summary(run) if run.room is not None and run.passed_room != run.room else ""
+            self._note(run, phase, f"登塔結束：{ended}" + (f"（這層{hp[1:]}）" if hp else ""))
             self._save_record(run, ended)
             log.info("tower stopped pid=%d: %s", pid, ended, extra={"cat": "tower"})
 
@@ -1086,6 +1105,8 @@ class TowerManager:
                 run.learned = self._read_locked(pid, read_learned) or run.learned
             except Exception:
                 pass
+            if run.pid is not None:
+                run_log.floor_reset(run.pid)  # the floor's HP numbers start here
             self._note(run, "info", f"第 {tower.floor(room)} 層（第 {room} 房）")
         run.room_seen = None  # this read agrees with the room (or moved it)
         ids = tower.monsters.get(room, frozenset())
@@ -1301,7 +1322,12 @@ class TowerManager:
         with run.lock:
             run.floors.append(TowerFloor(floor=floor, secs=round(secs, 1)))
             run.cleared = True
-        self._note(run, "confirmed", f"第 {floor} 層通過（{int(secs) // 60}:{int(secs) % 60:02d}）")
+            run.passed_room = room
+        self._note(
+            run,
+            "confirmed",
+            f"第 {floor} 層通過（{int(secs) // 60}:{int(secs) % 60:02d}{_hp_summary(run)}）",
+        )
 
     def _bump_exit(self, pid: int, run: _Run, tower: TowerStage, room: int, leave: bool) -> str:
         """Step onto one exit tile (the next one each try) and give it time to

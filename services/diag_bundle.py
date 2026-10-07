@@ -18,6 +18,8 @@ from services.diag_jsonl import read_jsonl
 
 MAX_REPORT_ERRORS = 20
 MAX_TIMELINE_EVENTS = 200
+RUNS_FOLDER = "runs"  # services.run_log.FOLDER_NAME, beside events.jsonl
+RUNS_DAYS = 2
 
 
 def bundle_filename(now: _dt.datetime) -> str:
@@ -100,4 +102,11 @@ def build_bundle(
             for candidate in sorted(events_path.parent.glob(f"{events_path.name}*")):
                 if candidate.is_file():
                     zf.write(candidate, f"events/{candidate.name}")
+            # The run record (services.run_log): the two newest days are enough
+            # for "what happened just now" and keep the bundle small.
+            runs = events_path.parent / RUNS_FOLDER
+            if runs.is_dir():
+                for candidate in sorted(runs.glob("*.jsonl"))[-RUNS_DAYS:]:
+                    if candidate.is_file():
+                        zf.write(candidate, f"runs/{candidate.name}")
     return buf.getvalue()
