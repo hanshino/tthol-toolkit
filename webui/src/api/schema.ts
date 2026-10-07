@@ -4111,6 +4111,11 @@ export interface components {
              * @default []
              */
             missing: string[];
+            /**
+             * Actions
+             * @default []
+             */
+            actions: string[];
         };
         /** SupplyView */
         SupplyView: {

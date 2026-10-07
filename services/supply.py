@@ -7,20 +7,21 @@ thread, the same way it calls `Navigator.go`: one hook command pipe per pid, so
 no second thread drives the character. The 現在補給 button runs the same trip
 on a thread of its own.
 
-Order inside a trip: sell (money and bag room for what follows), store, buy.
-Each hook action's `ok` only means the packet went out, so every sale, buy and
-pet-bag put is confirmed by the bag (or pet bag) count moving; a buy that never
-shows up is "no room / no money" and that row stops there.
+Order inside a trip: the 錢莊伙計 first when there is something to store or
+the carried 銀兩 is outside gold_low..gold_high (store frees bag slots, and
+silver comes out of the 錢莊 before the buying needs it; the warehouse window
+holds both), then the shop: sell, then buy. Each hook action's `ok` only means
+the packet went out, so every sale, store, buy, pet-bag put and 錢莊 move is
+confirmed by a bag / pet bag / 銀兩 count moving; a buy that never shows up is
+"no room / no money" and that row stops there. Without the hook's warehouse
+commands (store / bank*), those steps are noted and skipped.
 
-Store needs a warehouse command the hook does not have yet (2026-10-07): the
-phase notes what it leaves in the bag. 錢莊 is the same: the settings keep the
-carried 銀兩 between gold_low and gold_high (back to gold_target), and until
-the hook can deposit / withdraw the step only notes what it would have done.
-
-Which shop: the town gold shops of services/shop_catalog.py. The first stop is
-the shopkeeper whose shop sells the most of the wanted items, nearest by the
-route planner's cost from where the character stands. Items that shop does
-not sell are skipped, or (extra_stop) the trip goes on to the next shop.
+Where: the fixed points of services/supply_points.py. A family with a manor
+buys at the nearest 家族道具商 only (its shop tier follows the manor and a
+特貢令), and a list item that shop does not sell stops the trip before any
+walk. Without a family, the town shopkeeper that sells the most of the list,
+nearest by route cost; items it does not sell are skipped, or (extra_stop)
+the trip goes on to the next shop.
 """
 
 from __future__ import annotations
@@ -61,6 +62,9 @@ SUPPLY_SECTION = "supply"
 # What a trip cannot do without (walking comes from the navigator's own needs).
 SUPPLY_COMMANDS = ("status", "near", "walk", "talk", "dialog", "option", "next", "shop")
 PET_COMMANDS = ("pet", "petput")
+STORE_COMMANDS = ("warehouse", "store")
+BANK_COMMANDS = ("warehouse", "bank", "bankin", "bankout")
+STORE_MAX = 255  # most one hook `store` moves
 SUMMON_COMMANDS = ("petsummon", "petdismiss")
 STACK = 200  # most a bag stack holds (the snapshots never show more): one buy at most this many
 # Slots: the bag holds 40 (the fullest snapshot, 止戰詩園 2026-10-02), the pet bag 8 (user).
@@ -240,6 +244,14 @@ def read_load(pm, hp_addr, _compat_mode):
     except ValueError:
         pet = []
     return bag, pet, pm.read_int(hp_addr + 24), pm.read_int(hp_addr + 28)
+
+
+def same_npc(key: dict | None, obj: dict) -> bool:
+    """A `shop` / `dialog` npc key against a `near` object: id and instance."""
+    if not key or key.get("id") != obj.get("id"):
+        return False
+    inst = key.get("instance", key.get("inst"))
+    return inst is None or obj.get("inst") is None or inst == obj.get("inst")
 
 
 def pick_stop(
@@ -457,19 +469,25 @@ class SupplyManager:
         stores = [self._move_row(*s) for s in sell_list(rules, bag, self._facts, STORE)]
         caps = self._caps(pid)
         gold = self._gold(pid)
+        store_ok = caps is not None and all(c in caps for c in STORE_COMMANDS)
+        bank_ok = caps is not None and all(c in caps for c in BANK_COMMANDS)
+        at_warehouse = [f"存 {r.name} ×{r.qty}" for r in stores] if store_ok else []
+        bank = bank_text(bank_action(gold, cfg))
+        if bank_ok and bank:
+            at_warehouse.append(bank)
         return SupplyView(
             character=name,
             config=cfg,
             rows=rows,
             sells=sells,
             stores=stores,
-            store_supported=False,
-            bank_supported=False,
-            bank=bank_text(bank_action(gold, cfg)),
+            store_supported=store_ok,
+            bank_supported=bank_ok,
+            bank=bank,
             load=self._load(pid, rules, cfg),
             hook_ready=caps is not None and all(c in caps for c in SUPPLY_COMMANDS),
             gold=gold,
-            plan=self._preview(pid, market, cfg, bag, pet, bool(sells)),
+            plan=self._preview(pid, market, cfg, bag, pet, bool(sells), at_warehouse),
             merchant=market.label,
             family=market.family,
             hosts=list(self._hosts),
@@ -512,9 +530,10 @@ class SupplyManager:
         bag: dict[int, int],
         pet: dict[int, int],
         sells: bool,
+        at_warehouse: list[str],
     ) -> list[SupplyStop]:
         needs = buy_needs(cfg.items, bag, pet)
-        if not needs and not sells:
+        if not needs and not sells and not at_warehouse:
             return []
         try:
             stage = self._read_locked(pid, read_stage_id)
@@ -527,12 +546,14 @@ class SupplyManager:
         out: list[SupplyStop] = []
         wanted = {i: b + p for i, b, p in needs}
         skip: set[tuple[int, int]] = set()
-        first = True
-        while first or (cfg.extra_stop and wanted and len(out) < MAX_STOPS):
+        first = bool(needs or sells)
+        shops: list[SupplyPoint] = []
+        while first or (cfg.extra_stop and wanted and shops and len(out) < MAX_STOPS):
             pick = self._pick(market, graph, here, set(wanted), skip, sells and first)
             if pick is None:
                 break
             npc, covered = pick
+            shops.append(npc)
             skip.add((npc.npc_id, npc.stage))
             buys = [f"{self._name(i)} ×{wanted[i]}" for i in wanted if i in covered]
             for i in covered:
@@ -549,6 +570,16 @@ class SupplyManager:
             here, first = npc.stage, False
             if not covered:
                 break
+        if at_warehouse:
+            keeper = self._pick_warehouse(graph, stage[0], shops[0] if shops else None)
+            if keeper is not None:
+                stop = SupplyStop(
+                    npc=keeper.name,
+                    stage_name=keeper.stage_name,
+                    tile=keeper.tile,
+                    actions=at_warehouse,
+                )
+                out.insert(0, stop)
         return out
 
     # -- manual runs -------------------------------------------------------------
@@ -740,6 +771,23 @@ class SupplyManager:
                 break
         return None
 
+    def _pick_warehouse(self, graph, here: int, shop: SupplyPoint | None) -> SupplyPoint | None:
+        """The 錢莊伙計 cheapest to reach from `here` and then on to `shop`."""
+        best: tuple[float, SupplyPoint] | None = None
+        for keeper in (p for p in self._points if p.kind == "warehouse"):
+            first = rp.plan(graph, here, keeper.stage, None, keeper.tile)
+            if first is None:
+                continue
+            cost = first.cost
+            if shop is not None and shop.stage != keeper.stage:
+                then = rp.plan(graph, keeper.stage, shop.stage, keeper.tile, shop.tile)
+                if then is None:
+                    continue
+                cost += then.cost
+            if best is None or cost < best[0]:
+                best = (cost, keeper)
+        return best[1] if best else None
+
     def _pick(self, market: Market, graph, here: int, wanted, skip, any_shop):
         cat = self._catalog()
 
@@ -763,6 +811,8 @@ class _Trip:
         self.sold = 0
         self.bought = 0
         self.put = 0
+        self.stored = 0
+        self.banked = 0  # + withdrawn / - deposited
         self.summoned: int | None = None
         self.pet_out = False  # a pet is out to put items in its bag
         self.caps: frozenset[str] = frozenset()
@@ -825,22 +875,21 @@ class _Trip:
         sells = sell_list(rules, bag, self.m._facts, SELL)
         stores = sell_list(rules, bag, self.m._facts, STORE)
         needs = buy_needs(cfg.items, bag, pet)
-        if (
-            not sells
-            and not needs
-            and not stores
-            and bank_action(self.m._gold(self.pid), cfg) is None
-        ):
+        bank = bank_action(self.m._gold(self.pid), cfg)
+        if not sells and not needs and not stores and bank is None:
             return SupplyResult(True, "nothing", "沒有要賣、要存或要買的東西")
-        if not sells and not needs:
-            # Only store / 錢莊 work, which no hook can do yet: note it, no walk.
-            self.store_phase(stores)
-            self.bank_phase(cfg)
-            return SupplyResult(True, "done", self.summary([]), self.sold, self.bought, self.put)
-        caps = self.m._caps(self.pid)
-        if caps is None:
-            raise _Abort("no-hook", "讀不到 hook 的指令清單（舊版 hook，或還在登入）")
+        caps = self.m._caps(self.pid) or frozenset()
         self.caps = caps
+        if stores and not all(c in caps for c in STORE_COMMANDS):
+            self.note_skip_store(stores)
+            stores = []
+        if bank is not None and not all(c in caps for c in BANK_COMMANDS):
+            self.line("info", f"錢莊跳過：hook 還沒有錢莊指令（要{bank_text(bank)}）")
+            bank = None
+        if not sells and not needs and not stores and bank is None:
+            return SupplyResult(True, "done", self.summary([]), self.sold, self.bought, self.put)
+        if not caps:
+            raise _Abort("no-hook", "讀不到 hook 的指令清單（舊版 hook，或還在登入）")
         missing = [c for c in SUPPLY_COMMANDS if c not in caps]
         if needs and "buy" not in caps:
             missing.append("buy")
@@ -851,17 +900,23 @@ class _Trip:
         if self.m._navigator is None:
             raise _Abort("error", "沒有導航模組")
 
-        if stores:
-            self.store_phase(stores)
-        self.bank_phase(cfg)
-
         market = self.m.market(self.pid, bag, ask=True)
-        unsold = unsold_items(market, cfg.items, self.m._catalog().sells)
-        if unsold:
-            names = "、".join(self.name(i) for i in unsold)
-            raise _Abort(
-                "unsold", f"{market.label}沒賣：{names}（從補貨清單移除，或換成家族商人有賣的）"
-            )
+        if needs:
+            unsold = unsold_items(market, cfg.items, self.m._catalog().sells)
+            if unsold:
+                names = "、".join(self.name(i) for i in unsold)
+                raise _Abort(
+                    "unsold",
+                    f"{market.label}沒賣：{names}（從補貨清單移除，或換成家族商人有賣的）",
+                )
+        graph = rp.cached_graph(market.script.level, market.script.manor)
+        if stores or bank is not None:
+            # The warehouse before the shop: stored items free bag slots, and
+            # 錢莊 silver comes out before the buying needs it.
+            self.warehouse_stop(market, graph, stores, bank, bool(sells or needs))
+        if not sells and not needs:
+            self.shop_left_open()
+            return SupplyResult(True, "done", self.summary([]), self.sold, self.bought, self.put)
         self.line("info", f"在{market.label}補給")
         graph = rp.cached_graph(market.script.level, market.script.manor)
         wanted = {i for i, _b, _p in needs}
@@ -928,6 +983,12 @@ class _Trip:
             parts.append(f"買 {self.bought} 個")
         if self.put:
             parts.append(f"放進寵物背包 {self.put} 個")
+        if self.stored:
+            parts.append(f"存倉 {self.stored} 個")
+        if self.banked:
+            parts.append(
+                bank_text(("withdraw" if self.banked > 0 else "deposit", abs(self.banked)))
+            )
         text = "、".join(parts) or "沒有買賣"
         if short:
             text += f"；沒補齊：{'、'.join(dict.fromkeys(short))}"
@@ -935,22 +996,127 @@ class _Trip:
 
     # -- store -------------------------------------------------------------------
 
-    def bank_phase(self, cfg: SupplyConfig) -> None:
-        """No hook has 錢莊 commands yet: say what the bank step would have done."""
-        text = bank_text(bank_action(self.m._gold(self.pid), cfg))
-        if text:
-            self.line("info", f"錢莊跳過：hook 還沒有錢莊指令（要{text}）")
-
-    def store_phase(self, stores: list[tuple[int, int, int, int]]) -> None:
-        """No hook has a warehouse store command yet: say what stays in the bag."""
-        if not stores:
-            return
+    def note_skip_store(self, stores: list[tuple[int, int, int, int]]) -> None:
         names = "、".join(f"{self.name(i)} ×{q}" for i, q, _k, _h in stores)
         self.line("info", f"存倉跳過：hook 還沒有存倉指令（{names}）")
+
+    # -- the warehouse -----------------------------------------------------------
+
+    def warehouse_stop(self, market, graph, stores, bank, shop_next: bool) -> None:
+        """Store items and settle the 錢莊 silver at the nearest 錢莊伙計 (on the
+        way to the shop when one follows)."""
+        try:
+            stage = self.m._read_locked(self.pid, read_stage_id)
+        except Exception:
+            stage = None
+        if not stage:
+            raise _Abort("error", "讀不到目前地圖")
+        shop = None
+        if shop_next:
+            wanted = {
+                r.item_id for r in self.m.config(self.m._character_name(self.pid) or "").items
+            }
+            pick = self.m._pick(market, graph, stage[0], wanted, set(), True)
+            shop = pick[0] if pick else None
+        keeper = self.m._pick_warehouse(graph, stage[0], shop)
+        if keeper is None:
+            self.line("error", "找不到走得到的錢莊伙計，存倉和錢莊這次跳過")
+            return
+        self.go_to(keeper)
+        self.open_warehouse(keeper, market.script)
+        self.store_all(stores)
+        if bank is not None:
+            self.settle_bank(bank)
+
+    def open_warehouse(self, npc: SupplyPoint, script) -> None:
+        self.step(f"和{npc.name}對話")
+        obj = self.find(npc.npc_id)
+        if obj is None:
+            raise _Abort("error", f"附近找不到{npc.name}")
+        self.cmd(f"talk {obj['h']}")
+        end = self.m._clock() + OPEN_WAIT
+        while self.m._clock() < end:
+            self.wait(POLL)
+            if self.cmd("warehouse").get("open"):
+                self.line("info", f"打開{npc.name}的倉庫")
+                return
+            d = self.cmd("dialog")
+            if not d.get("open") or not same_npc(d.get("npc"), obj):
+                continue
+            if d.get("waiting"):
+                continue
+            options = d.get("options") or []
+            if options:
+                pick = next(
+                    (i for i, j in enumerate(options) if j and script.opens_warehouse(j)), None
+                )
+                if pick is None:
+                    raise _Abort("error", f"{npc.name}的對話裡沒有開倉庫的選項")
+                self.cmd(f"option {pick}")
+                continue
+            self.cmd("next")
+        raise _Abort("error", f"{npc.name}的倉庫沒有打開")
+
+    def store_all(self, stores: list[tuple[int, int, int, int]]) -> None:
+        for item_id, qty, _keep, _have in stores:
+            name = self.name(item_id)
+            left = qty
+            while left > 0:
+                chunk = min(left, STORE_MAX)
+                self.step(f"存 {name} ×{chunk}")
+                bag, _pet = self.held()
+                before = bag.get(item_id, 0)
+                r = self.cmd(f"store {item_id} {chunk}")
+                if not r.get("ok"):
+                    self.line("error", f"存 {name} ×{chunk} 沒送出：{r.get('error') or '不明原因'}")
+                    break
+                entry = self.line("sent", f"存 {name} ×{chunk}")
+                if not self.confirm(lambda b, _p: b.get(item_id, 0) <= before - chunk):
+                    entry.phase = "unconfirmed"
+                    entry.text += "（背包數量沒有減少，倉庫可能滿了）"
+                    break
+                entry.phase = "confirmed"
+                self.stored += chunk
+                left -= chunk
+
+    def settle_bank(self, bank: tuple[str, int]) -> None:
+        verb, amount = bank
+        if verb == "withdraw":
+            balance = self.cmd("bank").get("balance")
+            if isinstance(balance, int):
+                amount = min(amount, balance)
+            if amount <= 0:
+                self.line("error", "錢莊裡沒有銀兩可以領")
+                return
+        text = bank_text((verb, amount))
+        self.step(text)
+        before = self.m._gold(self.pid)
+        r = self.cmd(f"{'bankout' if verb == 'withdraw' else 'bankin'} {amount}")
+        if not r.get("ok"):
+            self.line("error", f"{text} 沒送出：{r.get('error') or '不明原因'}")
+            return
+        entry = self.line("sent", text)
+        sign = 1 if verb == "withdraw" else -1
+        end = self.m._clock() + CONFIRM_WAIT
+        while True:
+            gold = self.m._gold(self.pid)
+            if before is not None and gold is not None and (gold - before) * sign >= amount:
+                entry.phase = "confirmed"
+                self.banked = sign * amount
+                return
+            if self.m._clock() >= end:
+                entry.phase = "unconfirmed"
+                entry.text += "（身上銀兩沒有變）"
+                return
+            self.wait(POLL)
 
     # -- moving --------------------------------------------------------------------
 
     def visit(self, npc: SupplyPoint, market: Market) -> None:
+        self.go_to(npc)
+        self.open_shop(npc, market)
+
+    def go_to(self, npc: SupplyPoint) -> None:
         stage_name = npc.stage_name
         self.step(f"前往{stage_name}找{npc.name}")
         self.line("info", f"前往{stage_name}找{npc.name}（{npc.tile[0]}, {npc.tile[1]}）")
@@ -959,7 +1125,6 @@ class _Trip:
             raise _Abort("stopped", "已停止")
         if not result.ok:
             raise _Abort("error", f"走不到{npc.name}：{result.detail}")
-        self.open_shop(npc, market)
 
     def find(self, npc_id: int) -> dict | None:
         st = self.cmd("status")
@@ -990,10 +1155,14 @@ class _Trip:
             # There is no close command: the last stop's (or the user's) shop
             # window may still be open. Only this NPC's counts.
             owner = (shop.get("npc") or {}).get("id")
-            if shop.get("open") and owner == npc.npc_id:
+            if shop.get("open") and same_npc(shop.get("npc"), obj):
                 if shop.get("mode") == 3:
                     raise _Abort("error", f"{npc.name}的商店是這個 hook 不支援的種類")
-                self.line("info", f"打開{npc.name}的商店")
+                got = shop.get("shop_id")
+                if want is not None and isinstance(got, int) and got and got != want:
+                    self.line("info", f"打開{npc.name}的商店：{got} 號店（預期 {want} 號）")
+                else:
+                    self.line("info", f"打開{npc.name}的商店")
                 return
             if shop.get("open") and owner != stale:
                 stale = owner
@@ -1005,7 +1174,7 @@ class _Trip:
                     extra={"cat": "supply"},
                 )
             d = self.cmd("dialog")
-            if not d.get("open") or (d.get("npc") or {}).get("id") != npc.npc_id:
+            if not d.get("open") or not same_npc(d.get("npc"), obj):
                 continue
             if d.get("waiting"):
                 continue

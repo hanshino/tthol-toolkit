@@ -1441,6 +1441,7 @@ class SupplyStop(_Base):
     tile: tuple[int, int]
     buys: list[str] = []  # "金創藥 ×443"
     missing: list[str] = []  # wanted items this shop does not sell
+    actions: list[str] = []  # at a 錢莊伙計: "存 玄鐵礦 ×30", "從錢莊領 460,000"
 
 
 class SupplyLogEntry(_Base):

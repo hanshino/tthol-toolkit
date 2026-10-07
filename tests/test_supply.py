@@ -139,6 +139,9 @@ class FakeGame:
         self.sent: list[str] = []
         self.stage = 51
         self.refuse_buy = False
+        self.warehouse_open = False
+        self.vault: dict[int, int] = {}
+        self.balance = 0
 
     def send(self, _pid, line: str) -> dict:
         self.sent.append(line)
@@ -150,11 +153,30 @@ class FakeGame:
                 "ok": True,
                 "objects": [
                     {"h": 1, "id": 0, "x": 400, "y": 400},
-                    {"h": 9, "id": 6130, "x": 440, "y": 400},
+                    {"h": 9, "id": 6130, "inst": 1, "x": 440, "y": 400},
+                    {"h": 8, "id": 6448, "inst": 2, "x": 480, "y": 400},
                 ],
             }
         if cmd == "talk":
+            if args[0] == "8":
+                self.warehouse_open = True  # the 錢莊伙計 opens it on talk
             return {"ok": True}
+        if cmd == "warehouse":
+            return {"ok": True, "open": self.warehouse_open, "items": []}
+        if cmd == "store":
+            item, qty = int(args[0]), int(args[1])
+            if self.warehouse_open:
+                self.bag[item] -= qty
+                self.vault[item] = self.vault.get(item, 0) + qty
+            return {"ok": True, "item": item, "qty": qty}
+        if cmd == "bank":
+            return {"ok": True, "open": self.warehouse_open, "balance": self.balance}
+        if cmd in ("bankin", "bankout"):
+            amount = int(args[0])
+            sign = 1 if cmd == "bankout" else -1
+            self.gold += sign * amount
+            self.balance -= sign * amount
+            return {"ok": True, "amount": amount}
         if cmd == "dialog":
             if self.shop_open and self.shop_npc == 6130:
                 return {"ok": True, "open": False}
@@ -270,6 +292,7 @@ ALL = sp.SUPPLY_COMMANDS + ("buy", "sell") + sp.PET_COMMANDS + sp.SUMMON_COMMAND
 FAMILY_SHOP = 29
 SHOPKEEPER = SupplyPoint("general", 6130, "檀泉道具商", 23, "檀泉別苑", (23, 15), shop=SHOP)
 FAMILY_POINT = SupplyPoint("family", 6130, "家族道具商", 51, "洛陽外城", (70, 142))
+KEEPER = SupplyPoint("warehouse", 6448, "錢莊伙計", 23, "檀泉別苑", (72, 14))
 
 
 @pytest.fixture(autouse=True)
@@ -325,7 +348,7 @@ def make(
         sleep=sleep,
         pet_items=lambda: frozenset({PET}),
         manor=lambda pid: manor,
-        points=(SHOPKEEPER, FAMILY_POINT),
+        points=(SHOPKEEPER, FAMILY_POINT, KEEPER),
     )
     return mgr, nav, guard
 
@@ -471,3 +494,42 @@ def test_no_family_uses_the_town_shopkeepers():
     mgr, nav, _ = make(game, SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)]))
     mgr.run(1, threading.Event())
     assert nav.went == [(23, (23, 15))]
+
+
+WAREHOUSE_CAPS = ALL + sp.STORE_COMMANDS + sp.BANK_COMMANDS
+
+
+def test_warehouse_first_stores_and_withdraws_then_buys():
+    game = FakeGame({ORE: 30, POTION: 0}, gold=40_000)
+    game.balance = 1_000_000
+    cfg = SupplyConfig(
+        items=[SupplyItem(item_id=POTION, bag=10)],
+        keep_gold=0,
+        gold_low=100_000,
+        gold_target=500_000,
+    )
+    rules = ItemRules(items={ORE: ItemRule(action="store")})
+    mgr, nav, _ = make(game, cfg, rules, caps=WAREHOUSE_CAPS)
+    result = mgr.run(1, threading.Event())
+    assert result.ok, result
+    assert [d for d, _g in nav.went] == [23, 23]  # the 錢莊伙計, then the shop
+    assert game.vault == {ORE: 30} and game.bag[ORE] == 0
+    assert game.gold == 500_000 - 312 * 10
+    assert game.bag[POTION] == 10
+    assert "存倉 30 個" in result.detail and "從錢莊領 460,000" in result.detail
+
+
+def test_deposit_only_walks_to_the_warehouse_and_not_the_shop():
+    game = FakeGame({}, gold=6_000_000)
+    cfg = SupplyConfig(gold_high=5_000_000, gold_target=1_000_000)
+    mgr, nav, _ = make(game, cfg, caps=WAREHOUSE_CAPS)
+    result = mgr.run(1, threading.Event())
+    assert result.ok and nav.went == [(23, (72, 14))]
+    assert game.gold == 1_000_000 and game.balance == 5_000_000
+
+
+def test_same_npc_checks_id_and_instance():
+    assert sp.same_npc({"id": 6130, "instance": 1}, {"id": 6130, "inst": 1})
+    assert not sp.same_npc({"id": 6130, "instance": 2}, {"id": 6130, "inst": 1})
+    assert not sp.same_npc({"id": 6121}, {"id": 6130, "inst": 1})
+    assert sp.same_npc({"id": 6130}, {"id": 6130, "inst": 1})  # no instance: id alone

@@ -154,8 +154,8 @@ export function SupplyPanel({ pid, active }: { pid: number; active: boolean }) {
             <MoveTable rows={view.sells} verb="要賣" />
           )}
         </Phase>
-        <Phase n={2} title="存倉" src="道具處置設成「存倉」的道具"
-          badge={view.store_supported ? undefined : '等 hook 加存倉指令，目前會跳過'} dim={!view.store_supported}>
+        <Phase n={2} title="存倉" src="道具處置設成「存倉」的道具；先到錢莊伙計存，再去商店"
+          badge={view.store_supported ? undefined : '這個 hook 沒有存倉指令，會跳過'} dim={!view.store_supported}>
           {view.stores.length === 0 ? (
             <div className="gd-dim sp-empty">沒有要存的道具。</div>
           ) : (
@@ -271,7 +271,10 @@ export function SupplyPanel({ pid, active }: { pid: number; active: boolean }) {
                   <span className="sp-dot" />
                   <div>
                     <b>{s.stage_name}・{s.npc}</b> <span className="gd-cnt">({s.tile[0]}, {s.tile[1]})</span>
-                    {i === 0 && view.sells.length > 0 && <div className="gd-dim">賣：{view.sells.map(x => `${x.name} ×${x.qty}`).join('、')}</div>}
+                    {s.actions.length > 0 && <div className="gd-dim">{s.actions.join('、')}</div>}
+                    {s.actions.length === 0 && i === view.plan.findIndex(x => x.actions.length === 0) && view.sells.length > 0 && (
+                      <div className="gd-dim">賣：{view.sells.map(x => `${x.name} ×${x.qty}`).join('、')}</div>
+                    )}
                     {s.buys.length > 0 && <div className="gd-dim">買：{s.buys.join('、')}</div>}
                     {s.missing.length > 0 && <div className="sp-warn">這間沒賣：{s.missing.join('、')}</div>}
                   </div>
@@ -425,7 +428,8 @@ function Bank({ cfg, view, onChange }: { cfg: SupplyConfig; view: SupplyView; on
     <div className={`sp-bank${view.bank_supported ? '' : ' is-dim'}`}>
       <div className="sp-bank-head">
         <b>錢莊</b>
-        {!view.bank_supported && <span className="sp-badge">等 hook 加錢莊指令，目前會跳過</span>}
+        {!view.bank_supported && <span className="sp-badge">這個 hook 沒有錢莊指令，會跳過</span>}
+        <span className="gd-dim">在錢莊伙計的倉庫視窗存領，和存倉同一站</span>
       </div>
       <label className="sp-rule">
         <span>

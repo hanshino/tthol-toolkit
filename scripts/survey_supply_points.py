@@ -5,8 +5,9 @@ date (matched by npc id and map); new points start unverified.
 
     uv run scripts/survey_supply_points.py
 
-Points: every 家族道具商 (characters with a family manor buy there only) and
-every town shopkeeper whose gold shop sells potions or 回城捲軸. Shopkeepers
+Points: every 家族道具商 (characters with a family manor buy there only),
+every town shopkeeper whose gold shop sells potions or 回城捲軸, and every
+錢莊伙計 (the warehouse, which also holds the 錢莊 silver). Shopkeepers
 come from the dialogue (trigger A5 opens shops.id, the speaker's display name
 finds the placed NPC; see services/shop_catalog.py).
 """
@@ -21,7 +22,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
 from services import route_plan as rp  # noqa: E402
-from services.shop_catalog import load_catalog  # noqa: E402
+from services.shop_catalog import load_catalog, warehouse_keepers  # noqa: E402
 
 OUT = REPO / "services" / "supply_points.py"
 FAMILY_NPC = 6376  # 家族道具商
@@ -34,6 +35,7 @@ scripts/survey_supply_points.py from the game DB; do not edit by hand except
 kind "family": the 家族道具商. Its shop follows the family manor (and a
 特貢令 in the bag raises it a tier): evaluated from FAMILY_MENUS at run time.
 kind "general": a town shopkeeper with one gold shop (`shop`).
+kind "warehouse": a 錢莊伙計: opens the warehouse window (items and silver).
 """
 
 from __future__ import annotations
@@ -46,7 +48,7 @@ FAMILY_MENUS = (25098, 25106)
 
 @dataclass(frozen=True)
 class SupplyPoint:
-    kind: str  # family / general
+    kind: str  # family / general / warehouse
     npc_id: int
     name: str
     stage: int
@@ -97,6 +99,15 @@ def main() -> None:
         if not any(i in stock for i in cat.sells.get(shops[0], {})):
             continue  # weapons and the like
         rows.append(f'    SupplyPoint(kind="general", {common}, shop={shops[0]}, verified={v!r}),')
+    for npc in sorted(warehouse_keepers(), key=lambda n: (n.stage, n.npc_id)):
+        if "錢莊" not in npc.name or not any(script.opens_warehouse(m) for m, _s in npc.opens):
+            continue  # quest NPCs (牧有虔) open it inside a story branch
+        v = verified.get((npc.npc_id, npc.stage))
+        common = (
+            f"npc_id={npc.npc_id}, name={npc.name!r}, stage={npc.stage},"
+            f" stage_name={names.get(npc.stage, '#' + str(npc.stage))!r}, tile={npc.tile!r}"
+        )
+        rows.append(f'    SupplyPoint(kind="warehouse", {common}, verified={v!r}),')
     OUT.write_text(HEADER + "\n".join(rows) + "\n)\n", encoding="utf-8")
     print(f"wrote {len(rows)} points to {OUT.relative_to(REPO)}")
 

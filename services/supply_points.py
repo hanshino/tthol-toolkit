@@ -5,6 +5,7 @@ scripts/survey_supply_points.py from the game DB; do not edit by hand except
 kind "family": the 家族道具商. Its shop follows the family manor (and a
 特貢令 in the bag raises it a tier): evaluated from FAMILY_MENUS at run time.
 kind "general": a town shopkeeper with one gold shop (`shop`).
+kind "warehouse": a 錢莊伙計: opens the warehouse window (items and silver).
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ FAMILY_MENUS = (25098, 25106)
 
 @dataclass(frozen=True)
 class SupplyPoint:
-    kind: str  # family / general
+    kind: str  # family / general / warehouse
     npc_id: int
     name: str
     stage: int
@@ -62,4 +63,41 @@ POINTS = (
     SupplyPoint(kind="general", npc_id=6875, name='杭州道具商', stage=231, stage_name='杭州城', tile=(51, 141), shop=42, verified=None),
     SupplyPoint(kind="general", npc_id=7527, name='道具老闆', stage=264, stage_name='曼陀羅城', tile=(75, 13), shop=49, verified=None),
     SupplyPoint(kind="general", npc_id=6904, name='仙島道具商', stage=300, stage_name='南海碼頭', tile=(91, 27), shop=44, verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=2, stage_name='莫愁谷村莊', tile=(80, 57), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=9, stage_name='藏海村', tile=(42, 73), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=12, stage_name='飛雁山莊中庭', tile=(17, 22), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=23, stage_name='檀泉別苑', tile=(72, 14), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6033, name='錢莊伙計', stage=30, stage_name='天外天境', tile=(66, 63), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=30, stage_name='天外天境', tile=(76, 54), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=36, stage_name='峨嵋派', tile=(10, 72), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=44, stage_name='莫愁谷市集', tile=(8, 24), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=51, stage_name='洛陽外城', tile=(45, 156), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=52, stage_name='洛陽內城', tile=(33, 101), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=53, stage_name='成都少城', tile=(14, 19), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=54, stage_name='成都太城', tile=(21, 91), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6033, name='錢莊伙計', stage=55, stage_name='流星雷島˙南', tile=(59, 49), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=55, stage_name='流星雷島˙南', tile=(34, 27), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6033, name='錢莊伙計', stage=56, stage_name='流星火島˙南', tile=(59, 49), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=56, stage_name='流星火島˙南', tile=(34, 27), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6033, name='錢莊伙計', stage=57, stage_name='流星村', tile=(58, 49), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=57, stage_name='流星村', tile=(34, 27), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6033, name='錢莊伙計', stage=158, stage_name='流星雷島˙北', tile=(58, 50), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=158, stage_name='流星雷島˙北', tile=(34, 27), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6033, name='錢莊伙計', stage=159, stage_name='流星火島˙北', tile=(58, 50), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=159, stage_name='流星火島˙北', tile=(34, 27), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6033, name='錢莊伙計', stage=160, stage_name='流星冰島˙北', tile=(59, 49), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=160, stage_name='流星冰島˙北', tile=(34, 27), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=169, stage_name='織柳商集', tile=(6, 21), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=170, stage_name='天外天地下街', tile=(17, 22), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=172, stage_name='藏海村市集', tile=(59, 23), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=173, stage_name='成都市集', tile=(63, 29), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=174, stage_name='洛陽市集', tile=(51, 31), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=203, stage_name='天靈道院', tile=(27, 20), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=207, stage_name='閻王門', tile=(115, 40), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=213, stage_name='無名村', tile=(41, 61), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=216, stage_name='名劍山莊', tile=(86, 15), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6448, name='錢莊伙計', stage=231, stage_name='杭州城', tile=(49, 113), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6033, name='錢莊伙計', stage=264, stage_name='曼陀羅城', tile=(60, 110), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=7530, name='錢莊伙計', stage=264, stage_name='曼陀羅城', tile=(77, 18), verified=None),
+    SupplyPoint(kind="warehouse", npc_id=6033, name='錢莊伙計', stage=300, stage_name='南海碼頭', tile=(56, 63), verified=None),
 )

@@ -77,6 +77,8 @@ CALL_MSG = (12, 42)  # actions that continue in a message
 # action: open a shop, a0 = shops.id. Unnamed in op_defs; 85 of the 89 shops are
 # some A5's a0 (2026-10-07), and the speakers are the shopkeepers.
 OPEN_SHOP = 5
+# action: open the warehouse (倉庫 + 錢莊 silver); spoken by the 錢莊伙計.
+OPEN_WAREHOUSE = 41
 MAX_DEPTH = 14  # menu -> fare choice -> pay -> ride -> warp runs 7-8 deep
 
 
@@ -326,10 +328,19 @@ class _Script:
             out += self.warps_from_msg(jump, depth + 1, seen)
         return out
 
-    def shops_from_msg(
-        self, msg_id: int, depth: int = 0, seen: frozenset[int] = frozenset()
-    ) -> list[int]:
+    def shops_from_msg(self, msg_id: int) -> list[int]:
         """shops.id the message opens (A5) for this character, through its options."""
+        return self.opens_from_msg(msg_id, OPEN_SHOP)
+
+    def opens_warehouse(self, msg_id: int) -> bool:
+        """The message opens the warehouse (A41) for this character."""
+        return bool(self.opens_from_msg(msg_id, OPEN_WAREHOUSE))
+
+    def opens_from_msg(
+        self, msg_id: int, action: int, depth: int = 0, seen: frozenset[int] = frozenset()
+    ) -> list[int]:
+        """The a0 of every `action` the message reaches for this character
+        (0 for an action without one), through its options and calls."""
         if depth > MAX_DEPTH or msg_id in seen:
             return []
         seen = seen | {msg_id}
@@ -337,16 +348,16 @@ class _Script:
         if triggers:
             acts = self._first(triggers) or []
             for op, _neg, a0, _a1 in acts:
-                if op == OPEN_SHOP and a0:
-                    return [a0]
+                if op == action:
+                    return [a0 or 0]
                 if op in CALL_MSG and a0:
-                    return self.shops_from_msg(a0, depth + 1, seen)
+                    return self.opens_from_msg(a0, action, depth + 1, seen)
         out: list[int] = []
         for jump in self.t.options.get(msg_id, []):
-            out += self.shops_from_msg(jump, depth + 1, seen)
+            out += self.opens_from_msg(jump, action, depth + 1, seen)
         jump = self.t.jump.get(msg_id)
         if jump and not out:
-            out += self.shops_from_msg(jump, depth + 1, seen)
+            out += self.opens_from_msg(jump, action, depth + 1, seen)
         return out
 
     def _run(

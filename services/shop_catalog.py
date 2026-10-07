@@ -21,7 +21,7 @@ from pathlib import Path
 
 from services._paths import bundled
 from services.guard import load_town_stages
-from services.route_plan import OPEN_SHOP
+from services.route_plan import OPEN_SHOP, OPEN_WAREHOUSE
 
 GOLD = 2  # shops.style0 of a shop that takes 銀兩
 
@@ -163,3 +163,39 @@ def item_weights(db_path: Path | None = None) -> dict[int, int]:
         with _lock:
             _weights = out
     return out
+
+
+def warehouse_keepers(db_path: Path | None = None) -> list[ShopNpc]:
+    """NPCs that open the warehouse (A41, the 錢莊伙計) on no-fight maps, one
+    entry per NPC and map; `opens` holds their A41 messages (shop id 0)."""
+    path = db_path or bundled("tthol.sqlite")
+    if not path.exists():
+        return []
+    towns = load_town_stages(path)
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    con.text_factory = lambda b: b.decode("utf-8", errors="replace")
+    try:
+        speakers: dict[str, set[tuple[int, int]]] = {}
+        for msg, name in con.execute(
+            "SELECT t.msg_id, s.name FROM trigger_ops t"
+            " JOIN messages m ON m.file_no = t.file_no AND m.msg_id = t.msg_id"
+            " JOIN npc_strings s ON s.id = m.name_id"
+            " WHERE t.kind = 'A' AND t.op = ?",
+            (OPEN_WAREHOUSE,),
+        ):
+            if name:
+                speakers.setdefault(name, set()).add((msg, 0))
+        out: dict[tuple[int, int], ShopNpc] = {}
+        for npc_id, name, stage, x, y in con.execute(
+            "SELECT n.id, n.name, p.stage_id, p.tile_x, p.tile_y FROM npc n"
+            " JOIN map_placements p ON p.npc_id = n.id"
+            " WHERE p.stage_kind = 'stage' AND p.category = 'npc' AND p.in_bounds = 1"
+            " ORDER BY n.id, p.stage_id, p.id"
+        ):
+            opens = speakers.get(name)
+            if not opens or stage not in towns or (npc_id, stage) in out:
+                continue
+            out[(npc_id, stage)] = ShopNpc(npc_id, name, stage, (x, y), tuple(sorted(opens)))
+    finally:
+        con.close()
+    return list(out.values())
