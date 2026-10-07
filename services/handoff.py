@@ -787,17 +787,15 @@ class HandoffManager:
             {EV_CANCEL},
             self.t.step,
             run.stop,
-            enough=lambda: (
-                self.events.count(run.pid, opened, EV_PUT) >= turn.stacks
-                and self.events.count(run.pid, opened, EV_LOCK) >= 1
-            ),
+            # The sender locks after its last put, so its 1F 05 comes after
+            # every 1F 03; the bag after 1F 08 is what counts what came.
+            enough=lambda: self.events.count(run.pid, opened, EV_LOCK) >= 1,
         )
         if got is None:
             raise _Stop("已停止") if run.stop.is_set() else _Fail("等太久：對方放東西、鎖定")
         if got[1] == EV_CANCEL:
             run.trading = False
             raise _Fail("交易被取消了")
-        done_mark = self.events.mark(run.pid)
         if not self._cmd(run, "tradelock").get("ok"):
             raise _Fail("鎖定沒送出")
         self._move(turn, "locked")
@@ -819,7 +817,6 @@ class HandoffManager:
         with run.lock:
             for i, n in came.items():
                 run.received[i] = run.received.get(i, 0) + n
-        del done_mark
         self._move(turn, "received")
         want = {i: n for i, n in came.items() if i in run.stores()}
         if want:
@@ -871,10 +868,10 @@ class HandoffManager:
         shares = plan(stacks, [(r.pid, r.wants()) for r in receivers], self._untradable)
         if not any(shares.values()):
             return "背包裡沒有倉庫要收的東西"
-        taken: set[int] = set()
+        # In order, so the first receiver that wants an item gets it; what it
+        # had no room for goes on to the next one that wants it too.
         for r in receivers:
-            wants = r.wants() - taken
-            taken |= r.wants()
+            wants = r.wants()
             if not for_receiver(self._bag(run), wants, self._untradable):
                 continue
             with self._hub:

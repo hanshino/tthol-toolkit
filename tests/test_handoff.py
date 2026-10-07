@@ -32,6 +32,7 @@ class World:
         self.capacity = None
         self.stranger_once = set()  # pids whose next invite comes after a stranger's
         self.refuse_put = set()  # items tradeput refuses
+        self.drop_invites = 0  # invites that never arrive
         self.mgr = None
 
     def add(self, pid, name, stacks, tile=(10, 10)):
@@ -69,6 +70,9 @@ class World:
             return {"ok": True}
         if verb == "tradeinvite":
             target = int(args[0]) - 100
+            if self.drop_invites:
+                self.drop_invites -= 1
+                return {"ok": True}  # sent, but the server never passes it on
             self.partner[target] = pid
             if target in self.stranger_once:
                 self.stranger_once.discard(target)
@@ -408,3 +412,40 @@ def test_receiver_needs_a_whitelist():
     world, _store, _supply, _nav, mgr = setup()
     world.add(1, "倉庫", [])
     assert mgr.start(1, "receive") == (False, "還沒設定要收哪些東西")
+
+
+def test_what_a_full_receiver_cannot_take_goes_to_the_next_one_that_wants_it():
+    world, store, supply, _nav, mgr = setup()
+    world.add(1, "倉庫一", [(C, 1)])
+    world.add(3, "倉庫二", [])
+    world.add(2, "送貨", [(A, 1)])
+    whitelist(store, "倉庫一", [(A, True)], slots=1)  # full
+    whitelist(store, "倉庫二", [(A, True)])
+    start_receiver(mgr, 1)
+    start_receiver(mgr, 3)
+    mgr.start(2, "send")
+    assert finish(mgr, 2).ended == "全部交完"
+    assert supply.trips == [(3, {A: 1})]
+    mgr.stop(1)
+    mgr.stop(3)
+
+
+def test_an_invite_that_never_arrives_times_out_and_both_go_on():
+    world, store, supply, _nav, mgr = setup()
+    world.add(1, "倉庫", [])
+    world.add(2, "送貨", [(A, 1)])
+    world.drop_invites = 1
+    whitelist(store, "倉庫", [(A, True)])
+    start_receiver(mgr, 1)
+    mgr.start(2, "send")
+    sender = finish(mgr, 2)
+    assert sender.ended == "還有 1 格沒交出去"
+    assert any("等太久" in e.text for e in sender.log)
+    assert not any(line == "tradecancel" for _p, line in world.sent)  # no window was open
+    assert until(lambda: mgr.status(1).step == "等送貨的人")
+    assert mgr.status(1).running
+    # A second sender run goes through.
+    mgr.start(2, "send")
+    assert finish(mgr, 2).ended == "全部交完"
+    assert supply.trips == [(1, {A: 1})]
+    mgr.stop(1)
