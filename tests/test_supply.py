@@ -171,7 +171,14 @@ class FakeGame:
             self.shop_open = self.warehouse_open = False
             return {"ok": True} if was else {"ok": False, "error": "no panel open"}
         if cmd == "warehouse":
-            return {"ok": True, "open": self.warehouse_open, "items": []}
+            items = [{"item": i, "inst": 0, "count": n} for i, n in self.vault.items() if n]
+            return {"ok": True, "open": self.warehouse_open, "items": items}
+        if cmd == "withdraw":
+            item, qty = int(args[0]), int(args[1])
+            if self.warehouse_open and self.vault.get(item, 0) >= qty:
+                self.vault[item] -= qty
+                self.bag[item] = self.bag.get(item, 0) + qty
+            return {"ok": True, "item": item, "qty": qty}
         if cmd == "store":
             item, qty = int(args[0]), int(args[1])
             if self.warehouse_open:
@@ -611,3 +618,26 @@ def test_store_only_stores_just_those_and_nothing_else():
     assert game.vault == {ORE: 12} and game.bag[ORE] == 18
     assert game.bag[JUNK] == 46 and game.bag[POTION] == 0  # no sell, no buy
     assert game.gold == 40_000  # no 錢莊 move
+
+
+def test_withdraw_takes_out_the_wanted_stacks_that_fit():
+    game = FakeGame({JUNK: 1}, gold=40_000)
+    game.vault = {ORE: 300, SCROLL: 2, POTION: 5}
+    cfg = SupplyConfig(items=[SupplyItem(item_id=POTION, bag=10)], keep_gold=0, gold_low=100_000)
+    mgr, nav, _ = make(game, cfg, ItemRules(), caps=WAREHOUSE_CAPS + ("withdraw",))
+    result = mgr.run(1, threading.Event(), withdraw=(frozenset({ORE, SCROLL}), 1))
+    assert result.ok and result.withdrawn == 300 and result.left == 1, result
+    assert game.bag[ORE] == 300 and game.vault[SCROLL] == 2  # one slot: one stack
+    assert [line for line in game.sent if line.startswith("withdraw")] == [
+        f"withdraw {ORE} 255",
+        f"withdraw {ORE} 45",
+    ]
+    assert [d for d, _g in nav.went] == [23]  # the 錢莊伙計 only
+    assert game.bag.get(POTION, 0) == 0 and game.gold == 40_000  # no buy, no 錢莊 move
+
+
+def test_withdraw_needs_the_hook_command():
+    game = FakeGame({}, gold=40_000)
+    mgr, _nav, _ = make(game, SupplyConfig(), ItemRules(), caps=WAREHOUSE_CAPS)
+    result = mgr.run(1, threading.Event(), withdraw=(frozenset({ORE}), 3))
+    assert not result.ok and "withdraw" in result.detail

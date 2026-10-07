@@ -1602,6 +1602,8 @@ class HandoffConfig(_Base):
     items: list[HandoffItem] = []
     # Stacks this character's bag holds (惡人谷 has more, user 2026-10-07).
     bag_slots: int = Field(40, ge=1, le=200)
+    # Sender: also take the wanted items out of its own warehouse (user, 2026-10-07).
+    from_warehouse: bool = True
 
 
 class HandoffLogEntry(_Base):

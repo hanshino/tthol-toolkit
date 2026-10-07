@@ -36,6 +36,11 @@ button.ho-x:hover { color: var(--tt-bad); border-color: var(--tt-line); }
 .ho-recv li[data-state="same"] { border-style: dashed; color: var(--tt-mute); }
 .ho-recv li.is-now { border-color: var(--tt-gold); box-shadow: inset 0 0 0 1px var(--tt-gold); }
 .ho-name { font-weight: 500; }
+.ho-wh { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--tt-line-soft); }
+.ho-wh .dl-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.ho-wh .dl-check input { margin: 0; width: 15px; height: 15px; cursor: pointer; }
+.ho-wh-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 button.ho-x:focus-visible, .ho-slots input:focus-visible { outline: 1px solid var(--tt-accent); outline-offset: 2px; }
 

@@ -24,7 +24,9 @@ const STATE_LABEL: Record<HandoffReceiver['state'], string> = {
 
 const fmt = (n: number) => n.toLocaleString('en-US');
 const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString('zh-TW', { hour12: false });
-const toCfg = (c?: HandoffConfig): HandoffConfig => ({ items: c?.items ?? [], bag_slots: c?.bag_slots ?? 40 });
+const toCfg = (c?: HandoffConfig): HandoffConfig => ({
+  items: c?.items ?? [], bag_slots: c?.bag_slots ?? 40, from_warehouse: c?.from_warehouse ?? true,
+});
 
 export function HandoffPanel({ pid, active }: { pid: number; active: boolean }) {
   const [view, setView] = useState<HandoffView | null>(null);
@@ -140,7 +142,7 @@ export function HandoffPanel({ pid, active }: { pid: number; active: boolean }) 
 
       {shown === 'receive'
         ? <Receiver pid={pid} view={view} cfg={cfg} status={status} metas={metas} onChange={update} />
-        : <Sender view={view} status={status} />}
+        : <Sender view={view} cfg={cfg} status={status} onChange={update} />}
 
       <section className="gd-panel">
         <header className="gd-head">
@@ -364,7 +366,10 @@ function BagPicker({ view, taken, onAdd }: { view: HandoffView; taken: number[];
   );
 }
 
-function Sender({ view, status }: { view: HandoffView; status: HandoffStatus | null }) {
+function Sender({ view, cfg, status, onChange }: {
+  view: HandoffView; cfg: HandoffConfig; status: HandoffStatus | null; onChange: (c: HandoffConfig) => void;
+}) {
+  const running = !!status?.running;
   const open = view.receivers;
   const usable = open.filter(r => !r.same_account);
   const total = view.plan.length;
@@ -428,6 +433,24 @@ function Sender({ view, status }: { view: HandoffView; status: HandoffStatus | n
         )}
         <div className="gd-dim ho-foot">
           每一輪只放對方空的格數（也不超過一次交易能放的格數）；對方收下、存完倉，才放下一輪。
+        </div>
+        <div className="ho-wh">
+          <label className="dl-check">
+            <input type="checkbox" checked={cfg.from_warehouse} disabled={running}
+              onChange={e => onChange({ ...cfg, from_warehouse: e.target.checked })} />
+            背包交完，也去自己的倉庫領出來交
+          </label>
+          {cfg.from_warehouse && (
+            <div className="ho-wh-row">
+              <span className="gd-dim">一次領到背包滿（這隻角色背包</span>
+              <label className="ho-slots">
+                <span className="sr-only">送貨角色背包格數</span>
+                <input type="number" min={1} max={200} value={cfg.bag_slots} disabled={running}
+                  onChange={e => onChange({ ...cfg, bag_slots: Math.min(200, Math.max(1, Math.floor(Number(e.target.value)) || 1)) })} />
+              </label>
+              <span className="gd-dim">格），交完再回去領，直到倉庫沒有倉庫要收的東西；上面列的只算背包</span>
+            </div>
+          )}
         </div>
       </section>
 

@@ -35,6 +35,7 @@ class World:
         self.put_error = {}  # item -> any other tradeput error
         self.drop_invites = 0  # invites that never arrive
         self.mgr = None
+        self.vaults = {}  # pid -> warehouse stacks
 
     def add(self, pid, name, stacks, tile=(10, 10)):
         self.chars[pid] = {"name": name, "stacks": [list(s) for s in stacks], "tile": tile}
@@ -175,13 +176,31 @@ class Supply:
     def __init__(self, world):
         self.world = world
         self.trips = []
+        self.withdraws = []
 
     def add_host(self, _text):
         pass
 
-    def run(self, pid, stop, note=None, host=None, store_only=None):
-        self.trips.append((pid, dict(store_only)))
+    def run(self, pid, stop, note=None, host=None, store_only=None, withdraw=None):
         me = self.world.chars[pid]
+        if withdraw is not None:
+            wants, room = withdraw
+            vault = self.world.vaults.setdefault(pid, [])
+            stacks = [s for s in vault if s[0] in wants]
+            take = stacks[:room]
+            for s in take:
+                vault.remove(s)
+                me["stacks"].append(list(s))
+            self.withdraws.append((pid, [tuple(s) for s in take]))
+
+            class W:
+                ok = True
+                detail = ""
+                withdrawn = sum(n for _i, n in take)
+                left = len(stacks) - len(take)
+
+            return W()
+        self.trips.append((pid, dict(store_only)))
         for item, n in store_only.items():
             for s in [s for s in me["stacks"] if s[0] == item]:
                 k = min(n, s[1])
@@ -345,7 +364,7 @@ def test_a_full_receiver_is_skipped():
     start_receiver(mgr, 1)
     mgr.start(2, "send")
     sender = finish(mgr, 2)
-    assert sender.ended == "還有 1 格沒交出去"
+    assert sender.ended == "背包還有 1 格沒交出去"
     assert "倉庫 背包滿了，換下一個倉庫" in [e.text for e in sender.log]
     assert world.counts(2) == {A: 1} and supply.trips == []
     mgr.stop(1)
@@ -471,7 +490,7 @@ def test_an_invite_that_never_arrives_times_out_and_both_go_on():
     start_receiver(mgr, 1)
     mgr.start(2, "send")
     sender = finish(mgr, 2)
-    assert sender.ended == "還有 1 格沒交出去"
+    assert sender.ended == "背包還有 1 格沒交出去"
     assert any("等太久" in e.text for e in sender.log)
     assert not any(line == "tradecancel" for _p, line in world.sent)  # no window was open
     assert until(lambda: mgr.status(1).step == "等送貨的人")
@@ -480,4 +499,35 @@ def test_an_invite_that_never_arrives_times_out_and_both_go_on():
     mgr.start(2, "send")
     assert finish(mgr, 2).ended == "全部交完"
     assert supply.trips == [(1, {A: 1})]
+    mgr.stop(1)
+
+
+def test_the_senders_warehouse_goes_too_a_bag_load_at_a_time():
+    world, store, supply, nav, mgr = setup()
+    world.add(1, "倉庫", [])
+    world.add(2, "送貨", [(A, 1), (C, 1), (C, 1)])
+    world.vaults[2] = [[A, 2], [B, 3], [A, 4], [C, 5]]
+    whitelist(store, "倉庫", [(A, True), (B, False)])
+    whitelist(store, "送貨", [], slots=4)  # two C stay: two free slots per load
+    start_receiver(mgr, 1)
+    mgr.start(2, "send")
+    assert finish(mgr, 2).ended == "全部交完"
+    assert supply.withdraws == [(2, [(A, 2), (B, 3)]), (2, [(A, 4)]), (2, [])]
+    assert world.vaults[2] == [[C, 5]]  # never wanted
+    assert world.counts(1) == {B: 3}  # A stored round by round
+    assert world.counts(2) == {C: 2}
+    mgr.stop(1)
+
+
+def test_without_from_warehouse_only_the_bag_goes():
+    world, store, supply, _nav, mgr = setup()
+    world.add(1, "倉庫", [])
+    world.add(2, "送貨", [(A, 1)])
+    world.vaults[2] = [[A, 2]]
+    whitelist(store, "倉庫", [(A, True)])
+    store.save_section("送貨", "handoff", HandoffConfig(from_warehouse=False))
+    start_receiver(mgr, 1)
+    mgr.start(2, "send")
+    assert finish(mgr, 2).ended == "全部交完"
+    assert supply.withdraws == [] and world.vaults[2] == [[A, 2]]
     mgr.stop(1)

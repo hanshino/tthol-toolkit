@@ -332,6 +332,8 @@ class SupplyResult:
     bought: int = 0
     put: int = 0
     stored: int = 0
+    withdrawn: int = 0  # a withdraw trip: items taken out
+    left: int = 0  # a withdraw trip: wanted stacks still in the warehouse
 
 
 @dataclass
@@ -672,19 +674,26 @@ class SupplyManager:
         host: str | None = None,
         claimed: bool = False,
         store_only: dict[int, int] | None = None,
+        withdraw: tuple[frozenset[int], int] | None = None,
     ) -> SupplyResult:
         """One trip. `note` gets the step text (a host module shows it as its own step).
 
         `store_only` (item -> qty): a trip to the warehouse that stores these and
         nothing else (no 道具處置 sells / stores, no buying, no 錢莊), for a host
-        tidying what it brought in (寶箱整理)."""
+        tidying what it brought in (寶箱整理).
+
+        `withdraw` (items, free bag slots): a trip to the warehouse that takes
+        out whole stacks of these, one per free slot, and nothing else (分身交貨
+        hands them on)."""
         with self._lock:
             if pid in self._hosts_running and not claimed:
                 return SupplyResult(False, "busy", "另一趟補給正在跑")
             self._hosts_running[pid] = host
             self._logs[pid] = _Log()
             self._ended.pop(pid, None)
-        trip = _Trip(self, pid, stop or threading.Event(), note or (lambda _t: None), store_only)
+        trip = _Trip(
+            self, pid, stop or threading.Event(), note or (lambda _t: None), store_only, withdraw
+        )
         try:
             with ExitStack() as hold:
                 hold.enter_context(self._guard.quiet(pid))
@@ -855,12 +864,15 @@ class _Trip:
         stop: threading.Event,
         note,
         store_only: dict[int, int] | None = None,
+        withdraw: tuple[frozenset[int], int] | None = None,
     ) -> None:
         self.m = mgr
         self.pid = pid
         self.stop = stop
         self.note = note
         self.store_only = store_only
+        self.withdraw = withdraw
+        self.withdrawn = 0
         self.sold = 0
         self.bought = 0
         self.put = 0
@@ -925,6 +937,8 @@ class _Trip:
         cfg = self.m.config(name)
         rules = self.m._store.load_items(name)
         bag, pet = self.held()
+        if self.withdraw is not None:
+            return self.withdraw_trip(bag)
         if self.store_only is not None:
             sells, needs, bank = [], [], None
             stores = store_rows(self.store_only, bag, self.m._facts)
@@ -1161,6 +1175,66 @@ class _Trip:
                 entry.phase = "confirmed"
                 self.stored += chunk
                 left -= chunk
+
+    def withdraw_trip(self, bag: dict[int, int]) -> SupplyResult:
+        """To the nearest 錢莊伙計, take out the wanted stacks that fit, back."""
+        wants, room = self.withdraw or (frozenset(), 0)
+        if not wants or room <= 0:
+            return SupplyResult(True, "nothing", "沒有要領的東西或背包沒空格")
+        caps = self.m._caps(self.pid) or frozenset()
+        self.caps = caps
+        missing = [c for c in (*SUPPLY_COMMANDS, "warehouse", "withdraw") if c not in caps]
+        if missing:
+            raise _Abort("no-hook", f"這個 hook 缺少領倉要用的指令：{'、'.join(missing)}")
+        if self.m._navigator is None:
+            raise _Abort("error", "沒有導航模組")
+        self.close_windows()
+        market = self.m.market(self.pid, bag, ask=True)
+        graph = rp.cached_graph(market.script.level, market.script.manor)
+        try:
+            stage = self.m._read_locked(self.pid, read_stage_id)
+        except Exception:
+            stage = None
+        if not stage:
+            raise _Abort("error", "讀不到目前地圖")
+        keeper = self.m._pick_warehouse(graph, stage[0], None)
+        if keeper is None:
+            raise _Abort("error", "找不到走得到的錢莊伙計")
+        self.go_to(keeper)
+        self.open_warehouse(keeper, market.script)
+        items = self.cmd("warehouse").get("items") or []
+        stacks = [(int(i["item"]), int(i["count"])) for i in items if int(i["item"]) in wants]
+        take = stacks[:room]
+        left = len(stacks) - len(take)
+        for item_id, count in take:
+            if not self.withdraw_stack(item_id, count):
+                left += 1
+        self.close_windows()
+        detail = f"領出 {self.withdrawn} 個" if self.withdrawn else "倉庫裡沒有要領的東西"
+        return SupplyResult(True, "done", detail, withdrawn=self.withdrawn, left=left)
+
+    def withdraw_stack(self, item_id: int, count: int) -> bool:
+        """One warehouse stack into the bag, STORE_MAX at a time."""
+        name = self.name(item_id)
+        left = count
+        while left > 0:
+            chunk = min(left, STORE_MAX)
+            self.step(f"領 {name} ×{chunk}")
+            bag, _pet = self.held()
+            before = bag.get(item_id, 0)
+            r = self.cmd(f"withdraw {item_id} {chunk}")
+            if not r.get("ok"):
+                self.line("error", f"領 {name} ×{chunk} 沒送出：{r.get('error') or '不明原因'}")
+                return False
+            entry = self.line("sent", f"領 {name} ×{chunk}")
+            if not self.confirm(lambda b, _p: b.get(item_id, 0) >= before + chunk):
+                entry.phase = "unconfirmed"
+                entry.text += "（背包數量沒有增加，背包可能滿了）"
+                return False
+            entry.phase = "confirmed"
+            self.withdrawn += chunk
+            left -= chunk
+        return True
 
     def settle_bank(self, bank: tuple[str, int]) -> None:
         verb, amount = bank

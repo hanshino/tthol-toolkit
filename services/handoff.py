@@ -48,6 +48,8 @@ log = logging.getLogger("tthol.handoff")
 
 SECTION = "handoff"
 HOST = "分身交貨 · 存倉"
+HOST_WITHDRAW = "分身交貨 · 領倉"
+MAX_PASSES = 100  # bag-loads from the warehouse in one sender run
 TRADE_PACKET = 0x1F
 EV_INVITE, EV_OPEN, EV_PUT, EV_LOCK, EV_CANCEL, EV_DONE = 1, 2, 3, 5, 6, 8
 # Stacks in one trade for a hook without `capacity`: the window holds 10 (the
@@ -294,6 +296,7 @@ class HandoffManager:
         self._supply = supply
         if supply is not None:
             supply.add_host(HOST)
+            supply.add_host(HOST_WITHDRAW)
         self._read_stage = read_stage
         self._stage_name = stage_name
         self._account_of = account_of
@@ -867,22 +870,51 @@ class HandoffManager:
         ]
         if not receivers:
             raise _Stop("沒有開著的倉庫（先在收貨角色按「開始收貨」）", "error")
-        stacks = self._bag(run)
-        shares = plan(stacks, [(r.pid, r.wants()) for r in receivers], self._untradable)
-        if not any(shares.values()):
-            return "背包裡沒有倉庫要收的東西"
-        # In order, so the first receiver that wants an item gets it; what it
-        # had no room for goes on to the next one that wants it too.
+        # The bag first; then, with from_warehouse, what the own warehouse
+        # holds, a bag-load at a time, until it has none or nobody takes more.
+        done_with: set[int] = set()  # receivers full, stopped or failed
+        from_warehouse = run.config.from_warehouse and self._supply is not None
+        warehouse_left = 0
+        for _ in range(MAX_PASSES):
+            self._pass(run, receivers, done_with)
+            if not from_warehouse:
+                break
+            takers = [r for r in receivers if r.pid not in done_with and not r.stop.is_set()]
+            cannot = self._cannot(run)
+            wants = {i for r in takers for i in r.wants() if not cannot(i)}
+            if not wants:
+                break
+            free = run.config.bag_slots - len(self._bag(run))
+            if free <= 0:
+                self._note(run, "unconfirmed", "背包滿了，沒辦法再從倉庫領")
+                break
+            got, warehouse_left = self._withdraw(run, wants, free)
+            if not got:
+                break
+        left = plan(self._bag(run), [(r.pid, r.wants()) for r in receivers], self._cannot(run))
+        n = sum(len(v) for v in left.values())
+        parts = [f"背包還有 {n} 格沒交出去"] if n else []
+        if warehouse_left:
+            parts.append(f"倉庫還有 {warehouse_left} 堆沒領")
+        return "，".join(parts) if parts else "全部交完"
+
+    def _pass(self, run: _Run, receivers: list[_Run], done_with: set[int]) -> None:
+        """What the bag holds, to each receiver in order: the first one that wants
+        an item gets it; what it had no room for goes on to the next one."""
         for r in receivers:
+            if r.pid in done_with:
+                continue
             wants = r.wants()
             if not for_receiver(self._bag(run), wants, self._cannot(run)):
                 continue
             with self._hub:
                 run.now_with = r.name
             try:
-                self._deliver(run, r, wants)
+                if not self._deliver(run, r, wants):
+                    done_with.add(r.pid)
             except _Fail as f:
                 self._cancel(run)
+                done_with.add(r.pid)
                 self._note(run, "error", f"交給 {r.name} 沒完成：{f.reason}")
             finally:
                 with self._hub:
@@ -890,16 +922,39 @@ class HandoffManager:
                     if run.pid in r.queue:
                         r.queue.remove(run.pid)
                     self._hub.notify_all()
-        left = plan(self._bag(run), [(r.pid, r.wants()) for r in receivers], self._cannot(run))
-        n = sum(len(v) for v in left.values())
-        return "全部交完" if not n else f"還有 {n} 格沒交出去"
+
+    def _withdraw(self, run: _Run, wants: set[int], free: int) -> tuple[int, int]:
+        """(items taken out, wanted stacks left there) from the own warehouse."""
+        self._set_step(run, "去倉庫領東西")
+        result = self._supply.run(
+            run.pid,
+            run.stop,
+            note=lambda text: self._set_step(run, text),
+            host=HOST_WITHDRAW,
+            withdraw=(frozenset(wants), free),
+        )
+        if run.stop.is_set():
+            raise _Stop("已停止")
+        if not getattr(result, "ok", False):
+            self._note(run, "error", f"領倉沒完成：{getattr(result, 'detail', '')}")
+            return 0, 0
+        got = getattr(result, "withdrawn", 0)
+        left = getattr(result, "left", 0)
+        if got:
+            self._note(
+                run, "confirmed", f"從倉庫領出 {got} 個" + (f"（還剩 {left} 堆）" if left else "")
+            )
+        else:
+            self._note(run, "info", "倉庫裡沒有倉庫要收的東西了")
+        return got, left
 
     def _cannot(self, run: _Run) -> Callable[[int], bool]:
         # The DB's no_trade misses many (賞善 / quest items: tthol-hook
         # 2026-10-07), so what tradeput refused is skipped for the rest of the run.
         return lambda item: self._untradable(item) or item in run.refused
 
-    def _deliver(self, run: _Run, r: _Run, wants: set[int]) -> None:
+    def _deliver(self, run: _Run, r: _Run, wants: set[int]) -> bool:
+        """Everything it wants from the bag (True), or it is full (False)."""
         with self._hub:
             stage, tile = r.stage, r.tile
         if stage is None or tile is None:
@@ -919,12 +974,12 @@ class HandoffManager:
             mine = for_receiver(self._bag(run), wants, self._cannot(run))
             if not mine:
                 self._note(run, "confirmed", f"交給 {r.name} 的都交完了（{rounds} 輪）")
-                return
+                return True
             turn = self._take_turn(run, r)
             try:
                 if not self._round(run, turn, mine):
                     self._note(run, "unconfirmed", f"{r.name} 背包滿了，換下一個倉庫")
-                    return
+                    return False
             except _Fail as f:
                 self._cancel(run)
                 self._fail_turn(turn, f.reason)

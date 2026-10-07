@@ -3118,6 +3118,11 @@ export interface components {
              * @default 40
              */
             bag_slots: number;
+            /**
+             * From Warehouse
+             * @default true
+             */
+            from_warehouse: boolean;
         };
         /** HandoffCount */
         HandoffCount: {
