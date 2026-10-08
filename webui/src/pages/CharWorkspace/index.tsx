@@ -1,10 +1,7 @@
 import { useRef } from 'react';
 import type { CharacterRow } from '../../api/types';
 import { can, isStopped, isUnlocated, type CharTab, type GlobalView } from '../../nav';
-import { AutoClickTab } from './AutoClickTab';
-import { GuardPanel } from './GuardPanel';
-import { SupplyPanel } from './SupplyPanel';
-import { HandoffPanel } from './HandoffPanel';
+import { AssistTab } from './AssistTab';
 import { BodyTab } from './BodyTab';
 import { CharHeader } from './CharHeader';
 import { ChatTab } from './ChatTab';
@@ -24,7 +21,7 @@ const TABS: { k: CharTab; n: string; s: string }[] = [
   { k: 'maps', n: '行止', s: '地圖' },
   { k: 'market', n: '市集', s: '攤位調查' },
   { k: 'damage', n: '戰錄', s: '傷害 · DPS' },
-  { k: 'assist', n: '輔助', s: '守護 · 英雄培養' },
+  { k: 'assist', n: '輔助', s: '守護 · 補給 · 交貨' },
 ];
 // Only when the client's hook allows the feature (see `can`): 日常 walks,
 // fights and talks through hook commands, 傳音 reads its chat packets.
@@ -83,12 +80,10 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
               {t.k === 'market' && <MarketTab pid={char.pid} onOpenPrices={() => onNav('market')} />}
               {t.k === 'damage' && <DamageTab pid={char.pid} active={tab === 'damage'} />}
               {t.k === 'assist' && (
-                <div style={{ display: 'grid', gap: 14 }}>
-                  <GuardPanel pid={char.pid} active={tab === 'assist'} canLove={can(char, 'love')} />
-                  <SupplyPanel pid={char.pid} active={tab === 'assist'} />
-                  {can(char, 'handoff') && <HandoffPanel pid={char.pid} active={tab === 'assist'} />}
-                  <AutoClickTab pid={char.pid} />
-                </div>
+                <AssistTab
+                  pid={char.pid} active={tab === 'assist'}
+                  canLove={can(char, 'love')} canHandoff={can(char, 'handoff')}
+                />
               )}
               {t.k === 'daily' && <DailyTab pid={char.pid} active={tab === 'daily'} />}
               {t.k === 'chat' && <ChatTab pid={char.pid} active={tab === 'chat'} />}

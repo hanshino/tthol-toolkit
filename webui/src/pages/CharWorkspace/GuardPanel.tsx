@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, put } from '../../api/client';
 import type { BuffSkillCandidate, GuardConfig, GuardLogEntry, GuardStatus, GuardVitals, PotionCandidate } from '../../api/types';
 import { reportClientError } from '../../diag/report';
+import { guardState, stateClass } from './assistState';
 import './guard.css';
 
 // Standing guard (services/guard.py): rules that only use items, so they can
@@ -138,9 +139,7 @@ export function GuardPanel({ pid, active, canLove = false }: { pid: number; acti
   return (
     <div className="gd">
       <section className="gd-panel gd-strip" aria-label="常駐守護">
-        <span className={`gd-state${running ? ' is-on' : ''}${running && status.problem ? ' is-warn' : ''}`}>
-          <i />{running ? (status.problem ? '等待中' : '守護中') : '已停止'}
-        </span>
+        <span className={stateClass(guardState(status))}><i />{guardState(status).text}</span>
         <div className="gd-strip-text">
           <span className="gd-title">常駐守護</span>
           <span className="gd-dim">不會移動角色；你自己玩的時候也照常運作</span>

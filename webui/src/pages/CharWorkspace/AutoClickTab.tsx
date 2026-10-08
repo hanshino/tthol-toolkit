@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get, post } from '../../api/client';
 import { reportClientError } from '../../diag/report';
-import { Panel } from '../../primitives';
+import { heroState, stateClass } from './assistState';
 
 type Status = {
   running: boolean;
@@ -14,7 +14,7 @@ const MERCHANTS = [1, 2, 3, 4, 5];
 
 type Mode = 'off' | 'collect' | 'destroy';
 
-export function AutoClickTab({ pid }: { pid: number }) {
+export function AutoClickTab({ pid, active }: { pid: number; active: boolean }) {
   const [merchantIdx, setMerchantIdx] = useState(0);
   const [intervalMs, setIntervalMs] = useState(500);
   const [mode, setMode] = useState<Mode>('off');
@@ -34,10 +34,11 @@ export function AutoClickTab({ pid }: { pid: number }) {
   };
 
   useEffect(() => {
+    if (!active) return;
     refresh();
     const t = window.setInterval(refresh, 2000);
     return () => window.clearInterval(t);
-  }, [pid]);
+  }, [pid, active]);
 
   const start = async () => {
     setBusy('start');
@@ -69,9 +70,21 @@ export function AutoClickTab({ pid }: { pid: number }) {
     ? new Date(status.last_click_at * 1000).toLocaleTimeString('zh-TW', { hour12: false })
     : '—';
 
+  const state = heroState(status.running);
+
   return (
-    <Panel title="輔助·英雄培養">
-      <div style={{ display: 'grid', gap: 10 }}>
+    <div style={{ display: 'grid', gap: 14 }}>
+      <section className="gd-panel gd-strip" aria-label="英雄培養">
+        <span className={stateClass(state)}><i />{state.text}</span>
+        <div className="gd-strip-text">
+          <span className="gd-title">英雄培養</span>
+          <span className="gd-dim">自動點商人洗英雄變身</span>
+        </div>
+        {status.running
+          ? <button type="button" onClick={stop} disabled={busy !== null}>停止</button>
+          : <button type="button" className="is-primary" onClick={start} disabled={busy !== null}>啟動</button>}
+      </section>
+      <section className="gd-panel" style={{ display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--tt-dim)' }}>
             商人
@@ -131,21 +144,12 @@ export function AutoClickTab({ pid }: { pid: number }) {
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button className="is-primary" onClick={start} disabled={status.running || busy !== null}>啟動</button>
-          <button onClick={stop} disabled={!status.running || busy !== null}>停止</button>
-          <button onClick={test} disabled={busy !== null} title="對選中商人發一次點擊">測試點擊</button>
-          <span style={{
-            marginLeft: 8,
-            color: status.running ? 'var(--tt-ok)' : 'var(--tt-mute)',
-            letterSpacing: 2, fontSize: 12,
-          }}>
-            {status.running ? `執行中 · ${status.runtime_seconds ?? 0}s` : '未啟用'}
-          </span>
+          <button type="button" onClick={test} disabled={busy !== null} title="對選中商人發一次點擊">測試點擊</button>
           <span style={{ color: 'var(--tt-mute)', fontSize: 11, marginLeft: 4 }}>
-            上次點擊 {lastClick}
+            {status.running && `已執行 ${status.runtime_seconds ?? 0}s · `}上次點擊 {lastClick}
           </span>
         </div>
-      </div>
-    </Panel>
+      </section>
+    </div>
   );
 }
