@@ -25,7 +25,7 @@ button.as-tab[aria-selected="true"] .as-tab-n { color: var(--tt-gold); }
   .as-in { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .as-nav { flex-direction: row; flex-wrap: wrap; gap: 6px; background: none; border: 0; }
   button.as-tab {
-    display: flex; gap: 8px; min-height: 34px; padding: 0 14px;
+    display: flex; flex: none; white-space: nowrap; gap: 8px; min-height: 34px; padding: 0 14px;
     border: 1px solid var(--tt-line-soft); background: transparent;
   }
   button.as-tab:hover:not(:disabled) { background: var(--tt-panel); border-color: var(--tt-line); }

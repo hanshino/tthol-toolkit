@@ -59,8 +59,8 @@ button.ws-back { font-size: 12px; padding: 4px 10px; justify-self: start; }
 button.ws-rescue-go { font-size: 12px; padding: 5px 12px; color: var(--tt-gold); }
 .ws-rescue-hint { color: var(--tt-dim); font-size: 11px; }
 
-.ws-tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--tt-line); background: var(--tt-bg); }
-button.ws-tab { display: flex; align-items: baseline; gap: 6px; padding: 10px 16px; margin-bottom: -1px; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--tt-dim); letter-spacing: 0; }
+.ws-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--tt-line); background: var(--tt-bg); }
+button.ws-tab { display: flex; flex: none; white-space: nowrap; align-items: baseline; gap: 6px; padding: 10px 16px; margin-bottom: -1px; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--tt-dim); letter-spacing: 0; }
 button.ws-tab:hover:not(:disabled) { background: transparent; color: var(--tt-text); border-color: transparent; }
 button.ws-tab[aria-selected="true"],
 button.ws-tab[aria-selected="true"]:hover:not(:disabled) { color: var(--tt-gold); border-bottom-color: var(--tt-gold); }
