@@ -5121,6 +5121,8 @@ export interface components {
              * @default []
              */
             warehouse: components["schemas"]["HandoffBagItem"][];
+            /** Fits */
+            fits?: number | null;
             /** Warehouse From */
             warehouse_from?: ("live" | "snapshot") | null;
             /** Warehouse Holder */

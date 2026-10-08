@@ -89,6 +89,8 @@ def test_start_refuses_an_empty_list_a_full_bag_or_a_busy_character():
     assert mgr.start(1).reason == "白名單是空的"
     mgr, _s, _ = make([(ORE, 1)] * 40)
     assert mgr.start(1).reason == "背包沒有空格"
+    mgr, supply, _ = make([(BOOK, 1)] + [(ORE, 1)] * 39)  # full, but BOOK stacks
+    assert mgr.start(1).ok and supply.done.wait(2)
     mgr, supply, _ = make([])
     supply.busy = True
     assert not mgr.start(1).ok
@@ -109,6 +111,7 @@ def test_view_counts_from_the_accounts_snapshot_first():
     row = v.rows[0]
     assert (row.name, row.bag, row.warehouse, row.stacks) == ("天外天秘笈", 1, 2, 2)
     assert [w.item_id for w in v.warehouse] == [BOOK]
+    assert v.fits == 2  # BOOK is held: both stacks land on it
 
 
 def test_view_falls_back_to_the_live_warehouse_then_to_unknown():

@@ -157,8 +157,8 @@ export function WithdrawPanel({ pid, active }: { pid: number; active: boolean })
           <h3>要領的道具</h3>
           <span className="gd-dim">
             {known && cfg.items.length > 0
-              ? `倉庫裡有 ${stacks} 堆${free != null && stacks > free ? `，背包只放得下 ${Math.max(free, 0)} 堆` : ''}`
-              : '領整疊：一堆佔一格'}
+              ? `倉庫裡有 ${stacks} 堆${view.fits != null && view.fits < stacks ? `，這趟領得了 ${view.fits} 堆` : ''}`
+              : '領整疊；身上已有的會疊上去，不佔新格子'}
           </span>
         </header>
         {cfg.items.length === 0 ? (

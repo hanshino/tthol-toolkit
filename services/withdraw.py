@@ -25,6 +25,7 @@ from services.api_types import (
 from services.handoff import bag_stacks, counts, held_rows
 from services.hook_caps import FEATURES
 from services.hook_cmd import NoReply, PipeBusy, PipeGone
+from services.supply import withdraw_fit
 
 log = logging.getLogger("tthol.withdraw")
 
@@ -155,8 +156,13 @@ class WithdrawManager:
             )
             for i in cfg.items
         ]
+        fits = None
+        if wh is not None and stacks is not None:
+            wanted = [(i, n) for i, n in wh if i in set(cfg.items)]
+            fits = len(withdraw_fit(wanted, bag, cfg.bag_slots - len(stacks))[0])
         return WithdrawView(
             character=name,
+            fits=fits,
             config=cfg,
             rows=rows,
             bag=held_rows(stacks or [], self._item_info),
@@ -188,7 +194,9 @@ class WithdrawManager:
         if stacks is None:
             return GuardStartResult(ok=False, reason="讀不到背包（hook 沒有回應）")
         free = cfg.bag_slots - len(stacks)
-        if free <= 0:
+        held = counts(stacks)
+        # A full bag still takes what it already holds: those stack.
+        if free <= 0 and not any(held.get(i, 0) for i in cfg.items):
             return GuardStartResult(ok=False, reason="背包沒有空格")
         with self._lock:
             if pid in self._runs:

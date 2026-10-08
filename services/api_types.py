@@ -1723,6 +1723,9 @@ class WithdrawView(_Base):
     warehouse: list[HandoffBagItem] = []
     # snapshot: the account's newest recorded warehouse (warehouse_holder at
     # warehouse_at); live: none recorded, the hook saw it open this session.
+    # Warehouse stacks one trip would take now (merging onto held stacks
+    # needs no slot); None when the bag or the warehouse is unknown.
+    fits: int | None = None
     warehouse_from: Literal["live", "snapshot"] | None = None
     warehouse_holder: str | None = None
     warehouse_at: str | None = None

@@ -198,6 +198,27 @@ def _stacks(n: int) -> int:
     return -(-max(n, 0) // STACK)
 
 
+def withdraw_fit(
+    stacks: list[tuple[int, int]], bag: dict[int, int], room: int
+) -> tuple[set[int], int]:
+    """(indexes of the warehouse stacks to take, how many stay) for `room` free
+    bag slots. A new item takes a slot per stack. A stack of an item the bag
+    holds lands on that stack (books withdrawn onto a 37/40 bag all merged,
+    live 2026-10-08): it takes a slot only when it pushes the item over a
+    STACK boundary."""
+    have = dict(bag)
+    take: set[int] = set()
+    for k, (item_id, count) in enumerate(stacks):
+        now = have.get(item_id, 0)
+        need = 1 if now <= 0 else min(1, _stacks(now + count) - _stacks(now))
+        if need > room:
+            continue
+        room -= need
+        have[item_id] = now + count
+        take.add(k)
+    return take, len(stacks) - len(take)
+
+
 def estimate_load(
     bag: list[tuple[int, int]],
     pet: list[tuple[int, int]],
@@ -1299,7 +1320,8 @@ class _Trip:
     def withdraw_trip(self, bag: dict[int, int]) -> SupplyResult:
         """To the nearest 錢莊伙計, take out the wanted stacks that fit, back."""
         wants, room = self.withdraw or (frozenset(), 0)
-        if not wants or room <= 0:
+        # A full bag can still take items it already holds: they stack.
+        if not wants or (room <= 0 and not any(bag.get(i, 0) for i in wants)):
             return SupplyResult(True, "nothing", "沒有要領的東西或背包沒空格")
         caps = self.m._caps(self.pid) or frozenset()
         self.caps = caps
@@ -1326,9 +1348,10 @@ class _Trip:
         remain = [[int(i["item"]), int(i["count"])] for i in items]
         stacks = [k for k, (item_id, _n) in enumerate(remain) if item_id in wants]
         self.line("info", f"倉庫裡 {len(items)} 堆，要領的 {len(stacks)} 堆")
-        take = stacks[:room]
-        left = len(stacks) - len(take)
-        for k in take:
+        take, left = withdraw_fit([tuple(remain[k]) for k in stacks], bag, room)
+        for n, k in enumerate(stacks):
+            if n not in take:
+                continue
             item_id, count = remain[k]
             before = self.withdrawn
             ok = self.withdraw_stack(item_id, count)
