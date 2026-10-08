@@ -354,11 +354,11 @@ def test_own_hits_are_noted_by_target_key():
     own = struct.pack("<HII", 10, 60004, 1)
     raw = b"\x43" + struct.pack("<HII", 2, 9001, 1) + own + b"\x00" * 7
     mgr.on_attack_packet(1, raw, 0.0, own)
-    assert (9001, 1) in run.hits
+    assert (9001, 1) in run.fighter.hits
     mgr.on_attack_packet(
         1, b"\x43" + struct.pack("<HII", 2, 9001, 2) + b"\x01" * 10 + b"\x00" * 7, 0.0, own
     )
-    assert (9001, 2) not in run.hits  # someone else's hit
+    assert (9001, 2) not in run.fighter.hits  # someone else's hit
 
 
 def test_view_without_a_hook_pipe_is_not_an_error():

@@ -59,6 +59,8 @@ FEATURES: dict[str, tuple[str, ...]] = {
         "warehouse",
         "withdraw",
     ),
+    # 打怪: fight around a spot on any map.
+    "grind": ("status", "near", "walk", "attack", "cast"),
     "daily.tower": (
         "status",
         "near",

@@ -1,23 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get } from '../../api/client';
-import type { GuardStatus, HandoffStatus, SupplyStatus } from '../../api/types';
+import type { GrindStatus, GuardStatus, HandoffStatus, SupplyStatus } from '../../api/types';
 import { reportClientError } from '../../diag/report';
 import { AutoClickTab } from './AutoClickTab';
+import { GrindPanel } from './GrindPanel';
 import { GuardPanel } from './GuardPanel';
 import { HandoffPanel } from './HandoffPanel';
 import { SupplyPanel } from './SupplyPanel';
 import { WithdrawPanel } from './WithdrawPanel';
 import {
-  guardState, handoffState, heroState, stateClass, supplyState, withdrawState, type RunState,
+  grindState, guardState, handoffState, heroState, stateClass, supplyState, withdrawState, type RunState,
 } from './assistState';
 import './assist.css';
 
 // 輔助 holds several long modules; each gets its own sub-tab so only one is on
 // screen (and polling) at a time. Wide: a side menu with every module's state;
 // narrow: the same buttons as a row above the content (assist.css).
-type Sub = 'guard' | 'supply' | 'withdraw' | 'handoff' | 'hero';
+type Sub = 'guard' | 'grind' | 'supply' | 'withdraw' | 'handoff' | 'hero';
 const SUBS: { k: Sub; n: string; s: string }[] = [
   { k: 'guard', n: '守護', s: '補水 · buff 維持' },
+  { k: 'grind', n: '打怪', s: '定點清附近的怪' },
   { k: 'supply', n: '補給', s: '賣 · 存倉 · 買' },
   { k: 'withdraw', n: '領倉', s: '白名單整疊領出' },
   { k: 'handoff', n: '分身交貨', s: '跨帳號交易' },
@@ -36,11 +38,14 @@ function loadSub(): Sub {
 }
 
 // Every module's run state for the menu, including the hidden ones.
-function useRunStates(pid: number, active: boolean, withHandoff: boolean): Record<Sub, RunState> {
+function useRunStates(
+  pid: number, active: boolean, withHandoff: boolean, withGrind: boolean,
+): Record<Sub, RunState> {
   const [guard, setGuard] = useState<GuardStatus | null>(null);
   const [supply, setSupply] = useState<SupplyStatus | null>(null);
   const [handoff, setHandoff] = useState<HandoffStatus | null>(null);
   const [hero, setHero] = useState(false);
+  const [grind, setGrind] = useState<GrindStatus | null>(null);
 
   const refresh = useCallback(async () => {
     const one = async <T,>(path: string, set: (v: T) => void) => {
@@ -54,9 +59,10 @@ function useRunStates(pid: number, active: boolean, withHandoff: boolean): Recor
       one<GuardStatus>('guard', setGuard),
       one<SupplyStatus>('supply/status', setSupply),
       withHandoff ? one<HandoffStatus>('handoff/status', setHandoff) : null,
+      withGrind ? one<GrindStatus>('grind/status', setGrind) : null,
       one<{ running: boolean }>('autoclick/status', s => setHero(s.running)),
     ]);
-  }, [pid, withHandoff]);
+  }, [pid, withHandoff, withGrind]);
 
   useEffect(() => {
     if (!active) return;
@@ -66,13 +72,13 @@ function useRunStates(pid: number, active: boolean, withHandoff: boolean): Recor
   }, [active, refresh]);
 
   return {
-    guard: guardState(guard), supply: supplyState(supply), withdraw: withdrawState(supply),
+    guard: guardState(guard), grind: grindState(grind), supply: supplyState(supply), withdraw: withdrawState(supply),
     handoff: handoffState(handoff), hero: heroState(hero),
   };
 }
 
-export function AssistTab({ pid, active, canLove, canHandoff, canWithdraw }: {
-  pid: number; active: boolean; canLove: boolean; canHandoff: boolean; canWithdraw: boolean;
+export function AssistTab({ pid, active, canLove, canHandoff, canWithdraw, canGrind }: {
+  pid: number; active: boolean; canLove: boolean; canHandoff: boolean; canWithdraw: boolean; canGrind: boolean;
 }) {
   const [sub, setSub] = useState<Sub>(loadSub);
   // Mounted on first visit and then kept (hidden), like the main tabs, so an
@@ -81,10 +87,13 @@ export function AssistTab({ pid, active, canLove, canHandoff, canWithdraw }: {
   // 分身交貨 needs the hook's trade commands; once opened it stays even if the
   // hook drops, so it does not vanish under the user.
   const subs = SUBS.filter(s => (s.k !== 'handoff' || canHandoff || visited.current.has('handoff'))
-    && (s.k !== 'withdraw' || canWithdraw || visited.current.has('withdraw')));
+    && (s.k !== 'withdraw' || canWithdraw || visited.current.has('withdraw'))
+    && (s.k !== 'grind' || canGrind || visited.current.has('grind')));
   const cur = subs.some(s => s.k === sub) ? sub : 'guard';
   visited.current.add(cur);
-  const states = useRunStates(pid, active, subs.some(s => s.k === 'handoff'));
+  const states = useRunStates(
+    pid, active, subs.some(s => s.k === 'handoff'), subs.some(s => s.k === 'grind'),
+  );
 
   const pick = (k: Sub) => {
     setSub(k);
@@ -111,6 +120,7 @@ export function AssistTab({ pid, active, canLove, canHandoff, canWithdraw }: {
           {subs.filter(s => visited.current.has(s.k)).map(s => (
             <div key={s.k} role="tabpanel" id={`as-panel-${s.k}`} aria-labelledby={`as-tab-${s.k}`} hidden={cur !== s.k}>
               {s.k === 'guard' && <GuardPanel pid={pid} active={on('guard')} canLove={canLove} />}
+              {s.k === 'grind' && <GrindPanel pid={pid} active={on('grind')} />}
               {s.k === 'supply' && <SupplyPanel pid={pid} active={on('supply')} />}
               {s.k === 'withdraw' && <WithdrawPanel pid={pid} active={on('withdraw')} />}
               {s.k === 'handoff' && <HandoffPanel pid={pid} active={on('handoff')} />}

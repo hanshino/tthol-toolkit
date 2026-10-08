@@ -1736,3 +1736,51 @@ class WithdrawView(_Base):
 
 class HandoffStart(_Base):
     role: Literal["receive", "send"]
+
+
+# ---- 打怪 (fight around a spot on any map) ----------------------------------
+
+
+class GrindConfig(_Base):
+    """打怪 (character_settings section "grind"). How it fights is the shared
+    CombatRule (section "combat"), the same one 神武玄天塔 uses."""
+
+    radius: int = Field(10, ge=2, le=40)  # tiles from the start spot
+    only: list[int] = []  # npc ids to fight; empty = every monster
+
+
+class GrindMonster(_Base):
+    """A monster kind in view, for the 只打這些怪 picker."""
+
+    npc_id: int
+    name: str
+    level: int | None = None
+    count: int = 0  # alive in view now
+
+
+class GrindStatus(_Base):
+    running: bool
+    character: str | None = None
+    step: str | None = None  # what the module is doing, in user words
+    problem: str | None = None
+    warning: str | None = None  # runs anyway (e.g. the guard has nothing to drink)
+    target: str | None = None  # name of the monster being fought
+    kills: int = 0
+    anchor: list[int] | None = None  # [x, y] tile it fights around
+    started: float | None = None  # unix s
+    ended: str | None = None
+    log: list[TowerLogEntry] = []
+
+
+class GrindSettings(_Base):
+    combat: CombatRule
+    config: GrindConfig
+
+
+class GrindView(_Base):
+    status: GrindStatus
+    combat: CombatRule = CombatRule()
+    config: GrindConfig = GrindConfig()
+    skills: list[AttackSkillCandidate] = []
+    monsters: list[GrindMonster] = []  # in view now, plus the picked ones
+    hook_ready: bool = False

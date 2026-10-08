@@ -15,6 +15,7 @@ from services.api import tower as tower_module
 from services.api import supply as supply_module
 from services.api import handoff as handoff_module
 from services.api import withdraw as withdraw_module
+from services.api import grind as grind_module
 from services.api import daily as daily_module
 from services.api import dispatch as dispatch_module
 from services.api import walk as walk_module
@@ -136,6 +137,7 @@ def build_app(services: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(supply_module.router)
     app.include_router(handoff_module.router)
     app.include_router(withdraw_module.router)
+    app.include_router(grind_module.router)
     app.include_router(daily_module.router)
     app.include_router(dispatch_module.router)
     app.include_router(walk_module.router)

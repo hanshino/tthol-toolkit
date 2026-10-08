@@ -1,0 +1,14 @@
+/* 打怪 panel (GrindPanel.tsx); layout pieces come from handoff.css / guard.css. */
+.gr-elapsed { font-size: 12px; padding: 0 2px; }
+
+.gr-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+button.gr-chip {
+  display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 10px;
+  font-size: 13px; color: var(--tt-dim);
+  background: var(--tt-bg); border: 1px solid var(--tt-line); cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+button.gr-chip:hover { border-color: var(--tt-dim); }
+button.gr-chip[aria-pressed="true"] { color: var(--tt-text); border-color: var(--tt-gold); }
+button.gr-chip:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 1px; }
+.gr-chip-lv, .gr-chip-n { font-size: 11px; color: var(--tt-mute); font-family: var(--tt-font-mono); }

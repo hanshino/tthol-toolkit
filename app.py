@@ -40,6 +40,7 @@ from services.item_rules import load_item_facts
 from services.supply import SupplyManager
 from services.handoff import TRADE_PACKET, HandoffManager
 from services.withdraw import WithdrawManager
+from services.grind import GrindManager
 from services.map_db import stage_names_by_id
 from services.tower_run import ATTACK_PACKET, CAST_START_PACKET, TowerManager
 from services.buff_tracker import BUFF_PACKET, BuffTracker
@@ -165,6 +166,30 @@ def _build_services(dev: bool) -> dict:
     hook.add_packet_listener(CAST_START_PACKET, tower.on_cast_packet)
     daily = DailyQueueManager([tower], character_name=wm.character_name, store=GuardStore(db))
 
+    # 打怪: fight around a spot on any map.
+    def grind_busy(pid: int) -> str | None:
+        if daily.status(pid).running:
+            return "這隻角色正在跑日常"
+        if tower.status(pid).running:
+            return "這隻角色正在登塔"
+        if supply.status(pid).running:
+            return "這隻角色正在補給"
+        if handoff.running(pid) or withdraw.running(pid):
+            return "這隻角色正在交貨或領倉"
+        return None
+
+    grind = GrindManager(
+        guard=guard,
+        read_locked=wm.read_locked,
+        character_name=wm.character_name,
+        channel=channel,
+        store=GuardStore(db),
+        hook_caps=hook_caps,
+        busy=grind_busy,
+    )
+    hook.add_packet_listener(ATTACK_PACKET, grind.on_attack_packet)
+    hook.add_packet_listener(CAST_START_PACKET, grind.on_cast_packet)
+
     # 分身交貨: never on a character another module is driving.
     def handoff_busy(pid: int) -> str | None:
         if daily.status(pid).running:
@@ -173,6 +198,8 @@ def _build_services(dev: bool) -> dict:
             return "這隻角色正在登塔"
         if supply.status(pid).running:
             return "這隻角色正在補給"
+        if grind.running(pid):
+            return "這隻角色正在打怪"
         return None
 
     def account_of(name: str) -> int | None:
@@ -232,6 +259,7 @@ def _build_services(dev: bool) -> dict:
     for forget in (
         daily.forget,
         tower.forget,
+        grind.forget,
         handoff.forget,
         withdraw.forget,
         supply.forget,
@@ -299,6 +327,7 @@ def _build_services(dev: bool) -> dict:
         "supply_manager": supply,
         "handoff_manager": handoff,
         "withdraw_manager": withdraw,
+        "grind_manager": grind,
         "daily_manager": daily,
         "login_store": logins,
         "dispatch_manager": dispatch,
@@ -445,6 +474,7 @@ def main() -> int:
         services["dispatch_manager"].shutdown()
         services["daily_manager"].shutdown()
         services["tower_manager"].shutdown()
+        services["grind_manager"].shutdown()
         services["handoff_manager"].shutdown()
         services["guard_manager"].shutdown()
         services["buff_tracker"].shutdown()

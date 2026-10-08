@@ -10,16 +10,28 @@ static read of the client, 2026-10-05; not verified in game).
   fixed 450 ms gap and lets the server drop casts that come too early; here the
   next skill waits recharge_time + stun of the last one, at least 450 ms.
 - A guard buff cast pauses fighting for 1 s, like the puppet.
+
+`Fighter` runs this for every module that fights (神武玄天塔, dungeons): the
+module decides which monsters are fair game, the fighter picks among them and
+sends the attacks. The settings are one `CombatRule` per character
+(COMBAT_SECTION), shared by every module.
 """
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+import struct
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from services._paths import bundled
-from services.api_types import CombatRule
+from services.api_types import AttackSkillCandidate, CombatRule
+
+COMBAT_SECTION = "combat"  # the character's combat settings, shared by every module
+NO_ATTACK = "還沒設定攻擊方式：勾普攻，或選至少一個技能"
 
 SKILL_GAP = 0.45  # the puppet's fixed gap between two skills
 BUFF_PAUSE = 1.0  # after a guard buff cast
@@ -237,3 +249,172 @@ def mobbed_by(
     if not close:
         return None
     return min(close, key=lambda o: (o["x"] / TILE_PX - mx) ** 2 + (o["y"] / TILE_PX - my) ** 2)
+
+
+def attack_problem(rule: CombatRule) -> str | None:
+    """Why `rule` cannot fight at all, or None."""
+    if not rule.basic and not rule.opener and not rule.rotation:
+        return NO_ATTACK
+    return None
+
+
+def skill_candidates(
+    learned: dict[int, int], defs: dict[tuple[int, int], AttackSkill]
+) -> list[AttackSkillCandidate]:
+    """The learned skills that hit an enemy, for the combat pickers."""
+    out = []
+    for mid, level in sorted(learned.items()):
+        d = defs.get((mid, level))
+        if d is not None:
+            out.append(
+                AttackSkillCandidate(
+                    magic_id=mid, level=level, name=d.name, mp=d.mp, area=d.area, gap_ms=d.gap_ms
+                )
+            )
+    return out
+
+
+class Fighter:
+    """One character's fighting: the target, the rotation, and what the server
+    said about our attacks (0x43 hits, 0x10 cast starts). The packet handlers
+    run on the hook listener's thread, `tick` on the module's run thread."""
+
+    def __init__(
+        self,
+        rule: CombatRule,
+        logger: logging.Logger | None = None,
+        cat: str = "combat",
+    ) -> None:
+        self.rule = rule
+        self._log = logger or logging.getLogger("tthol.combat")
+        self._cat = cat
+        self.lock = threading.Lock()
+        self.rot = Rotation()
+        self.learned: dict[int, int] = {}
+        self.casts_seen = 0
+        self.hits: dict[tuple[int, int], float] = {}  # target key -> clock of our last hit
+        # target key -> magic id -> clock of our last hit with it (0 = basic attack)
+        self.hit_skills: dict[tuple[int, int], dict[int, float]] = {}
+        self.taken: dict[int, float] = {}  # magic id -> clock of our last cast start (0x10)
+        self.last_taken: tuple[float, int] | None = None  # (clock, skill code), newest
+        self.taken_seen: float = -1.0  # last_taken already folded into the rotation
+
+    def reset(self) -> None:
+        """A new fight area (room, floor): start over, keeping the per-skill margins."""
+        self.rot = Rotation(margins=self.rot.margins)  # margins are per skill, not per area
+        with self.lock:
+            self.hits, self.hit_skills = {}, {}
+
+    def on_attack(self, raw: bytes, own_key: bytes | None, now: float) -> None:
+        """0x43 (an attack landing): note our own hits on each target."""
+        if own_key is None or len(raw) < 0x1B or raw[11:21] != own_key:
+            return
+        # Keyed by (npc id, instance): the kind word differs between `near` and
+        # 0x43 (near lists the tower's monsters as kind 11).
+        target = struct.unpack_from("<II", raw, 3)
+        magic = struct.unpack_from("<I", raw, 0x15)[0] // 100  # magic * 100 + level
+        with self.lock:
+            self.hits[target] = now
+            self.hit_skills.setdefault(target, {})[magic] = now
+
+    def on_cast(self, raw: bytes, own_key: bytes | None, now: float) -> None:
+        """0x10 (a cast starting): the server took one of our casts."""
+        if own_key is None or len(raw) < 15 or raw[1:11] != own_key:
+            return
+        code = struct.unpack_from("<I", raw, 11)[0]
+        with self.lock:
+            self.taken[code // 100] = now
+            self.last_taken = (now, code)
+        self._log.debug(
+            "%s cast taken code=%d t=%.3f", self._cat, code, now, extra={"cat": self._cat}
+        )
+
+    def tick(
+        self,
+        live: list[dict],
+        me: tuple[int, int],
+        strength: dict[int, tuple],
+        elites: frozenset[int],
+        defs: dict[tuple[int, int], AttackSkill],
+        mp: int,
+        casts: int,
+        now: float,
+        send: Callable[[str], dict],
+        note: Callable[[str, str], None],
+        state=None,
+    ) -> None:
+        """One fight decision against `live` (`near` entries, non-empty): keep or
+        pick the target, then send the next skill or the basic attack.
+
+        me: own position (pixels); strength / elites: see pick_target / mobbed_by;
+        defs: load_attack_skills();
+        casts: the guard's buff cast count (a change pauses fighting); send: a hook
+        command line -> its reply; note: (phase, text) for the module's log;
+        state: the character state, for the cast log only.
+        """
+        rule, rot = self.rule, self.rot
+        mx, my = me
+        target = next((o for o in live if o["h"] == rot.target), None)
+        if target is not None:
+            swap = mobbed_by(target, live, me, rule, elites)
+            if swap is not None:
+                note("info", "小怪圍過來了，先打小怪再回頭打菁英")
+                target = swap
+                retarget(rot, target["h"], now)
+        if target is None:
+            target = pick_target(live, me, rule, strength)
+            retarget(rot, target["h"], now)
+            self._log.debug(
+                "%s target new=%s npc=%s t=%.3f",
+                self._cat,
+                target["h"],
+                target["id"],
+                now,
+                extra={"cat": self._cat},
+            )
+        if casts != self.casts_seen:
+            self.casts_seen = casts
+            rot.paused_until, rot.attacked = now + BUFF_PAUSE, False
+        if now < rot.paused_until:
+            return
+        key = (target["id"], target["inst"])
+        with self.lock:
+            hit = self.hits.get(key)
+            by_skill = dict(self.hit_skills.get(key, {}))
+            taken, last_taken = dict(self.taken), self.last_taken
+        if hit is not None:
+            rot.last_hit = max(rot.last_hit, hit)
+        if last_taken is not None and last_taken[0] > self.taken_seen:
+            self.taken_seen = last_taken[0]
+            code = last_taken[1]
+            cast_taken(rot, defs.get((code // 100, code % 100)), last_taken[0], code // 100)
+        if rot.pending is not None:
+            mid = rot.pending[0]
+            seen = max(taken.get(mid, -1.0), by_skill.get(mid, -1.0))
+            if settle_cast(rot, seen if seen >= 0 else None, now) == "gave_up":
+                name = next((d.name for (m, _l), d in defs.items() if m == mid), mid)
+                note("unconfirmed", f"{name} 連續 4 次沒被伺服器接受，先放下一招")
+        if now - rot.last_hit > RELOCK_AFTER:
+            rot.attacked, rot.last_hit = False, now  # nothing landing: lock on again
+        pick = next_skill(rule, rot, self.learned, defs, mp, now)
+        if pick is not None:
+            mid, level, _d = pick
+            r = send(f"cast {mid * 100 + level} {target['h']}")
+            self._log.debug(
+                "%s cast sent code=%d t=%.3f ok=%s target=%s dist=%.1f state=%s retry=%d",
+                self._cat,
+                mid * 100 + level,
+                now,
+                r.get("ok"),
+                target["h"],
+                (((target["x"] - mx) ** 2 + (target["y"] - my) ** 2) ** 0.5) / TILE_PX,
+                state,
+                rot.drops,
+                extra={"cat": self._cat},
+            )
+            if r.get("ok"):
+                cast_sent(rot, mid, now)
+            return
+        if rule.basic and not rot.attacked:
+            if send(f"attack {target['h']}").get("ok"):
+                rot.attacked = True

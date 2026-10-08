@@ -985,6 +985,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/grind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** View */
+        get: operations["view_api_characters__pid__grind_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/grind/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_characters__pid__grind_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/grind/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Settings */
+        put: operations["put_settings_api_characters__pid__grind_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/grind/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_characters__pid__grind_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/grind/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__grind_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/daily": {
         parameters: {
             query?: never;
@@ -3008,6 +3093,111 @@ export interface components {
             member_cap: number;
             /** Received At */
             received_at: number;
+        };
+        /**
+         * GrindConfig
+         * @description 打怪 (character_settings section "grind"). How it fights is the shared
+         *     CombatRule (section "combat"), the same one 神武玄天塔 uses.
+         */
+        GrindConfig: {
+            /**
+             * Radius
+             * @default 10
+             */
+            radius: number;
+            /**
+             * Only
+             * @default []
+             */
+            only: number[];
+        };
+        /**
+         * GrindMonster
+         * @description A monster kind in view, for the 只打這些怪 picker.
+         */
+        GrindMonster: {
+            /** Npc Id */
+            npc_id: number;
+            /** Name */
+            name: string;
+            /** Level */
+            level?: number | null;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+        };
+        /** GrindSettings */
+        GrindSettings: {
+            combat: components["schemas"]["CombatRule"];
+            config: components["schemas"]["GrindConfig"];
+        };
+        /** GrindStatus */
+        GrindStatus: {
+            /** Running */
+            running: boolean;
+            /** Character */
+            character?: string | null;
+            /** Step */
+            step?: string | null;
+            /** Problem */
+            problem?: string | null;
+            /** Warning */
+            warning?: string | null;
+            /** Target */
+            target?: string | null;
+            /**
+             * Kills
+             * @default 0
+             */
+            kills: number;
+            /** Anchor */
+            anchor?: number[] | null;
+            /** Started */
+            started?: number | null;
+            /** Ended */
+            ended?: string | null;
+            /**
+             * Log
+             * @default []
+             */
+            log: components["schemas"]["TowerLogEntry"][];
+        };
+        /** GrindView */
+        GrindView: {
+            status: components["schemas"]["GrindStatus"];
+            /**
+             * @default {
+             *       "basic": false,
+             *       "rotation": [],
+             *       "target": "nearest",
+             *       "avoid_packs": false
+             *     }
+             */
+            combat: components["schemas"]["CombatRule"];
+            /**
+             * @default {
+             *       "radius": 10,
+             *       "only": []
+             *     }
+             */
+            config: components["schemas"]["GrindConfig"];
+            /**
+             * Skills
+             * @default []
+             */
+            skills: components["schemas"]["AttackSkillCandidate"][];
+            /**
+             * Monsters
+             * @default []
+             */
+            monsters: components["schemas"]["GrindMonster"][];
+            /**
+             * Hook Ready
+             * @default false
+             */
+            hook_ready: boolean;
         };
         /**
          * GuardBuffRule
@@ -6959,6 +7149,165 @@ export interface operations {
         };
     };
     stop_api_characters__pid__withdraw_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_api_characters__pid__grind_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrindView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_characters__pid__grind_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrindStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_settings_api_characters__pid__grind_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrindSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrindSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_characters__pid__grind_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__grind_stop_post: {
         parameters: {
             query?: never;
             header?: never;
