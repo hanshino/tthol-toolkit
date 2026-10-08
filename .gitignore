@@ -63,6 +63,7 @@ tthol_*.csv
 # WebUI build artifacts
 webui/node_modules/
 webui/dist/
+webui/*.tsbuildinfo
 webui/src/**/*.js
 webui/openapi.json
 
