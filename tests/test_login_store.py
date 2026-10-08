@@ -182,5 +182,6 @@ def test_transfer_sections_match_the_stores():
         family.SECTION,
         withdraw.SECTION,
         grind.SECTION,
+        "dungeon.lingxiao",  # DungeonManager(LINGXIAO).config_section
     }
     assert tower_run.RECORD_SECTION not in TRANSFER_SECTIONS

@@ -25,6 +25,7 @@ TRANSFER_SECTIONS = (
     "family",
     "withdraw",
     "grind",
+    "dungeon.lingxiao",
 )
 
 

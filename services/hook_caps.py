@@ -73,6 +73,8 @@ FEATURES: dict[str, tuple[str, ...]] = {
         "next",
     ),
 }
+# Dungeon scripts (services/dungeon.py) walk, fight and talk like the tower.
+FEATURES["daily.lingxiao"] = FEATURES["daily.tower"]
 
 MAX_PAGES = 32
 
