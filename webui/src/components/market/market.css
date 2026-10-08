@@ -64,11 +64,26 @@ button.mk-act:focus-visible { outline: 1px solid var(--tt-gold); outline-offset:
 .mk-page { padding: 16px 18px; }
 .mk-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .mk-filters label { font-size: 12px; color: var(--tt-dim); letter-spacing: 1px; display: flex; align-items: center; gap: 6px; }
-button.mk-item { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 3px 10px; width: 100%; padding: 8px 12px; text-align: left; letter-spacing: 0; background: transparent; border: 0; border-bottom: 1px solid var(--tt-line-soft); }
-button.mk-item:hover:not(:disabled) { background: var(--tt-raised); border-color: var(--tt-line-soft); }
-button.mk-item[aria-pressed="true"] { background: var(--tt-raised); box-shadow: inset 2px 0 0 var(--tt-gold); }
 .mk-item-meta { font-size: 11px; color: var(--tt-dim); }
-.mk-item-icon { grid-row: span 2; }
+.mk-item-meta[data-many] { color: var(--tt-ok); }
+
+/* 市價 browser: group chips, card grid, then the selected item's detail below. */
+.mk-stack { display: grid; gap: 12px; }
+.mk-groups { padding: 12px 14px 0; }
+.mk-subs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 8px 14px 0; }
+.mk-subs .mk-hint { margin-right: 4px; }
+button.mk-sub { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 8px; min-height: 26px; letter-spacing: 0; background: transparent; border: 1px solid var(--tt-line-soft); color: var(--tt-dim); }
+button.mk-sub:hover:not(:disabled) { background: var(--tt-raised); color: var(--tt-text); }
+button.mk-sub[aria-pressed="true"] { background: var(--tt-raised); border-color: var(--tt-accent); color: var(--tt-text); }
+.mk-browse-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--tt-line-soft); }
+.mk-browse-bar label { font-size: 12px; color: var(--tt-dim); letter-spacing: 1px; display: flex; align-items: center; gap: 6px; }
+.mk-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 6px; padding: 10px 14px 14px; max-height: 300px; overflow-y: auto; align-content: start; }
+.mk-cards .mk-empty { grid-column: 1 / -1; }
+button.mk-card { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; text-align: left; letter-spacing: 0; background: var(--tt-bg); border: 1px solid var(--tt-line-soft); }
+button.mk-card:hover:not(:disabled) { background: var(--tt-raised); border-color: var(--tt-line); }
+button.mk-card[aria-pressed="true"] { background: var(--tt-raised); border-color: var(--tt-gold); }
+.mk-card .mk-icon { flex: none; width: 40px; height: 40px; }
+.mk-card-body { display: grid; gap: 1px; min-width: 0; flex: 1; }
 .mk-head { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
 .mk-stats { margin-left: auto; display: grid; grid-template-columns: repeat(4, auto); gap: 22px; }
 .mk-stat { display: grid; gap: 2px; text-align: right; }
@@ -76,7 +91,7 @@ button.mk-item[aria-pressed="true"] { background: var(--tt-raised); box-shadow: 
 .mk-stat-v { font-family: var(--tt-font-mono); font-size: 16px; }
 .mk-note { padding: 10px 14px; border-top: 1px solid var(--tt-line-soft); font-size: 12px; color: var(--tt-mute); line-height: 1.6; }
 
-button.mk-mode:focus-visible, button.mk-item:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
+button.mk-mode:focus-visible, button.mk-card:focus-visible, button.mk-sub:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
 @media (max-width: 900px) {
   .mk-split { grid-template-columns: minmax(0, 1fr); }
 }

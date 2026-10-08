@@ -5,6 +5,7 @@ import { placeText, StallPlace } from '../components/market/StallPlace';
 import { GearInlays, GearStats } from '../components/items/GearStats';
 import { ItemIcon } from '../components/items/ItemCells';
 import { useItemMeta } from '../components/items/useItemMeta';
+import { MARKET_GROUPS, marketGroup, subLabel, type MarketGroup } from '../components/market/groups';
 import { agoText, attrText, dateText, silverText } from '../components/market/format';
 import { PriceCell } from '../components/market/PriceCell';
 import { reportClientError } from '../diag/report';
@@ -12,6 +13,14 @@ import '../components/items/items.css';
 import '../components/market/market.css';
 
 const REFRESH_MS = 5000;
+
+type SortKey = 'listings' | 'seen' | 'price';
+const byMin = (i: MarketItemSummary) => i.min ?? Number.POSITIVE_INFINITY;
+const SORTS: Record<SortKey, { label: string; cmp: (a: MarketItemSummary, b: MarketItemSummary) => number }> = {
+  listings: { label: '筆數多', cmp: (a, b) => b.listings - a.listings || b.last_seen - a.last_seen },
+  seen: { label: '最近看到', cmp: (a, b) => b.last_seen - a.last_seen },
+  price: { label: '最低價', cmp: (a, b) => byMin(a) - byMin(b) },
+};
 
 export function Market({ chars }: { chars: CharacterRow[] }) {
   const [totals, setTotals] = useState<MarketTotals | null>(null);
@@ -21,6 +30,10 @@ export function Market({ chars }: { chars: CharacterRow[] }) {
   const [onlyActive, setOnlyActive] = useState(true);
   const [showNegotiate, setShowNegotiate] = useState(true);
   const [selected, setSelected] = useState<number | null>(null);
+  const [group, setGroup] = useState<MarketGroup | 'all'>('all');
+  const [sub, setSub] = useState<string | null>(null);
+  const [multiOnly, setMultiOnly] = useState(false);
+  const [sort, setSort] = useState<SortKey>('listings');
   const [listings, setListings] = useState<MarketListing[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -60,8 +73,28 @@ export function Market({ chars }: { chars: CharacterRow[] }) {
     return () => { alive = false; };
   }, [query, onlyActive, showNegotiate, tick]);
 
-  const current = items.find(i => i.item_id === selected) ?? items[0];
+  // Grouping needs each item's type, so item metadata loads before the filters run.
+  const itemMeta = useItemMeta(items.map(i => i.item_id));
+  const inGroup = group === 'all' ? items : items.filter(i => marketGroup(itemMeta.get(i.item_id)) === group);
+  const groupCounts = new Map<MarketGroup, number>();
+  for (const i of items) {
+    const g = marketGroup(itemMeta.get(i.item_id));
+    groupCounts.set(g, (groupCounts.get(g) ?? 0) + 1);
+  }
+  const subCounts = new Map<string, number>();
+  for (const i of inGroup) {
+    const s = subLabel(itemMeta.get(i.item_id));
+    subCounts.set(s, (subCounts.get(s) ?? 0) + 1);
+  }
+  const subs = group === 'all' || subCounts.size < 2 ? [] : [...subCounts].sort((a, b) => b[1] - a[1]);
+  const visible = inGroup
+    .filter(i => !sub || subLabel(itemMeta.get(i.item_id)) === sub)
+    .filter(i => !multiOnly || i.listings >= 2)
+    .sort(SORTS[sort].cmp);
+
+  const current = visible.find(i => i.item_id === selected) ?? visible[0];
   const currentId = current?.item_id;
+  const pickGroup = (g: MarketGroup | 'all') => { setGroup(g); setSub(null); };
 
   useEffect(() => {
     if (currentId === undefined) { setListings([]); return; }
@@ -126,27 +159,57 @@ export function Market({ chars }: { chars: CharacterRow[] }) {
       {totals?.listings === 0
         ? <div className="ws-empty">還沒有任何紀錄。到市集地圖打開角色的「市集」分頁，逐一點開攤位就會開始累積。</div>
         : (
-          <div className="mk-split">
-            <div className="mk-box">
-              <div className="mk-row" data-head style={{ gridTemplateColumns: '36px minmax(0, 1fr) auto' }}>
-                <span /><span>道具</span><span>最低單價</span>
+          <div className="mk-stack">
+            <div className="mk-box mk-browse">
+              <div className="inv-chips mk-groups" role="group" aria-label="分類">
+                <button type="button" className="inv-chip" aria-pressed={group === 'all'} onClick={() => pickGroup('all')}>
+                  全部<span className="inv-n">{items.length}</span>
+                </button>
+                {MARKET_GROUPS.filter(g => groupCounts.has(g.key)).map(g => (
+                  <button key={g.key} type="button" className="inv-chip" aria-pressed={group === g.key} onClick={() => pickGroup(g.key)}>
+                    {g.label}<span className="inv-n">{groupCounts.get(g.key)}</span>
+                  </button>
+                ))}
               </div>
-              <div className="mk-scroll" style={{ maxHeight: 640 }}>
-                {items.length === 0 && <div className="mk-empty">沒有符合的道具</div>}
-                {items.map(i => (
+              {subs.length > 0 && (
+                <div className="mk-subs" role="group" aria-label="細分">
+                  <span className="mk-hint">細分</span>
+                  {subs.map(([label, n]) => (
+                    <button key={label} type="button" className="mk-sub" aria-pressed={sub === label}
+                      onClick={() => setSub(sub === label ? null : label)}>
+                      {label}<span className="inv-n">{n}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="mk-browse-bar">
+                <label><input type="checkbox" checked={multiOnly} onChange={e => setMultiOnly(e.target.checked)} />只看 2 筆以上</label>
+                <span className="mk-hint mk-mono">顯示 {visible.length} / {items.length} 件</span>
+                <span className="mk-right mk-modes" role="radiogroup" aria-label="排序">
+                  {(Object.keys(SORTS) as SortKey[]).map(k => (
+                    <button key={k} type="button" className="mk-mode" aria-checked={sort === k} role="radio" onClick={() => setSort(k)}>
+                      {SORTS[k].label}
+                    </button>
+                  ))}
+                </span>
+              </div>
+              <div className="mk-cards">
+                {visible.length === 0 && <div className="mk-empty">沒有符合的道具</div>}
+                {visible.map(i => (
                   <button
-                    key={i.item_id} type="button" className="mk-item"
+                    key={i.item_id} type="button" className="mk-card"
                     aria-pressed={i.item_id === currentId} onClick={() => setSelected(i.item_id)}
                   >
-                    <span className="mk-icon mk-item-icon"><ItemIcon name={i.name} meta={meta.get(i.item_id)} size={32} /></span>
-                    <span className="mk-ellipsis">{i.name}</span>
-                    <span className="mk-num" style={{ color: i.min == null ? 'var(--tt-dim)' : 'var(--tt-gold)' }}>
-                      {i.min == null ? '議價' : silverText(i.min)}
+                    <span className="mk-icon"><ItemIcon name={i.name} meta={itemMeta.get(i.item_id)} size={32} /></span>
+                    <span className="mk-card-body">
+                      <span className="mk-ellipsis">{i.name}</span>
+                      <span className="mk-num" style={{ textAlign: 'left', color: i.min == null ? 'var(--tt-dim)' : 'var(--tt-gold)' }}>
+                        {i.min == null ? '議價' : silverText(i.min)}
+                      </span>
+                      <span className="mk-item-meta" data-many={i.listings > 1 || undefined}>
+                        {i.listings} 筆 · {i.sellers} 攤 · {agoText(i.last_seen)}
+                      </span>
                     </span>
-                    <span className="mk-item-meta">
-                      {i.listings} 筆 · {i.sellers} 攤{i.negotiate ? ` · 議價 ${i.negotiate}` : ''}{i.flagged ? ` · 不採計 ${i.flagged}` : ''}
-                    </span>
-                    <span className="mk-item-meta mk-mono">{agoText(i.last_seen)}</span>
                   </button>
                 ))}
               </div>
@@ -159,8 +222,14 @@ export function Market({ chars }: { chars: CharacterRow[] }) {
                     <span className="mk-icon" style={{ width: 44, height: 44 }}><ItemIcon name={current.name} meta={curMeta} size={40} /></span>
                     <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
                       <span style={{ fontFamily: 'var(--tt-font-serif)', fontSize: 17, letterSpacing: 2 }}>{current.name}</span>
-                      <span className="mk-hint">{curMeta?.type_label || '—'}</span>
+                      <span className="mk-hint">
+                        {curMeta?.type_label || '—'}
+                        {current.negotiate ? ` · 議價 ${current.negotiate}` : ''}{current.flagged ? ` · 不採計 ${current.flagged}` : ''}
+                      </span>
                     </div>
+                    {current.listings === 1 && (
+                      <span className="mk-chip" data-tone="warn" title="只有一個攤主的開價，不能當行情看">只有 1 筆</span>
+                    )}
                     <div className="mk-stats">
                       <Stat k="最低" v={current.min} gold />
                       <Stat k="中位" v={current.median} />
