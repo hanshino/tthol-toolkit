@@ -24,6 +24,7 @@ TRANSFER_SECTIONS = (
     "items",
     "family",
     "withdraw",
+    "grind",
 )
 
 

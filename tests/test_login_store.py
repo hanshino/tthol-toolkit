@@ -169,7 +169,7 @@ def test_import_fills_missing_settings_and_replaces_only_with_overwrite():
 
 
 def test_transfer_sections_match_the_stores():
-    from services import daily, family, guard, item_rules, tower_run, withdraw
+    from services import daily, family, grind, guard, item_rules, tower_run, withdraw
     from services.login_store import TRANSFER_SECTIONS
 
     assert set(TRANSFER_SECTIONS) == {
@@ -181,5 +181,6 @@ def test_transfer_sections_match_the_stores():
         item_rules.ITEMS_SECTION,
         family.SECTION,
         withdraw.SECTION,
+        grind.SECTION,
     }
     assert tower_run.RECORD_SECTION not in TRANSFER_SECTIONS

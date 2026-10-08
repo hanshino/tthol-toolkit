@@ -1,4 +1,4 @@
-import type { GuardStatus, HandoffStatus, SupplyStatus } from '../../api/types';
+import type { GrindStatus, GuardStatus, HandoffStatus, SupplyStatus } from '../../api/types';
 
 // One run-state per 輔助 module, shared by each panel's own strip and the
 // 輔助 sub-navigation so both always say the same thing.
@@ -29,6 +29,11 @@ export function handoffState(s: HandoffStatus | null, role?: 'receive' | 'send' 
   if (!s?.running) return idle('待命');
   if (s.stopping) return { on: true, warn: true, text: '這輪存完就停' };
   return { on: true, warn: false, text: (s.role ?? role) === 'send' ? '送貨中' : '收貨中' };
+}
+
+export function grindState(s: GrindStatus | null): RunState {
+  if (!s?.running) return idle('待命');
+  return { on: true, warn: !!s.problem, text: s.problem ? '等待中' : '打怪中' };
 }
 
 export function heroState(running: boolean | undefined): RunState {
