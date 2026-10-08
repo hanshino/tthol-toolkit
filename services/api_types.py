@@ -694,6 +694,14 @@ class SetCharacterAccountRequest(_Base):
     account_id: int | None
 
 
+class AccountCharacter(_Base):
+    """A character and the account (shared warehouse) it is on."""
+
+    character: str
+    account_id: int | None = None
+    account_name: str | None = None
+
+
 # ---- Backup / restore (system-level) -------------------------------------
 
 
@@ -1481,6 +1489,7 @@ class SupplyStatus(_Base):
     running: bool
     step: str | None = None
     host: str | None = None  # the module running it (神武玄天塔), None = the 現在補給 button
+    last_host: str | None = None  # the module of the newest trip (its log is below)
     ended: str | None = None  # how the last run ended
     log: list[SupplyLogEntry] = []
 
@@ -1685,6 +1694,41 @@ class HandoffView(_Base):
     # The warehouse as the hook last saw it open (kept after closing, until the
     # game restarts); empty when it was not opened this session.
     warehouse: list[HandoffBagItem] = []
+
+
+class WithdrawConfig(_Base):
+    """領倉白名單 (character_settings section "withdraw"): items this character
+    takes out of its account's warehouse."""
+
+    items: list[int] = []
+    # Stacks this character's bag holds (惡人谷 has more).
+    bag_slots: int = Field(40, ge=1, le=200)
+
+
+class WithdrawRow(_Base):
+    item_id: int
+    name: str
+    icon_url: str | None = None
+    bag: int = 0  # on the character now
+    warehouse: int | None = None  # None: no warehouse seen yet
+    stacks: int = 0  # warehouse stacks, what one withdraw trip takes a slot each
+
+
+class WithdrawView(_Base):
+    character: str | None
+    config: WithdrawConfig = WithdrawConfig()
+    rows: list[WithdrawRow] = []
+    bag: list[HandoffBagItem] = []
+    bag_used: int | None = None
+    warehouse: list[HandoffBagItem] = []
+    # snapshot: the account's newest recorded warehouse (warehouse_holder at
+    # warehouse_at); live: none recorded, the hook saw it open this session.
+    warehouse_from: Literal["live", "snapshot"] | None = None
+    warehouse_holder: str | None = None
+    warehouse_at: str | None = None
+    account: str | None = None
+    hook_ready: bool = False
+    status: SupplyStatus = SupplyStatus(running=False)
 
 
 class HandoffStart(_Base):

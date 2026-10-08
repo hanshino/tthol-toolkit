@@ -1,0 +1,11 @@
+/* 領倉白名單 panel (WithdrawPanel): handoff.css plus the whitelist rows. */
+.wd-list { list-style: none; margin: 0; padding: 0; display: grid; max-height: 360px; overflow-y: auto; }
+.wd-list li { display: grid; grid-template-columns: minmax(0, 1fr) 72px 132px 28px; gap: 10px; align-items: center; padding: 2px 0 2px 8px; border-bottom: 1px solid var(--tt-line-soft); font-size: 12.5px; }
+.wd-list li > :nth-child(2), .wd-list li > :nth-child(3) { text-align: right; }
+.wd-list li.wd-head { font-size: 11px; letter-spacing: 2px; color: var(--tt-mute); padding-top: 0; padding-bottom: 4px; }
+.wd-list li.is-there .gd-cnt:nth-child(3) { color: var(--tt-ok); }
+.wd-list button.ho-chip-btn:disabled { opacity: 0.4; cursor: default; }
+
+@media (max-width: 720px) {
+  .wd-list li { grid-template-columns: minmax(0, 1fr) 56px 104px 28px; gap: 6px; }
+}

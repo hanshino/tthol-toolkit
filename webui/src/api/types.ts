@@ -5,6 +5,7 @@ import type { components } from './schema';
 type S = components['schemas'];
 
 export type Account = S['Account'];
+export type AccountCharacter = S['AccountCharacter'];
 export type BackupImportResult = S['BackupImportResult'];
 export type AutoClickConfig = S['AutoClickConfig'];
 export type AutoClickStatus = S['AutoClickStatus'];
@@ -134,6 +135,9 @@ export type SupplyRow = S['SupplyRow'];
 export type SupplyStatus = S['SupplyStatus'];
 export type SupplyStop = S['SupplyStop'];
 export type SupplyView = S['SupplyView'];
+export type WithdrawConfig = S['WithdrawConfig'];
+export type WithdrawRow = S['WithdrawRow'];
+export type WithdrawView = S['WithdrawView'];
 export type HandoffBagItem = S['HandoffBagItem'];
 export type HandoffConfig = S['HandoffConfig'];
 export type HandoffCount = S['HandoffCount'];

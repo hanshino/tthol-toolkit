@@ -83,6 +83,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
                 <AssistTab
                   pid={char.pid} active={tab === 'assist'}
                   canLove={can(char, 'love')} canHandoff={can(char, 'handoff')}
+                  canWithdraw={can(char, 'withdraw')}
                 />
               )}
               {t.k === 'daily' && <DailyTab pid={char.pid} active={tab === 'daily'} />}

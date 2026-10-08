@@ -155,6 +155,31 @@ def for_receiver(
     return [(i, n) for i, n in stacks if i in wants and not untradable(i)]
 
 
+def held_rows(
+    stacks: list[tuple[int, int]],
+    item_info: Callable[[int], tuple[str, bool, bool, str] | None],
+) -> list[HandoffBagItem]:
+    """One row per item (count and stacks summed), for the pickers."""
+    slots: dict[int, int] = {}
+    for item, _n in stacks:
+        slots[item] = slots.get(item, 0) + 1
+    out = []
+    for item, n in counts(stacks).items():
+        info = item_info(item)
+        out.append(
+            HandoffBagItem(
+                item_id=item,
+                name=info[0] if info else f"#{item}",
+                count=n,
+                stacks=slots[item],
+                no_trade=bool(info and info[1]),
+                no_store=bool(info and info[2]),
+                category=info[3] if info else "misc",
+            )
+        )
+    return out
+
+
 def plan(
     stacks: list[tuple[int, int]],
     receivers: list[tuple[int, set[int]]],
@@ -407,25 +432,7 @@ class HandoffManager:
         )
 
     def _rows(self, stacks: list[tuple[int, int]]) -> list[HandoffBagItem]:
-        """One row per item (count and stacks summed), for the pickers."""
-        slots: dict[int, int] = {}
-        for item, _n in stacks:
-            slots[item] = slots.get(item, 0) + 1
-        out = []
-        for item, n in counts(stacks).items():
-            info = self._item_info(item)
-            out.append(
-                HandoffBagItem(
-                    item_id=item,
-                    name=info[0] if info else f"#{item}",
-                    count=n,
-                    stacks=slots[item],
-                    no_trade=bool(info and info[1]),
-                    no_store=bool(info and info[2]),
-                    category=info[3] if info else "misc",
-                )
-            )
-        return out
+        return held_rows(stacks, self._item_info)
 
     def status(self, pid: int) -> HandoffStatus:
         with self._lock:

@@ -418,7 +418,10 @@ class SupplyManager:
         manor: Callable[[int], int | None] = lambda _pid: None,  # family manor sestage id
         ask_family: Callable[[int], dict | None] | None = None,  # hook `family` (0x31 -> manor)
         points: tuple[SupplyPoint, ...] = POINTS,
+        # (pid, warehouse stacks [{item_id, qty}]) after a withdraw trip changed it
+        on_warehouse: Callable[[int, list[dict]], None] = lambda _pid, _items: None,
     ) -> None:
+        self._on_warehouse = on_warehouse
         self._manor = manor
         self._ask_family = ask_family
         self._points = points
@@ -442,6 +445,7 @@ class SupplyManager:
         self._steps: dict[int, str | None] = {}
         self._hosts_running: dict[int, str | None] = {}  # pid -> host while a trip runs
         self._ended: dict[int, str] = {}
+        self._last_host: dict[int, str | None] = {}  # the host of the newest trip
         self._manual: dict[int, _ManualRun] = {}
         self._hosts: list[str] = []
 
@@ -667,6 +671,7 @@ class SupplyManager:
         with self._lock:
             self._logs.pop(pid, None)
             self._ended.pop(pid, None)
+            self._last_host.pop(pid, None)
             self._steps.pop(pid, None)
 
     def running(self, pid: int) -> bool:
@@ -680,6 +685,7 @@ class SupplyManager:
                 running=pid in self._hosts_running,
                 step=self._steps.get(pid),
                 host=self._hosts_running.get(pid),
+                last_host=self._last_host.get(pid),
                 ended=self._ended.get(pid),
                 log=list(lg.lines[-60:]) if lg else [],
             )
@@ -713,6 +719,7 @@ class SupplyManager:
             if pid in self._hosts_running and not claimed:
                 return SupplyResult(False, "busy", "另一趟補給正在跑")
             self._hosts_running[pid] = host
+            self._last_host[pid] = host
             self._logs[pid] = _Log()
             self._ended.pop(pid, None)
         trip = _Trip(
@@ -1168,6 +1175,8 @@ class _Trip:
             return
         self.reach_warehouse(keeper, market.script)
         self.store_all(stores)
+        if self.stored:
+            self.record_warehouse()
         if bank is not None:
             self.settle_bank(bank)
         self.close_windows()
@@ -1257,6 +1266,14 @@ class _Trip:
             self.cmd("next")
         raise _Abort("error", f"{npc.name}的倉庫沒有打開")
 
+    def record_warehouse(self) -> None:
+        """The open warehouse after storing, for the account's snapshot (寶庫)."""
+        items = self.warehouse_items()
+        if items:  # it holds what was just stored: empty is a read that failed
+            self.m._on_warehouse(
+                self.pid, [{"item_id": int(i["item"]), "qty": int(i["count"])} for i in items]
+            )
+
     def store_all(self, stores: list[tuple[int, int, int, int]]) -> None:
         for item_id, qty, _keep, _have in stores:
             name = self.name(item_id)
@@ -1305,13 +1322,21 @@ class _Trip:
             raise _Abort("error", "找不到走得到的錢莊伙計")
         self.reach_warehouse(keeper, market.script)
         items = self.warehouse_items()
-        stacks = [(int(i["item"]), int(i["count"])) for i in items if int(i["item"]) in wants]
+        # What stays in the warehouse: every stack, less what came out of it.
+        remain = [[int(i["item"]), int(i["count"])] for i in items]
+        stacks = [k for k, (item_id, _n) in enumerate(remain) if item_id in wants]
         self.line("info", f"倉庫裡 {len(items)} 堆，要領的 {len(stacks)} 堆")
         take = stacks[:room]
         left = len(stacks) - len(take)
-        for item_id, count in take:
-            if not self.withdraw_stack(item_id, count):
+        for k in take:
+            item_id, count = remain[k]
+            before = self.withdrawn
+            ok = self.withdraw_stack(item_id, count)
+            remain[k][1] -= self.withdrawn - before
+            if not ok:
                 left += 1
+        if self.withdrawn:
+            self.m._on_warehouse(self.pid, [{"item_id": i, "qty": n} for i, n in remain if n > 0])
         self.close_windows()
         self.stand()
         detail = f"領出 {self.withdrawn} 個" if self.withdrawn else "倉庫裡沒有要領的東西"

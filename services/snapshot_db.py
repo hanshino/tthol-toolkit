@@ -159,6 +159,12 @@ CREATE TABLE IF NOT EXISTS login_entries (
 """
 
 
+def _account_label(characters: list[str]) -> str:
+    """An account named after its characters: 甲 / 乙 / 丙 等 5 隻."""
+    label = " / ".join(characters[:3])
+    return f"{label} 等 {len(characters)} 隻" if len(characters) > 3 else label
+
+
 def _canonical(items: list[dict]) -> str:
     """Return canonical JSON string for hashing (sorted by item_id)."""
     sorted_items = sorted(items, key=lambda x: x["item_id"])
@@ -410,6 +416,120 @@ class SnapshotDB:
         """Remove a character's account assignment."""
         self._con.execute("DELETE FROM character_accounts WHERE character=?", (character,))
         self._con.commit()
+
+    def rename_account(self, account_id: int, name: str) -> bool:
+        """False when another account already has that name."""
+        try:
+            self._con.execute("UPDATE accounts SET name=? WHERE id=?", (name, account_id))
+            self._con.commit()
+        except sqlite3.IntegrityError:
+            return False
+        return True
+
+    def delete_account(self, account_id: int) -> bool:
+        """Delete an account no character is on; False when one still is."""
+        used = self._con.execute(
+            "SELECT 1 FROM character_accounts WHERE account_id=? LIMIT 1", (account_id,)
+        ).fetchone()
+        if used:
+            return False
+        self._con.execute("DELETE FROM accounts WHERE id=?", (account_id,))
+        self._con.commit()
+        return True
+
+    def account_characters(self) -> list[dict]:
+        """Every character the app knows (snapshots, 帳號派發, an account) with
+        its account: [{character, account_id, account_name}]."""
+        rows = self._con.execute(
+            "SELECT c.character, a.id AS account_id, a.name AS account_name FROM ("
+            "  SELECT character FROM snapshots UNION SELECT character FROM login_entries"
+            "  UNION SELECT character FROM character_accounts"
+            ") c "
+            "LEFT JOIN character_accounts ca ON ca.character=c.character "
+            "LEFT JOIN accounts a ON a.id=ca.account_id "
+            "ORDER BY c.character"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def sync_login_accounts(self) -> int:
+        """Put the 帳號派發 characters that share a login on one account.
+
+        Fill-only: a character already on an account keeps it. A login with
+        none of its characters on an account gets a new one named after the
+        characters (the login itself stays out of backups). A login whose
+        characters already sit on two accounts is left alone. Returns how many
+        characters were assigned."""
+        with self._settings_lock:
+            logins = self._con.execute(
+                "SELECT character, username FROM login_entries ORDER BY sort, character"
+            ).fetchall()
+        groups: dict[str, list[str]] = {}
+        for r in logins:
+            groups.setdefault(r["username"], []).append(r["character"])
+        assigned = {
+            r["character"]: r["account_id"]
+            for r in self._con.execute("SELECT character, account_id FROM character_accounts")
+        }
+        added = 0
+        for chars in groups.values():
+            if len(chars) < 2:
+                continue
+            have = {assigned[c] for c in chars if c in assigned}
+            if len(have) > 1:
+                continue
+            free = [c for c in chars if c not in assigned]
+            if not free:
+                continue
+            if have:
+                account_id = have.pop()
+            else:
+                account_id = self._new_account(_account_label(chars))
+            for c in free:
+                self._con.execute(
+                    "INSERT INTO character_accounts (character, account_id) VALUES (?, ?)",
+                    (c, account_id),
+                )
+                assigned[c] = account_id
+                added += 1
+        if added:
+            self._con.commit()
+        return added
+
+    def _new_account(self, name: str) -> int:
+        """A new account (NO commit); a taken name gets a number appended."""
+        label, n = name, 1
+        while self._con.execute("SELECT 1 FROM accounts WHERE name=?", (label,)).fetchone():
+            n += 1
+            label = f"{name} ({n})"
+        return self._con.execute("INSERT INTO accounts (name) VALUES (?)", (label,)).lastrowid
+
+    def latest_warehouse(self, character: str) -> dict | None:
+        """The newest warehouse snapshot of the character's account (its own
+        when it has none): {character, scanned_at, items: [{item_id, qty}]}."""
+        acct = self.get_character_account(character)
+        if acct is None:
+            names = [character]
+        else:
+            names = [
+                r["character"]
+                for r in self._con.execute(
+                    "SELECT character FROM character_accounts WHERE account_id=?", (acct["id"],)
+                )
+            ]
+        marks = ",".join("?" * len(names))
+        row = self._con.execute(
+            f"SELECT character, scanned_at, items FROM snapshots "
+            f"WHERE source='warehouse' AND character IN ({marks}) "
+            f"ORDER BY scanned_at DESC, id DESC LIMIT 1",
+            names,
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "character": row["character"],
+            "scanned_at": row["scanned_at"],
+            "items": json.loads(row["items"]),
+        }
 
     def list_characters(self) -> list[dict]:
         """Return all characters that have at least one snapshot, with optional account info.

@@ -6,16 +6,20 @@ import { AutoClickTab } from './AutoClickTab';
 import { GuardPanel } from './GuardPanel';
 import { HandoffPanel } from './HandoffPanel';
 import { SupplyPanel } from './SupplyPanel';
-import { guardState, handoffState, heroState, stateClass, supplyState, type RunState } from './assistState';
+import { WithdrawPanel } from './WithdrawPanel';
+import {
+  guardState, handoffState, heroState, stateClass, supplyState, withdrawState, type RunState,
+} from './assistState';
 import './assist.css';
 
-// 輔助 holds four long modules; each gets its own sub-tab so only one is on
+// 輔助 holds several long modules; each gets its own sub-tab so only one is on
 // screen (and polling) at a time. Wide: a side menu with every module's state;
 // narrow: the same buttons as a row above the content (assist.css).
-type Sub = 'guard' | 'supply' | 'handoff' | 'hero';
+type Sub = 'guard' | 'supply' | 'withdraw' | 'handoff' | 'hero';
 const SUBS: { k: Sub; n: string; s: string }[] = [
   { k: 'guard', n: '守護', s: '補水 · buff 維持' },
   { k: 'supply', n: '補給', s: '賣 · 存倉 · 買' },
+  { k: 'withdraw', n: '領倉', s: '白名單整疊領出' },
   { k: 'handoff', n: '分身交貨', s: '跨帳號交易' },
   { k: 'hero', n: '英雄培養', s: '自動點商人' },
 ];
@@ -62,13 +66,13 @@ function useRunStates(pid: number, active: boolean, withHandoff: boolean): Recor
   }, [active, refresh]);
 
   return {
-    guard: guardState(guard), supply: supplyState(supply),
+    guard: guardState(guard), supply: supplyState(supply), withdraw: withdrawState(supply),
     handoff: handoffState(handoff), hero: heroState(hero),
   };
 }
 
-export function AssistTab({ pid, active, canLove, canHandoff }: {
-  pid: number; active: boolean; canLove: boolean; canHandoff: boolean;
+export function AssistTab({ pid, active, canLove, canHandoff, canWithdraw }: {
+  pid: number; active: boolean; canLove: boolean; canHandoff: boolean; canWithdraw: boolean;
 }) {
   const [sub, setSub] = useState<Sub>(loadSub);
   // Mounted on first visit and then kept (hidden), like the main tabs, so an
@@ -76,7 +80,8 @@ export function AssistTab({ pid, active, canLove, canHandoff }: {
   const visited = useRef(new Set<Sub>());
   // 分身交貨 needs the hook's trade commands; once opened it stays even if the
   // hook drops, so it does not vanish under the user.
-  const subs = SUBS.filter(s => s.k !== 'handoff' || canHandoff || visited.current.has('handoff'));
+  const subs = SUBS.filter(s => (s.k !== 'handoff' || canHandoff || visited.current.has('handoff'))
+    && (s.k !== 'withdraw' || canWithdraw || visited.current.has('withdraw')));
   const cur = subs.some(s => s.k === sub) ? sub : 'guard';
   visited.current.add(cur);
   const states = useRunStates(pid, active, subs.some(s => s.k === 'handoff'));
@@ -107,6 +112,7 @@ export function AssistTab({ pid, active, canLove, canHandoff }: {
             <div key={s.k} role="tabpanel" id={`as-panel-${s.k}`} aria-labelledby={`as-tab-${s.k}`} hidden={cur !== s.k}>
               {s.k === 'guard' && <GuardPanel pid={pid} active={on('guard')} canLove={canLove} />}
               {s.k === 'supply' && <SupplyPanel pid={pid} active={on('supply')} />}
+              {s.k === 'withdraw' && <WithdrawPanel pid={pid} active={on('withdraw')} />}
               {s.k === 'handoff' && <HandoffPanel pid={pid} active={on('handoff')} />}
               {s.k === 'hero' && <AutoClickTab pid={pid} active={on('hero')} />}
             </div>

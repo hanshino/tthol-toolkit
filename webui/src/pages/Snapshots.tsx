@@ -5,6 +5,7 @@ import type { BackupImportResult, CharacterRow, SnapshotRow } from '../api/types
 import { pidForName, type OpenChar } from '../nav';
 import '../components/items/items.css';
 import { Panel } from '../primitives';
+import { AccountGroups } from './AccountGroups';
 
 type Status = { kind: 'ok' | 'err'; text: string } | null;
 
@@ -76,6 +77,8 @@ export function Snapshots({ chars, onOpenChar }: { chars: CharacterRow[]; onOpen
           </div>
         )}
       </Panel>
+
+      <AccountGroups />
 
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 16 }}>
         <Panel title="留影列表">
