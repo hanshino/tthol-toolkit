@@ -3,6 +3,7 @@ import { get, post, put } from '../../api/client';
 import type { SupplyBuyable, SupplyConfig, SupplyLoad, SupplyLogEntry, SupplyStatus, SupplyView } from '../../api/types';
 import { MoneyInput } from '../../components/MoneyInput';
 import { reportClientError } from '../../diag/report';
+import { stateClass, supplyState } from './assistState';
 import './supply.css';
 
 // 補給 (services/supply.py): one trip to a town shopkeeper that sells the
@@ -124,9 +125,7 @@ export function SupplyPanel({ pid, active }: { pid: number; active: boolean }) {
   return (
     <div className="sp">
       <section className="gd-panel gd-strip" aria-label="補給">
-        <span className={`gd-state${running ? ' is-on' : ''}`}>
-          <i />{running ? (status?.host ? `${status.host}補給中` : '補給中') : '待命'}
-        </span>
+        <span className={stateClass(supplyState(status))}><i />{supplyState(status).text}</span>
         <div className="gd-strip-text">
           <span className="gd-title">補給</span>
           <span className="gd-dim">先賣、再存、最後買到目標量；會走路到城鎮商人</span>

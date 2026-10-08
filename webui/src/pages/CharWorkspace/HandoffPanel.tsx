@@ -5,6 +5,7 @@ import type {
 } from '../../api/types';
 import { useItemMeta } from '../../components/items/useItemMeta';
 import { reportClientError } from '../../diag/report';
+import { handoffState, stateClass } from './assistState';
 import './handoff.css';
 
 // 分身交貨 (services/handoff.py): one character stands as a warehouse and takes
@@ -110,16 +111,12 @@ export function HandoffPanel({ pid, active }: { pid: number; active: boolean }) 
 
   const startLabel = shown === 'receive' ? '開始收貨' : '開始送貨';
   const stopLabel = status?.stopping ? '馬上停止' : shown === 'receive' ? '停止收貨' : '停止送貨';
-  const stateText = running
-    ? status?.stopping ? '這輪存完就停' : shown === 'receive' ? '收貨中' : '送貨中'
-    : '待命';
+  const state = handoffState(status, shown);
 
   return (
     <div className="ho">
       <section className="gd-panel gd-strip" aria-label="分身交貨">
-        <span className={`gd-state${running ? ' is-on' : ''}${status?.stopping ? ' is-warn' : ''}`}>
-          <i />{stateText}
-        </span>
+        <span className={stateClass(state)}><i />{state.text}</span>
         <div className="gd-strip-text">
           <span className="gd-title">分身交貨</span>
           <span className="gd-dim">不同帳號的角色互相交易：一隻當倉庫收，其他視窗走過去交</span>

@@ -1,0 +1,38 @@
+/* 輔助 sub-navigation. Wide: a side menu showing every module's state.
+   Narrow (the window beside the game): the same buttons as a row above the
+   content, one step quieter than the main .ws-tabs row (no serif, no gold). */
+.as { container-type: inline-size; }
+.as-in { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 16px; align-items: start; }
+.as-body { min-width: 0; }
+
+.as-nav { display: flex; flex-direction: column; gap: 1px; background: var(--tt-line-soft); border: 1px solid var(--tt-line); }
+button.as-tab {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "n st" "s s";
+  gap: 4px 8px; align-items: center; min-height: 58px; padding: 10px 12px 10px 10px;
+  background: var(--tt-panel); border: 0; border-left: 2px solid transparent; text-align: left; letter-spacing: 0;
+}
+button.as-tab:hover:not(:disabled) { background: var(--tt-raised); border-color: transparent; }
+button.as-tab[aria-selected="true"],
+button.as-tab[aria-selected="true"]:hover:not(:disabled) { background: var(--tt-raised); border-left-color: var(--tt-gold); }
+button.as-tab:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
+.as-tab-n { grid-area: n; font-family: var(--tt-font-serif); font-size: 14px; letter-spacing: 3px; color: var(--tt-text); }
+button.as-tab[aria-selected="true"] .as-tab-n { color: var(--tt-gold); }
+.as-tab-s { grid-area: s; font-size: 11.5px; color: var(--tt-dim); }
+.as-tab-st.gd-state { grid-area: st; gap: 6px; padding: 1px 8px; font-size: 11px; white-space: nowrap; }
+.as-tab-st.gd-state i { width: 6px; height: 6px; }
+
+@container (max-width: 999px) {
+  .as-in { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .as-nav { flex-direction: row; flex-wrap: wrap; gap: 6px; background: none; border: 0; }
+  button.as-tab {
+    display: flex; gap: 8px; min-height: 34px; padding: 0 14px;
+    border: 1px solid var(--tt-line-soft); background: transparent;
+  }
+  button.as-tab:hover:not(:disabled) { background: var(--tt-panel); border-color: var(--tt-line); }
+  button.as-tab[aria-selected="true"],
+  button.as-tab[aria-selected="true"]:hover:not(:disabled) { background: var(--tt-raised); border-color: var(--tt-accent); }
+  .as-tab-n { font-family: var(--tt-font); font-size: 13px; letter-spacing: 1px; }
+  button.as-tab[aria-selected="true"] .as-tab-n { color: var(--tt-text); }
+  .as-tab-s { display: none; }
+  .as-tab-st.gd-state { padding: 0; border: 0; }
+}
