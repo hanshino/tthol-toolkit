@@ -1335,7 +1335,7 @@ class _Trip:
             remain[k][1] -= self.withdrawn - before
             if not ok:
                 left += 1
-        if self.withdrawn:
+        if items:  # a fresh, settled listing: worth recording even when nothing came out
             self.m._on_warehouse(self.pid, [{"item_id": i, "qty": n} for i, n in remain if n > 0])
         self.close_windows()
         self.stand()

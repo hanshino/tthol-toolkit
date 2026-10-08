@@ -694,7 +694,7 @@ def test_withdraw_records_the_warehouse_it_leaves():
     assert seen == [(1, [{"item_id": SCROLL, "qty": 2}, {"item_id": POTION, "qty": 5}])]
 
 
-def test_withdraw_of_nothing_records_nothing():
+def test_withdraw_of_nothing_still_records_the_warehouse():
     game = FakeGame({}, gold=40_000)
     game.vault = {POTION: 5}
     seen = []
@@ -706,7 +706,7 @@ def test_withdraw_of_nothing_records_nothing():
         on_warehouse=lambda pid, items: seen.append(items),
     )
     mgr.run(1, threading.Event(), withdraw=(frozenset({ORE}), 3))
-    assert seen == []
+    assert seen == [[{"item_id": POTION, "qty": 5}]]
 
 
 def test_store_records_the_warehouse_after_storing():

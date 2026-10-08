@@ -197,22 +197,24 @@ class SnapshotDB:
         canonical = _canonical(items)
         chk = _checksum(canonical)
 
-        # Dedup: check last snapshot for this character+source
-        row = self._con.execute(
-            "SELECT checksum FROM snapshots "
-            "WHERE character=? AND source=? ORDER BY id DESC LIMIT 1",
-            (character, source),
-        ).fetchone()
-        if row and row["checksum"] == chk:
-            return False
+        # Supply / withdraw trips record from their own threads.
+        with self._settings_lock:
+            # Dedup: check last snapshot for this character+source
+            row = self._con.execute(
+                "SELECT checksum FROM snapshots "
+                "WHERE character=? AND source=? ORDER BY id DESC LIMIT 1",
+                (character, source),
+            ).fetchone()
+            if row and row["checksum"] == chk:
+                return False
 
-        now = datetime.now().isoformat(timespec="seconds")
-        self._con.execute(
-            "INSERT INTO snapshots (character, source, scanned_at, items, checksum) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (character, source, now, canonical, chk),
-        )
-        self._con.commit()
+            now = datetime.now().isoformat(timespec="seconds")
+            self._con.execute(
+                "INSERT INTO snapshots (character, source, scanned_at, items, checksum) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (character, source, now, canonical, chk),
+            )
+            self._con.commit()
         return True
 
     def load_latest_snapshots(self) -> list[dict]:
