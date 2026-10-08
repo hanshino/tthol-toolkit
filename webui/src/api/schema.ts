@@ -338,6 +338,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/characters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Account Characters
+         * @description Every known character with its account, for the 帳號分組 editor.
+         */
+        get: operations["account_characters_api_accounts_characters_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Rename Account */
+        put: operations["rename_account_api_accounts__account_id__put"];
+        post?: never;
+        /** Delete Account */
+        delete: operations["delete_account_api_accounts__account_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/by-name/{name}/account": {
         parameters: {
             query?: never;
@@ -873,6 +911,74 @@ export interface paths {
         put?: never;
         /** Stop */
         post: operations["stop_api_characters__pid__handoff_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** View */
+        get: operations["view_api_characters__pid__withdraw_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/withdraw/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Config */
+        put: operations["put_config_api_characters__pid__withdraw_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/withdraw/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_characters__pid__withdraw_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/withdraw/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__withdraw_stop_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1895,6 +2001,18 @@ export interface components {
              * @default 0
              */
             character_count: number;
+        };
+        /**
+         * AccountCharacter
+         * @description A character and the account (shared warehouse) it is on.
+         */
+        AccountCharacter: {
+            /** Character */
+            character: string;
+            /** Account Id */
+            account_id?: number | null;
+            /** Account Name */
+            account_name?: string | null;
         };
         /**
          * AttackSkillCandidate
@@ -4481,6 +4599,8 @@ export interface components {
             step?: string | null;
             /** Host */
             host?: string | null;
+            /** Last Host */
+            last_host?: string | null;
             /** Ended */
             ended?: string | null;
             /**
@@ -4934,6 +5054,95 @@ export interface components {
             legs: number;
             /** Message */
             message?: string | null;
+        };
+        /**
+         * WithdrawConfig
+         * @description 領倉白名單 (character_settings section "withdraw"): items this character
+         *     takes out of its account's warehouse.
+         */
+        WithdrawConfig: {
+            /**
+             * Items
+             * @default []
+             */
+            items: number[];
+            /**
+             * Bag Slots
+             * @default 40
+             */
+            bag_slots: number;
+        };
+        /** WithdrawRow */
+        WithdrawRow: {
+            /** Item Id */
+            item_id: number;
+            /** Name */
+            name: string;
+            /** Icon Url */
+            icon_url?: string | null;
+            /**
+             * Bag
+             * @default 0
+             */
+            bag: number;
+            /** Warehouse */
+            warehouse?: number | null;
+            /**
+             * Stacks
+             * @default 0
+             */
+            stacks: number;
+        };
+        /** WithdrawView */
+        WithdrawView: {
+            /** Character */
+            character: string | null;
+            /**
+             * @default {
+             *       "items": [],
+             *       "bag_slots": 40
+             *     }
+             */
+            config: components["schemas"]["WithdrawConfig"];
+            /**
+             * Rows
+             * @default []
+             */
+            rows: components["schemas"]["WithdrawRow"][];
+            /**
+             * Bag
+             * @default []
+             */
+            bag: components["schemas"]["HandoffBagItem"][];
+            /** Bag Used */
+            bag_used?: number | null;
+            /**
+             * Warehouse
+             * @default []
+             */
+            warehouse: components["schemas"]["HandoffBagItem"][];
+            /** Fits */
+            fits?: number | null;
+            /** Warehouse From */
+            warehouse_from?: ("live" | "snapshot") | null;
+            /** Warehouse Holder */
+            warehouse_holder?: string | null;
+            /** Warehouse At */
+            warehouse_at?: string | null;
+            /** Account */
+            account?: string | null;
+            /**
+             * Hook Ready
+             * @default false
+             */
+            hook_ready: boolean;
+            /**
+             * @default {
+             *       "running": false,
+             *       "log": []
+             *     }
+             */
+            status: components["schemas"]["SupplyStatus"];
         };
         /** WorldSnapshot */
         WorldSnapshot: {
@@ -5531,6 +5740,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    account_characters_api_accounts_characters_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountCharacter"][];
+                };
+            };
+        };
+    };
+    rename_account_api_accounts__account_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_account_api_accounts__account_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6536,6 +6831,134 @@ export interface operations {
         };
     };
     stop_api_characters__pid__handoff_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_api_characters__pid__withdraw_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WithdrawView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_config_api_characters__pid__withdraw_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WithdrawConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_characters__pid__withdraw_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__withdraw_stop_post: {
         parameters: {
             query?: never;
             header?: never;

@@ -45,6 +45,20 @@ FEATURES: dict[str, tuple[str, ...]] = {
         "tradecancel",
         "closepanel",
     ),
+    # 領倉白名單: a warehouse trip that only takes the listed items out.
+    "withdraw": (
+        "status",
+        "near",
+        "walk",
+        "talk",
+        "dialog",
+        "option",
+        "next",
+        "closepanel",
+        "bag",
+        "warehouse",
+        "withdraw",
+    ),
     "daily.tower": (
         "status",
         "near",

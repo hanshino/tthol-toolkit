@@ -377,6 +377,7 @@ def make(
     caps=ALL,
     manor=None,
     family_stock=None,
+    **kw,
 ):
     store = GuardStore()
     store.save_section("晨曦", sp.SUPPLY_SECTION, cfg)
@@ -413,6 +414,7 @@ def make(
         pet_items=lambda: frozenset({PET}),
         manor=lambda pid: manor,
         points=(SHOPKEEPER, FAMILY_POINT, KEEPER),
+        **kw,
     )
     return mgr, nav, guard
 
@@ -674,6 +676,71 @@ def test_withdraw_takes_out_the_wanted_stacks_that_fit():
     ]
     assert [d for d, _g in nav.went] == [23]  # the 錢莊伙計 only
     assert game.bag.get(POTION, 0) == 0 and game.gold == 40_000  # no buy, no 錢莊 move
+
+
+def test_withdraw_records_the_warehouse_it_leaves():
+    game = FakeGame({JUNK: 1}, gold=40_000)
+    game.vault = {ORE: 300, SCROLL: 2, POTION: 5}
+    seen = []
+    mgr, _nav, _ = make(
+        game,
+        SupplyConfig(),
+        ItemRules(),
+        caps=WAREHOUSE_CAPS + ("withdraw",),
+        on_warehouse=lambda pid, items: seen.append((pid, items)),
+    )
+    result = mgr.run(1, threading.Event(), withdraw=(frozenset({ORE, SCROLL}), 1))
+    assert result.withdrawn == 300
+    assert seen == [(1, [{"item_id": SCROLL, "qty": 2}, {"item_id": POTION, "qty": 5}])]
+
+
+def test_withdraw_of_nothing_still_records_the_warehouse():
+    game = FakeGame({}, gold=40_000)
+    game.vault = {POTION: 5}
+    seen = []
+    mgr, _nav, _ = make(
+        game,
+        SupplyConfig(),
+        ItemRules(),
+        caps=WAREHOUSE_CAPS + ("withdraw",),
+        on_warehouse=lambda pid, items: seen.append(items),
+    )
+    mgr.run(1, threading.Event(), withdraw=(frozenset({ORE}), 3))
+    assert seen == [[{"item_id": POTION, "qty": 5}]]
+
+
+def test_store_records_the_warehouse_after_storing():
+    game = FakeGame({ORE: 30}, gold=40_000)
+    game.vault = {SCROLL: 2}
+    seen = []
+    mgr, _nav, _ = make(
+        game,
+        SupplyConfig(),
+        ItemRules(),
+        caps=WAREHOUSE_CAPS,
+        on_warehouse=lambda pid, items: seen.append(items),
+    )
+    mgr.run(1, threading.Event(), store_only={ORE: 12})
+    assert seen == [[{"item_id": SCROLL, "qty": 2}, {"item_id": ORE, "qty": 12}]]
+
+
+def test_withdraw_fit_lets_held_items_stack_without_a_slot():
+    stacks = [(ORE, 300), (SCROLL, 2), (POTION, 5), (JUNK, 1)]
+    # POTION is held: it stacks; one free slot goes to ORE; SCROLL, JUNK stay.
+    take, left = sp.withdraw_fit(stacks, {POTION: 10}, 1)
+    assert take == {0, 2} and left == 2
+    # a held stack pushed over STACK needs a slot
+    assert sp.withdraw_fit([(POTION, 50)], {POTION: 190}, 0) == (set(), 1)
+    assert sp.withdraw_fit([(POTION, 5), (POTION, 5)], {POTION: 1}, 0) == ({0, 1}, 0)
+
+
+def test_withdraw_onto_a_full_bag_takes_what_it_already_holds():
+    game = FakeGame({ORE: 3, JUNK: 1})
+    game.vault = {ORE: 2, SCROLL: 2}
+    mgr, _nav, _ = make(game, SupplyConfig(), ItemRules(), caps=WAREHOUSE_CAPS + ("withdraw",))
+    result = mgr.run(1, threading.Event(), withdraw=(frozenset({ORE, SCROLL}), 0))
+    assert result.ok and result.withdrawn == 2 and result.left == 1, result
+    assert game.bag[ORE] == 5 and game.vault[SCROLL] == 2
 
 
 def test_withdraw_needs_the_hook_command():

@@ -11,6 +11,14 @@ export function guardState(s: GuardStatus | null): RunState {
   return { on: true, warn: !!s.problem, text: s.problem ? '等待中' : '守護中' };
 }
 
+// services/withdraw.py HOST: a 領倉白名單 trip runs as 補給 under this host.
+export const WITHDRAW_HOST = '領倉白名單';
+
+export function withdrawState(s: SupplyStatus | null): RunState {
+  if (!s?.running || s.host !== WITHDRAW_HOST) return idle('待命');
+  return { on: true, warn: false, text: '領倉中' };
+}
+
 export function supplyState(s: SupplyStatus | null): RunState {
   if (!s?.running) return idle('待命');
   return { on: true, warn: false, text: s.host ? `${s.host}補給中` : '補給中' };

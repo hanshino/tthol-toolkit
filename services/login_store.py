@@ -23,6 +23,7 @@ TRANSFER_SECTIONS = (
     "guard.buff",
     "items",
     "family",
+    "withdraw",
 )
 
 
@@ -71,6 +72,8 @@ class LoginStore:
             if value is not None:
                 blob = self._protect(value) if value else None
                 self._db.login_set_secret(entry.username, column, blob)
+        # Characters sharing a login share the warehouse: one account.
+        self._db.sync_login_accounts()
         return self.get(entry.character)
 
     def update(self, entry: LoginEntryIn) -> LoginEntry | None:

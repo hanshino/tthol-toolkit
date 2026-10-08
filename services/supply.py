@@ -198,6 +198,27 @@ def _stacks(n: int) -> int:
     return -(-max(n, 0) // STACK)
 
 
+def withdraw_fit(
+    stacks: list[tuple[int, int]], bag: dict[int, int], room: int
+) -> tuple[set[int], int]:
+    """(indexes of the warehouse stacks to take, how many stay) for `room` free
+    bag slots. A new item takes a slot per stack. A stack of an item the bag
+    holds lands on that stack (books withdrawn onto a 37/40 bag all merged,
+    live 2026-10-08): it takes a slot only when it pushes the item over a
+    STACK boundary."""
+    have = dict(bag)
+    take: set[int] = set()
+    for k, (item_id, count) in enumerate(stacks):
+        now = have.get(item_id, 0)
+        need = 1 if now <= 0 else min(1, _stacks(now + count) - _stacks(now))
+        if need > room:
+            continue
+        room -= need
+        have[item_id] = now + count
+        take.add(k)
+    return take, len(stacks) - len(take)
+
+
 def estimate_load(
     bag: list[tuple[int, int]],
     pet: list[tuple[int, int]],
@@ -418,7 +439,10 @@ class SupplyManager:
         manor: Callable[[int], int | None] = lambda _pid: None,  # family manor sestage id
         ask_family: Callable[[int], dict | None] | None = None,  # hook `family` (0x31 -> manor)
         points: tuple[SupplyPoint, ...] = POINTS,
+        # (pid, warehouse stacks [{item_id, qty}]) after a withdraw trip changed it
+        on_warehouse: Callable[[int, list[dict]], None] = lambda _pid, _items: None,
     ) -> None:
+        self._on_warehouse = on_warehouse
         self._manor = manor
         self._ask_family = ask_family
         self._points = points
@@ -442,6 +466,7 @@ class SupplyManager:
         self._steps: dict[int, str | None] = {}
         self._hosts_running: dict[int, str | None] = {}  # pid -> host while a trip runs
         self._ended: dict[int, str] = {}
+        self._last_host: dict[int, str | None] = {}  # the host of the newest trip
         self._manual: dict[int, _ManualRun] = {}
         self._hosts: list[str] = []
 
@@ -667,6 +692,7 @@ class SupplyManager:
         with self._lock:
             self._logs.pop(pid, None)
             self._ended.pop(pid, None)
+            self._last_host.pop(pid, None)
             self._steps.pop(pid, None)
 
     def running(self, pid: int) -> bool:
@@ -680,6 +706,7 @@ class SupplyManager:
                 running=pid in self._hosts_running,
                 step=self._steps.get(pid),
                 host=self._hosts_running.get(pid),
+                last_host=self._last_host.get(pid),
                 ended=self._ended.get(pid),
                 log=list(lg.lines[-60:]) if lg else [],
             )
@@ -713,6 +740,7 @@ class SupplyManager:
             if pid in self._hosts_running and not claimed:
                 return SupplyResult(False, "busy", "另一趟補給正在跑")
             self._hosts_running[pid] = host
+            self._last_host[pid] = host
             self._logs[pid] = _Log()
             self._ended.pop(pid, None)
         trip = _Trip(
@@ -1168,6 +1196,8 @@ class _Trip:
             return
         self.reach_warehouse(keeper, market.script)
         self.store_all(stores)
+        if self.stored:
+            self.record_warehouse()
         if bank is not None:
             self.settle_bank(bank)
         self.close_windows()
@@ -1257,6 +1287,14 @@ class _Trip:
             self.cmd("next")
         raise _Abort("error", f"{npc.name}的倉庫沒有打開")
 
+    def record_warehouse(self) -> None:
+        """The open warehouse after storing, for the account's snapshot (寶庫)."""
+        items = self.warehouse_items()
+        if items:  # it holds what was just stored: empty is a read that failed
+            self.m._on_warehouse(
+                self.pid, [{"item_id": int(i["item"]), "qty": int(i["count"])} for i in items]
+            )
+
     def store_all(self, stores: list[tuple[int, int, int, int]]) -> None:
         for item_id, qty, _keep, _have in stores:
             name = self.name(item_id)
@@ -1282,7 +1320,8 @@ class _Trip:
     def withdraw_trip(self, bag: dict[int, int]) -> SupplyResult:
         """To the nearest 錢莊伙計, take out the wanted stacks that fit, back."""
         wants, room = self.withdraw or (frozenset(), 0)
-        if not wants or room <= 0:
+        # A full bag can still take items it already holds: they stack.
+        if not wants or (room <= 0 and not any(bag.get(i, 0) for i in wants)):
             return SupplyResult(True, "nothing", "沒有要領的東西或背包沒空格")
         caps = self.m._caps(self.pid) or frozenset()
         self.caps = caps
@@ -1305,13 +1344,22 @@ class _Trip:
             raise _Abort("error", "找不到走得到的錢莊伙計")
         self.reach_warehouse(keeper, market.script)
         items = self.warehouse_items()
-        stacks = [(int(i["item"]), int(i["count"])) for i in items if int(i["item"]) in wants]
+        # What stays in the warehouse: every stack, less what came out of it.
+        remain = [[int(i["item"]), int(i["count"])] for i in items]
+        stacks = [k for k, (item_id, _n) in enumerate(remain) if item_id in wants]
         self.line("info", f"倉庫裡 {len(items)} 堆，要領的 {len(stacks)} 堆")
-        take = stacks[:room]
-        left = len(stacks) - len(take)
-        for item_id, count in take:
-            if not self.withdraw_stack(item_id, count):
+        take, left = withdraw_fit([tuple(remain[k]) for k in stacks], bag, room)
+        for n, k in enumerate(stacks):
+            if n not in take:
+                continue
+            item_id, count = remain[k]
+            before = self.withdrawn
+            ok = self.withdraw_stack(item_id, count)
+            remain[k][1] -= self.withdrawn - before
+            if not ok:
                 left += 1
+        if items:  # a fresh, settled listing: worth recording even when nothing came out
+            self.m._on_warehouse(self.pid, [{"item_id": i, "qty": n} for i, n in remain if n > 0])
         self.close_windows()
         self.stand()
         detail = f"領出 {self.withdrawn} 個" if self.withdrawn else "倉庫裡沒有要領的東西"

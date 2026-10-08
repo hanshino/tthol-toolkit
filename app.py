@@ -39,6 +39,7 @@ from services.guard import (
 from services.item_rules import load_item_facts
 from services.supply import SupplyManager
 from services.handoff import TRADE_PACKET, HandoffManager
+from services.withdraw import WithdrawManager
 from services.map_db import stage_names_by_id
 from services.tower_run import ATTACK_PACKET, CAST_START_PACKET, TowerManager
 from services.buff_tracker import BUFF_PACKET, BuffTracker
@@ -65,6 +66,7 @@ def _pick_port() -> int:
 
 def _build_services(dev: bool) -> dict:
     db = SnapshotDB()
+    db.sync_login_accounts()
     autoclick = AutoClickManager()
     keep_active = KeepActiveManager()
     hook = HookHub()
@@ -124,6 +126,14 @@ def _build_services(dev: bool) -> dict:
     navigator = Navigator(
         channel, wm.read_locked, read_stage_id, manor=manor, ask_family=ask_family
     )
+
+    # A trip that stored into or took out of the warehouse records what is left,
+    # so the 寶庫 counts the account's warehouse as it is now.
+    def record_warehouse(pid: int, items: list[dict]) -> None:
+        name = wm.character_name(pid)
+        if name:
+            db.save_snapshot(name, "warehouse", items)
+
     # 補給: sell / store / buy at a town NPC, run first by the 日常 modules.
     supply = SupplyManager(
         guard=guard,
@@ -139,6 +149,7 @@ def _build_services(dev: bool) -> dict:
         ),
         manor=manor,
         ask_family=ask_family,
+        on_warehouse=record_warehouse,
     )
     tower = TowerManager(
         guard=guard,
@@ -189,10 +200,43 @@ def _build_services(dev: bool) -> dict:
         hook_caps=hook_caps,
     )
     hook.add_packet_listener(TRADE_PACKET, handoff.on_trade_packet)
+
+    def withdraw_busy(pid: int) -> str | None:
+        if handoff.running(pid):
+            return "這隻角色正在分身交貨"
+        return handoff_busy(pid)
+
+    def account_name(name: str) -> str | None:
+        row = db.get_character_account(name)
+        return row["name"] if row else None
+
+    # 領倉白名單: take the listed items out of the account's warehouse.
+    withdraw = WithdrawManager(
+        supply=supply,
+        character_name=wm.character_name,
+        channel=channel,
+        store=GuardStore(db),
+        hook_caps=hook_caps,
+        item_info=item_info,
+        icon_url=lambda item_id: (
+            item_catalog.icon_path(item_id) if item_catalog.icon_url(item_id) else None
+        ),
+        warehouse_snapshot=db.latest_warehouse,
+        account_name=account_name,
+        record_bag=lambda name, items: db.save_snapshot(name, "inventory", items),
+        busy=withdraw_busy,
+    )
     wm.set_daily_queue(daily)
     wm.set_family_query(lambda pid: channel.send(pid, "family"))
     # Another character on the same game window starts clean (queue first: it stops the tower).
-    for forget in (daily.forget, tower.forget, handoff.forget, supply.forget, guard.forget):
+    for forget in (
+        daily.forget,
+        tower.forget,
+        handoff.forget,
+        withdraw.forget,
+        supply.forget,
+        guard.forget,
+    ):
         wm.add_forget(forget)
     # 帳號派發: log characters in on the hooked windows, run their 日常, log out.
     logins = LoginStore(db)
@@ -254,6 +298,7 @@ def _build_services(dev: bool) -> dict:
         "tower_manager": tower,
         "supply_manager": supply,
         "handoff_manager": handoff,
+        "withdraw_manager": withdraw,
         "daily_manager": daily,
         "login_store": logins,
         "dispatch_manager": dispatch,

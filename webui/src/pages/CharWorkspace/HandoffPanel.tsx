@@ -6,6 +6,7 @@ import type {
 import { useItemMeta } from '../../components/items/useItemMeta';
 import { reportClientError } from '../../diag/report';
 import { handoffState, stateClass } from './assistState';
+import { ItemPicker, type PickAction } from './ItemPicker';
 import './handoff.css';
 
 // 分身交貨 (services/handoff.py): one character stands as a warehouse and takes
@@ -15,6 +16,10 @@ const VIEW_MS = 5000;
 const STATUS_MS = 1000;
 const SAVE_DELAY_MS = 400;
 type Role = 'receive' | 'send';
+const PICK_ACTIONS: PickAction[] = [
+  { key: 'store', label: '存倉', bulk: '全部加入 → 存倉' },
+  { key: 'keep', label: '留身上', bulk: '全部加入 → 留身上', className: 'ho-keep' },
+];
 
 const PHASE_LABEL: Record<HandoffLogEntry['phase'], string> = {
   confirmed: '已確認', unconfirmed: '未確認', error: '錯誤', info: '',
@@ -209,8 +214,9 @@ function Receiver({ view, cfg, status, metas, onChange }: {
         ) : (
           <Whitelist cfg={cfg} metas={metas} names={names} onChange={setItems} />
         )}
-        <Picker view={view} taken={taken} onAdd={(ids, store) =>
-          setItems([...cfg.items, ...ids.filter(id => !taken.has(id)).map(id => ({ item_id: id, store }))])} />
+        <ItemPicker bag={view.bag} warehouse={view.warehouse ?? []} taken={taken} actions={PICK_ACTIONS}
+          tradable warnStore onAdd={(ids, how) =>
+            setItems([...cfg.items, ...ids.filter(id => !taken.has(id)).map(id => ({ item_id: id, store: how === 'store' }))])} />
       </section>
 
       {status?.moved.length ? (
@@ -234,14 +240,6 @@ function Receiver({ view, cfg, status, metas, onChange }: {
     </>
   );
 }
-
-type Category = ItemMeta['category'];
-const CATEGORIES: [Category | '', string][] = [
-  ['', '全部類別'], ['book', '技能書'], ['gear', '裝備'], ['potion', '藥品'],
-  ['event', '活動'], ['pet', '寵物'], ['misc', '其他'],
-];
-type Source = 'search' | 'bag' | 'warehouse';
-type Pick = { item_id: number; name: string; note: string; no_store: boolean };
 
 function Whitelist({ cfg, metas, names, onChange }: {
   cfg: HandoffConfig; metas: Map<number, ItemMeta>; names: Map<number, string>;
@@ -311,97 +309,6 @@ function Whitelist({ cfg, metas, names, onChange }: {
         {column(false)}
       </div>
     </>
-  );
-}
-
-function Picker({ view, taken, onAdd }: {
-  view: HandoffView; taken: Set<number>; onAdd: (ids: number[], store: boolean) => void;
-}) {
-  const [source, setSource] = useState<Source | null>(null);
-  const [q, setQ] = useState('');
-  const [cat, setCat] = useState<Category | ''>('book');
-  const [hits, setHits] = useState<ItemMeta[]>([]);
-
-  useEffect(() => {
-    if (source !== 'search' || (!q.trim() && !cat)) { setHits([]); return; }
-    const t = window.setTimeout(async () => {
-      try {
-        const params = new URLSearchParams({ tradable: 'true', limit: '1000', q: q.trim() });
-        if (cat) params.set('category', cat);
-        setHits(await get<ItemMeta[]>(`/api/items/search?${params}`));
-      } catch (e) {
-        reportClientError(e, { component: 'HandoffPanel.search', silent: true });
-      }
-    }, 250);
-    return () => window.clearTimeout(t);
-  }, [source, q, cat]);
-
-  const SOURCES: [Source, string][] = [['search', '搜尋道具'], ['bag', `從背包挑（${view.bag.length}）`], ['warehouse', `從倉庫挑（${(view.warehouse ?? []).length}）`]];
-  if (source === null) {
-    return (
-      <div className="ho-add">
-        {SOURCES.map(([s, label]) => (
-          <button key={s} type="button" className="gd-add" onClick={() => setSource(s)}>＋ {label}</button>
-        ))}
-      </div>
-    );
-  }
-  const f = q.trim();
-  const fromHeld = (rows: HandoffView['bag']): Pick[] => rows
-    .filter(r => !r.no_trade && (!cat || r.category === cat) && (!f || r.name.includes(f)))
-    .map(r => ({ item_id: r.item_id, name: r.name, note: `${fmt(r.count)}（${r.stacks} 格）`, no_store: r.no_store }));
-  const rows: Pick[] = source === 'search'
-    ? hits.map(h => ({ item_id: h.item_id, name: h.name, note: h.type_label, no_store: h.no_store }))
-    : fromHeld(source === 'bag' ? view.bag : (view.warehouse ?? []));
-  const fresh = rows.filter(r => !taken.has(r.item_id));
-  const empty = source === 'search' && !f && !cat ? '輸入名稱，或選一個類別。'
-    : source === 'warehouse' && (view.warehouse ?? []).length === 0 ? '還沒讀到倉庫：在遊戲裡打開一次這隻角色的倉庫（看一眼就好），再回來這裡。'
-    : '沒有符合、還沒加入的道具。';
-  return (
-    <div className="gd-picker ho-picker">
-      <div className="gd-picker-head ho-picker-head">
-        <span className="sp-radio" role="radiogroup" aria-label="從哪裡挑">
-          {SOURCES.map(([s, label]) => (
-            <button key={s} type="button" role="radio" aria-checked={source === s}
-              className={source === s ? 'is-active' : ''} onClick={() => setSource(s)}>{label}</button>
-          ))}
-        </span>
-        <button type="button" onClick={() => setSource(null)}>關閉</button>
-      </div>
-      <div className="ho-picker-tools">
-        <label className="sp-search">
-          <span>名稱</span>
-          <input type="text" value={q} autoFocus placeholder="例如 刀、11級" onChange={e => setQ(e.target.value)} />
-        </label>
-        <label className="sp-search">
-          <span>類別</span>
-          <select className="dl-select" value={cat} onChange={e => setCat(e.target.value as Category | '')}>
-            {CATEGORIES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-          </select>
-        </label>
-        <span className="gd-dim">{fresh.length} 項可加入{rows.length > fresh.length ? `（另有 ${rows.length - fresh.length} 項已在名單）` : ''}</span>
-        {fresh.length > 0 && (
-          <span className="ho-bulk">
-            <button type="button" onClick={() => onAdd(fresh.map(r => r.item_id), true)}>全部加入 → 存倉</button>
-            <button type="button" className="ho-keep" onClick={() => onAdd(fresh.map(r => r.item_id), false)}>全部加入 → 留身上</button>
-          </span>
-        )}
-      </div>
-      {fresh.length === 0 ? (
-        <div className="gd-dim gd-pad">{empty}</div>
-      ) : (
-        <ul className="ho-pick-list" aria-label="可加入的道具">
-          {fresh.map(r => (
-            <li key={r.item_id}>
-              <span className="ho-chip-name">{r.name}</span>
-              <span className="gd-dim">{r.note}{r.no_store ? '　不能存倉' : ''}</span>
-              <button type="button" className="ho-mini" onClick={() => onAdd([r.item_id], true)}>存倉</button>
-              <button type="button" className="ho-mini ho-keep" onClick={() => onAdd([r.item_id], false)}>留身上</button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }
 
