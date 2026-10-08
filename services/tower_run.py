@@ -15,7 +15,6 @@ Only one thing reads the hook's event pipe (hook_hub): own hits come in through
 from __future__ import annotations
 
 import logging
-import struct
 import threading
 import time
 from collections import deque
@@ -39,18 +38,12 @@ from services.api_types import (
     TowerView,
 )
 from services.combat import (
-    BUFF_PAUSE,
-    RELOCK_AFTER,
+    COMBAT_SECTION,
     AttackSkill,
-    Rotation,
-    cast_sent,
-    cast_taken,
+    Fighter,
+    attack_problem,
     load_attack_skills,
-    next_skill,
-    mobbed_by,
-    settle_cast,
-    pick_target,
-    retarget,
+    skill_candidates,
 )
 from services.game_input import leave_game
 from services.guard import GuardManager, GuardStore, read_holdings, read_learned, read_stage_id
@@ -87,7 +80,6 @@ from services.tower import (
 
 log = logging.getLogger("tthol.tower")
 
-COMBAT_SECTION = "combat"
 TOWER_SECTION = "tower"
 RECORD_SECTION = "tower.record"
 ATTACK_PACKET = 0x43  # an attack landing: target key, attacker key, skill, hits
@@ -212,7 +204,7 @@ class _Run:
     def __init__(self, name: str, combat: CombatRule, config: TowerConfig) -> None:
         self.name = name
         self.pid: int | None = None  # for the run record
-        self.combat = combat
+        self.fighter = Fighter(combat, log, cat="tower")
         self.config = config
         self.stop = threading.Event()
         self.thread: threading.Thread | None = None
@@ -239,16 +231,7 @@ class _Run:
         self.exit_leave: tuple[bool, str | None] | None = None  # (leave, potions short)
         self.bodies_since: float | None = None  # clock the wait for bodies to fade began
         self.idle = 0
-        self.rot = Rotation()
-        self.casts_seen = 0
         self.zero_hp_at: float | None = None  # clock HP first read 0
-        self.hits: dict[tuple[int, int], float] = {}  # target key -> clock of our last hit
-        # target key -> magic id -> clock of our last hit with it (0 = basic attack)
-        self.hit_skills: dict[tuple[int, int], dict[int, float]] = {}
-        self.taken: dict[int, float] = {}  # magic id -> clock of our last cast start (0x10)
-        self.last_taken: tuple[float, int] | None = None  # (clock, skill code), newest
-        self.taken_seen: float = -1.0  # last_taken already folded into the rotation
-        self.learned: dict[int, int] = {}
         self.fox_at = -FOX_RETALK  # clock of the last fox talk
         self.potions_at = -POTION_EVERY  # clock of the last potion count
         self.start_since: float | None = None  # clock we got to the 關 start
@@ -261,6 +244,14 @@ class _Run:
         # done: the climb is over for the day; error: stopped on a problem
         # (potions short too); user: stopped by hand.
         self.outcome: str | None = None
+
+    @property
+    def combat(self) -> CombatRule:
+        return self.fighter.rule
+
+    @combat.setter
+    def combat(self, rule: CombatRule) -> None:
+        self.fighter.rule = rule
 
 
 class TowerManager:
@@ -339,9 +330,9 @@ class TowerManager:
     def config_problem(self, name: str) -> str | None:
         """Why `name`'s saved settings cannot climb, or None (no game needed:
         the batch dispatch asks before logging the character in)."""
-        combat = self._store.load_section(name, COMBAT_SECTION, CombatRule)
-        if not combat.basic and not combat.opener and not combat.rotation:
-            return "還沒設定攻擊方式：勾普攻，或選至少一個技能"
+        problem = attack_problem(self._store.load_section(name, COMBAT_SECTION, CombatRule))
+        if problem:
+            return problem
         if not self._store.load(name).potion.hp_items:
             return "補水的體力白名單是空的：塔裡不能回城，先在「輔助」設定補水"
         return None
@@ -493,36 +484,18 @@ class TowerManager:
             )
 
     def on_attack_packet(self, pid: int, raw: bytes, _ts: float, own_key: bytes | None) -> None:
-        """0x43 (an attack landing): note our own hits on each target."""
-        if own_key is None or len(raw) < 0x1B or raw[11:21] != own_key:
-            return
+        """0x43 (an attack landing): our own hits, for the running fighter."""
         with self._lock:
             run = self._runs.get(pid)
-        if run is None:
-            return
-        # Keyed by (npc id, instance): the kind word differs between `near` and
-        # 0x43 in the tower (near lists monsters as kind 11).
-        target = struct.unpack_from("<II", raw, 3)
-        magic = struct.unpack_from("<I", raw, 0x15)[0] // 100  # magic * 100 + level
-        now = self._clock()
-        with run.lock:
-            run.hits[target] = now
-            run.hit_skills.setdefault(target, {})[magic] = now
+        if run is not None:
+            run.fighter.on_attack(raw, own_key, self._clock())
 
     def on_cast_packet(self, pid: int, raw: bytes, _ts: float, own_key: bytes | None) -> None:
         """0x10 (a cast starting): the server took one of our casts."""
-        if own_key is None or len(raw) < 15 or raw[1:11] != own_key:
-            return
         with self._lock:
             run = self._runs.get(pid)
-        if run is None:
-            return
-        code = struct.unpack_from("<I", raw, 11)[0]
-        now = self._clock()
-        with run.lock:
-            run.taken[code // 100] = now
-            run.last_taken = (now, code)
-        log.debug("tower cast taken code=%d t=%.3f", code, now, extra={"cat": "tower"})
+        if run is not None:
+            run.fighter.on_cast(raw, own_key, self._clock())
 
     def estimate(self, pid: int, apply: bool = True) -> TowerEstimate:
         """Expected top floor from the current hit and level; with `apply`, it
@@ -744,21 +717,7 @@ class TowerManager:
             learned = self._read_locked(pid, read_learned) or {}
         except Exception:
             learned = {}
-        out = []
-        for mid, level in sorted(learned.items()):
-            d = self._defs().get((mid, level))
-            if d is not None:
-                out.append(
-                    AttackSkillCandidate(
-                        magic_id=mid,
-                        level=level,
-                        name=d.name,
-                        mp=d.mp,
-                        area=d.area,
-                        gap_ms=d.gap_ms,
-                    )
-                )
-        return out
+        return skill_candidates(learned, self._defs())
 
     def _note(self, run: _Run, phase: str, text: str) -> None:
         with run.lock:
@@ -1233,13 +1192,12 @@ class TowerManager:
                 run.room, run.killed, run.kills = room, set(), 0
                 run.room_started = self._wall()
                 run.staged, run.idle = False, 0
-                run.rot = Rotation(margins=run.rot.margins)  # margins are per skill, not per room
                 run.force_exit = False
-                run.hits, run.hit_skills = {}, {}
                 run.exit_try, run.exit_closed_at, run.exit_leave = 0, None, None
                 run.bodies_since = None
+            run.fighter.reset()
             try:
-                run.learned = self._read_locked(pid, read_learned) or run.learned
+                run.fighter.learned = self._read_locked(pid, read_learned) or run.fighter.learned
             except Exception:
                 pass
             if run.pid is not None:
@@ -1283,76 +1241,21 @@ class TowerManager:
         return self._fight(pid, run, st, objs, live, now)
 
     def _fight(self, pid: int, run: _Run, st: dict, objs, live, now: float) -> float:
-        rot = run.rot
         me = next((o for o in objs if o.get("h") == st.get("self")), None)
-        target = next((o for o in live if o["h"] == rot.target), None)
-        mx, my = (me["x"], me["y"]) if me else (0, 0)
-        if target is not None and run.stage is not None:
-            swap = mobbed_by(target, live, (mx, my), run.combat, run.stage.elites)
-            if swap is not None:
-                self._note(run, "info", "小怪圍過來了，先打小怪再回頭打菁英")
-                target = swap
-                retarget(rot, target["h"], now)
-        if target is None:
-            target = pick_target(
-                live, (mx, my), run.combat, run.stage.strength() if run.stage else {}
-            )
-            retarget(rot, target["h"], now)
-            log.debug(
-                "tower target new=%s npc=%s t=%.3f",
-                target["h"],
-                target["id"],
-                now,
-                extra={"cat": "tower"},
-            )
-        casts = self._guard.cast_count(pid)
-        if casts != run.casts_seen:
-            run.casts_seen = casts
-            rot.paused_until, rot.attacked = now + BUFF_PAUSE, False
-        if now < rot.paused_until:
-            return STEP
-        key = (target["id"], target["inst"])
-        with run.lock:
-            hit = run.hits.get(key)
-            by_skill = dict(run.hit_skills.get(key, {}))
-        if hit is not None:
-            rot.last_hit = max(rot.last_hit, hit)
-        with run.lock:
-            taken, last_taken = dict(run.taken), run.last_taken
-        if last_taken is not None and last_taken[0] > run.taken_seen:
-            run.taken_seen = last_taken[0]
-            code = last_taken[1]
-            cast_taken(rot, self._defs().get((code // 100, code % 100)), last_taken[0], code // 100)
-        if rot.pending is not None:
-            mid = rot.pending[0]
-            seen = max(taken.get(mid, -1.0), by_skill.get(mid, -1.0))
-            if settle_cast(rot, seen if seen >= 0 else None, now) == "gave_up":
-                name = next((d.name for (m, _l), d in self._defs().items() if m == mid), mid)
-                self._note(run, "unconfirmed", f"{name} 連續 4 次沒被伺服器接受，先放下一招")
-        if now - rot.last_hit > RELOCK_AFTER:
-            rot.attacked, rot.last_hit = False, now  # nothing landing: lock on again
-        mp = (st.get("mp") or [0, 0])[0]
-        pick = next_skill(run.combat, rot, run.learned, self._defs(), mp, now)
-        if pick is not None:
-            mid, level, d = pick
-            r = self._cmd(pid, run, f"cast {mid * 100 + level} {target['h']}")
-            log.debug(
-                "tower cast sent code=%d t=%.3f ok=%s target=%s dist=%.1f state=%s retry=%d",
-                mid * 100 + level,
-                now,
-                r.get("ok"),
-                target["h"],
-                (((target["x"] - mx) ** 2 + (target["y"] - my) ** 2) ** 0.5) / TILE_PX,
-                st.get("state"),
-                rot.drops,
-                extra={"cat": "tower"},
-            )
-            if r.get("ok"):
-                cast_sent(rot, mid, now)
-            return STEP
-        if run.combat.basic and not rot.attacked:
-            if self._cmd(pid, run, f"attack {target['h']}").get("ok"):
-                rot.attacked = True
+        stage = run.stage
+        run.fighter.tick(
+            live,
+            (me["x"], me["y"]) if me else (0, 0),
+            stage.strength() if stage else {},
+            stage.elites if stage else frozenset(),
+            self._defs(),
+            (st.get("mp") or [0, 0])[0],
+            self._guard.cast_count(pid),
+            now,
+            send=lambda line: self._cmd(pid, run, line),
+            note=lambda phase, text: self._note(run, phase, text),
+            state=st.get("state"),
+        )
         return STEP
 
     def _sweep(self, pid: int, run: _Run, tower: TowerStage, room: int) -> None:
