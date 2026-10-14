@@ -34,7 +34,9 @@ class Enter:
 @dataclass(frozen=True)
 class FirstOpen:
     """Step on each portal in order; the first one that works moves the
-    character. None works: go on with the next step."""
+    character. None works: go on with the next step. The portals open in this
+    order (凌霄閣: left, middle, right), so once one was taken the next pass
+    starts after it, and after the last one the step is skipped."""
 
     events: tuple[int, ...]
 

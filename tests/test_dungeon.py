@@ -15,7 +15,16 @@ from services.api_types import (
 )
 from services.combat import COMBAT_SECTION
 from services.dungeon import DungeonManager, _Done, _Moved, _Run
-from services.dungeon_scripts import Area, Clear, Dungeon, Enter, Shortcut, Talk
+from services.dungeon_scripts import (
+    Area,
+    Clear,
+    Dungeon,
+    Enter,
+    FirstOpen,
+    Hold,
+    Shortcut,
+    Talk,
+)
 from services.guard import GuardStore, read_holdings, read_learned, read_stage_id
 from services.map_areas import MapAreas, Portal, _components
 from services.nearby import read_nearby
@@ -82,6 +91,9 @@ class FakeGame:
         self.chose = []
         self.bag = {}
         self.fade = {}  # handle -> near calls left for a body
+        self.events = None  # map event switch; None: not modelled (zones always fire)
+        self.walk_cap = None  # tiles one walk covers before a hit stops it; None: all
+        self.view = None  # tiles `near` sees around the character; None: everything
 
     def add_mob(self, h, npc, inst, tile):
         self.mobs[h] = {
@@ -153,15 +165,29 @@ class FakeGame:
                 )
             if self.stage == 42:
                 for h, m in list(self.mobs.items()):
+                    if self.view is not None and (
+                        max(abs(m["x"] // 40 - self.tile[0]), abs(m["y"] // 40 - self.tile[1]))
+                        > self.view
+                    ):
+                        continue
                     objs.append(dict(m))
                     if m["dead"]:
                         self.fade[h] = self.fade.get(h, 2) - 1
                         if self.fade[h] <= 0:
                             del self.mobs[h]
             return {"ok": True, "objects": objs}
+        if cmd == "mapevents":
+            if self.events is not None:
+                self.events = args[0] == "1"
+            return {"ok": True}
         if cmd == "walk":
-            self.tile = (int(args[0]) // 40, int(args[1]) // 40)
-            self._portal()
+            to = (int(args[0]) // 40, int(args[1]) // 40)
+            if self.walk_cap is not None:
+                cap = self.walk_cap
+                to = tuple(a + max(-cap, min(cap, b - a)) for a, b in zip(self.tile, to))
+            self.tile = to
+            if self.events is not False:
+                self._portal()
             return {"ok": True, "path": True}
         if cmd == "attack":
             m = self.mobs.get(int(args[0]))
@@ -186,7 +212,11 @@ class FakeGame:
 
     def _portal(self):
         for p in self.maps[self.stage].portals.values():
-            if self.tile in p.zone and not any(self.alive(g) for g in p.dead):
+            if (
+                self.tile in p.zone
+                and not any(self.alive(g) for g in p.dead)
+                and all(self.alive(g) for g in p.alive)
+            ):
                 to = p.to_stage or self.stage
                 self.tile = self.maps[to].landings[p.to_tag][0]
                 if p.event == 20:
@@ -288,6 +318,106 @@ def test_an_exit_someone_else_opened_is_taken_without_a_fight():
         mgr._tick(1, run)  # the shortcut moved us
     assert game.tile == (15, 5)
     assert not [line for line in game.sent if line.startswith("attack")]
+
+
+def test_the_entrance_fires_after_the_navigator_left_map_events_off():
+    """Live 2026-10-09: the navigator's walk to the investigator switched map
+    events off, and the entrance zone did nothing until the user clicked."""
+    mgr, run, game, _ = make()
+    game.events = False
+    game.add_mob(33, 9002, 1, (16, 5))
+    with pytest.raises(_Moved):
+        mgr._tick(1, run)
+    assert game.stage == 42
+    assert "mapevents 1" in game.sent
+    assert game.events is False  # off again for the walks inside
+
+
+def test_a_walk_stopped_short_is_sent_again():
+    """Live 2026-10-09: 毒氣 hits stopped the walk to 凌霄閣's right portal 11
+    tiles short, and one click never got there."""
+    mgr, run, game, _ = make()
+    game.events, game.walk_cap = False, 2
+    game.stage, game.tile = 42, (1, 5)
+    with pytest.raises(_Moved):
+        mgr._tick(1, run)  # left group dead: the shortcut (7, 5) works
+    assert game.tile == (15, 5)
+    assert sum(line.startswith("walk ") for line in game.sent) >= 3
+
+
+def test_rooms_in_order_skip_the_ones_already_taken():
+    """凌霄閣 紫微垣: left, middle, right always in this order (user, 2026-10-09).
+    Back from a room, only the rooms after it are tried; after the last one the
+    hall's own monsters come next."""
+    maps = build_maps()
+    inside = maps[42]
+    left, right = inside.area_of((2, 5)), inside.area_of((15, 5))
+    inside.group_area.update({3: right, 4: right, 5: right})
+    inside.group_npcs.update({3: frozenset({9003}), 4: frozenset({9004}), 5: frozenset({9005})})
+    inside.portals.update(
+        {
+            30: Portal(30, left, ((2, 1),), frozenset(), frozenset({3}), False, None, 2),
+            31: Portal(31, left, ((5, 1),), frozenset({3}), frozenset({4}), False, None, 2),
+            32: Portal(32, left, ((8, 1),), frozenset({3, 4}), frozenset({5}), False, None, 2),
+        }
+    )
+    script = replace(
+        SCRIPT,
+        areas=(
+            Area("紫微垣", 42, 1, (FirstOpen((30, 31, 32)), Clear((1,))), floor="一層"),
+            Area("房間", 42, 2, ()),
+        ),
+    )
+    mgr, run, game, _ = make(script=script, maps=maps)
+    for h, npc in ((41, 9003), (42, 9004), (43, 9005)):
+        game.add_mob(h, npc, 1, (16, 5))
+
+    def back(dead_handle):
+        game.mobs[dead_handle]["dead"] = 1
+        del game.mobs[dead_handle]  # its body faded
+        game.stage, game.tile = 42, (2, 5)
+        game.sent.clear()
+        with pytest.raises(_Moved):
+            mgr._tick(1, run)
+        mgr._tick(1, run)  # the room: nothing to do, the next tick finds the hall again
+
+    game.stage, game.tile = 42, (2, 5)
+    with pytest.raises(_Moved):
+        mgr._tick(1, run)  # left room
+    back(41)
+    assert "walk 100 60" not in game.sent  # left room not tried again
+    back(42)
+    assert "walk 100 60" not in game.sent and "walk 220 60" not in game.sent
+    game.mobs[43]["dead"] = 1
+    del game.mobs[43]
+    game.add_mob(44, 9001, 1, (4, 5))  # the hall's monsters after the last room
+    game.stage, game.tile = 42, (2, 5)
+    game.sent.clear()
+    mgr._tick(1, run)
+    assert not [line for line in game.sent if line in ("walk 100 60", "walk 220 60", "walk 340 60")]
+    assert "attack 44" in game.sent
+
+
+def test_holding_walks_to_the_spawns_out_of_view():
+    """Live 2026-10-09: in 天市垣 it stood at the exit (104, 9) waiting for
+    monsters to respawn while the spawn points (113 / 125, 9) were out of view."""
+    maps = build_maps()
+    inside = maps[42]
+    right = inside.area_of((15, 5))
+    inside.group_area[3] = right
+    inside.group_npcs[3] = frozenset({9003})
+    inside.group_tiles[3] = [(17, 5)]
+    script = replace(
+        SCRIPT,
+        areas=(SCRIPT.areas[0], Area("右廳", 42, 2, (Hold((2,), 3), Enter(20)), floor="二層")),
+    )
+    mgr, run, game, _ = make(script=script, maps=maps)
+    game.view = 3
+    game.stage, game.tile = 42, (11, 5)
+    game.add_mob(41, 9002, 1, (16, 5))
+    with pytest.raises(_Moved):
+        mgr._tick(1, run)  # found and killed it, then the exit worked
+    assert "attack 41" in game.sent
 
 
 def test_without_the_mission_setting_the_investigator_is_skipped():

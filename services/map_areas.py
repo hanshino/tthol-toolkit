@@ -11,9 +11,15 @@ say which spawn groups must be all dead, or still alive, for it to work.
 Other conditions (map variables, missions, items) are only flagged: the client
 cannot read them.
 
-Tiles here are game tiles: x to the east, y to the north (map_placements
-tile_x / tile_y, the HP+416/+420 tile, `near` pixels / 40). The walk mask's
-row 0 is the north edge, so row = height - 1 - y.
+Tiles here are game tiles: x to the east, y to the north (the HP+416/+420
+tile, `near` pixels / 40). The walk mask's row 0 is the north edge, so
+row = height - 1 - y. Placements are read from raw_x / raw_y (pixels, y down
+from the north edge), not tile_y: tile_y = height - round(raw_y / 40) is one
+tile too far north whenever raw_y sits in the top half of its cell. Live
+2026-10-09: 凌霄閣's last exit (raw 4164, 3844) is (104, 8), tile_y says 9, and
+the character stood on (104, 9) without it firing; landings seen after a warp
+(杭州城 (29, 3) / (39, 108), a manor (11, 32)) all match the raw cell, tile_y
+is one north of each.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ _CMP = {
     4: lambda n, v: n >= v,
 }
 _WARP_OPS = (3, 9)  # A3: to a map and tag; A9: to a tag on this map
+TILE_PX = 40
 NEAR_PART = 2  # tiles searched around a point that sits on a blocked cell
 
 
@@ -83,6 +90,12 @@ class MapAreas:
                         if a >= 0:
                             return a
         return None
+
+    def walkable(self, tile: Tile) -> bool:
+        x, row = tile[0], self.height - 1 - tile[1]
+        return (
+            0 <= x < self.width and 0 <= row < self.height and self._part[row * self.width + x] >= 0
+        )
 
     def landing_area(self, tag: int) -> int | None:
         tiles = self.landings.get(tag) or []
@@ -143,14 +156,26 @@ def _connect(path: Path | None) -> sqlite3.Connection:
     return con
 
 
-def _landing_tiles(con, kind: str, stage: int) -> dict[int, list[Tile]]:
+def _cell(raw_x: int, raw_y: int, height: int) -> Tile:
+    return raw_x // TILE_PX, height - 1 - raw_y // TILE_PX
+
+
+def _height(con, kind: str, stage: int) -> int | None:
+    row = con.execute(
+        "SELECT height FROM map_walkability WHERE stage_kind = ? AND stage_id = ?",
+        (kind, stage),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _landing_tiles(con, kind: str, stage: int, height: int) -> dict[int, list[Tile]]:
     out: dict[int, list[Tile]] = {}
-    for tag, x, y in con.execute(
-        "SELECT tag_id, tile_x, tile_y FROM map_placements"
+    for tag, rx, ry in con.execute(
+        "SELECT tag_id, raw_x, raw_y FROM map_placements"
         " WHERE stage_kind = ? AND stage_id = ? AND category = 'trigger' ORDER BY id",
         (kind, stage),
     ):
-        out.setdefault(tag, []).append((x, y))
+        out.setdefault(tag, []).append(_cell(rx, ry, height))
     return out
 
 
@@ -168,13 +193,14 @@ def load_areas(kind: str, stage: int, db_path: Path | None = None) -> MapAreas |
             return None
         width, height, mask = row
         areas = MapAreas(kind, stage, width, height, _components(width, height, mask))
-        areas.landings = _landing_tiles(con, kind, stage)
+        areas.landings = _landing_tiles(con, kind, stage, height)
         zones: dict[int, list[Tile]] = {}
-        for cat, npc, ev, group, count, x, y in con.execute(
-            "SELECT category, npc_id, event_tag, spawn_group, spawn_count, tile_x, tile_y"
+        for cat, npc, ev, group, count, rx, ry in con.execute(
+            "SELECT category, npc_id, event_tag, spawn_group, spawn_count, raw_x, raw_y"
             " FROM map_placements WHERE stage_kind = ? AND stage_id = ? ORDER BY id",
             (kind, stage),
         ):
+            x, y = _cell(rx, ry, height)
             if cat == "arrival" and ev is not None:
                 zones.setdefault(ev, []).append((x, y))
             elif cat == "spawn" and group is not None and npc:
@@ -255,6 +281,9 @@ def landing_tiles(kind: str, stage: int, tag: int, db_path: Path | None = None) 
     """Trigger tiles of `tag` on map (kind, stage): where a portal to it lands."""
     con = _connect(db_path)
     try:
-        return _landing_tiles(con, kind, stage).get(tag, [])
+        height = _height(con, kind, stage)
+        if height is None:
+            return []
+        return _landing_tiles(con, kind, stage, height).get(tag, [])
     finally:
         con.close()

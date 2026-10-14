@@ -73,6 +73,8 @@ WALK_PER_TILE = 0.3  # walking time allowed per tile (plus 2 s)
 STAGE_EVERY = 0.5  # re-read the map id this often inside step loops
 BODIES_MAX = 15.0  # a portal works only once the bodies of its groups faded
 STEP_OFF = 4  # tiles to step away from a portal zone before walking onto it
+ARM_TILES = 5  # map events on this close to a portal zone (navigator.ARM_TILES)
+WALK_STALL = 3  # reads (0.5 s apart) without moving: click the portal tile again
 SWEEP_WAIT = 8.0  # per spawn point, for a monster to show up
 CLEAR_MAX = 600.0  # one Clear step longer than this: something is wrong
 HOLD_IDLE = 90.0  # nothing to fight this long while holding: go on (try the exit)
@@ -111,6 +113,7 @@ class _Run:
         self.rounds = 0  # passes of the current area without a move
         self.shortcuts: set[tuple[int, int]] = set()  # (stage, event) already tried
         self.talked: set[int] = set()  # id() of entry / finish Talk steps done
+        self.opened: dict[int, int] = {}  # id() of a FirstOpen -> its portals taken
         self.inside = False  # reached a dungeon map in this run
         self.exiting = False  # stepping on the last exit
         self.walking_in = False  # ran the entry steps: the next dungeon map is a fresh entry
@@ -122,6 +125,7 @@ class _Run:
         self.followers: set[tuple[int, int]] = set()
         self.followers_at = -FOLLOWERS_EVERY
         self.chests_before: dict[int, int] | None = None
+        self.events_ok = True  # the hook has `mapevents`
         self.started: float | None = None
         self.ended: str | None = None
         self.outcome: str | None = None
@@ -693,8 +697,15 @@ class DungeonManager:
         elif isinstance(step, Enter):
             self._enter(pid, run, step.event, stage, part, areas)
         elif isinstance(step, FirstOpen):
-            for event in step.events:
-                self._enter(pid, run, event, stage, part, areas, tries=1)
+            # The rooms open in order: one taken means the ones before it are
+            # done. Only a restart mid-run tries them all once again.
+            start = run.opened.get(id(step), 0)
+            for i, event in enumerate(step.events[start:], start):
+                try:
+                    self._enter(pid, run, event, stage, part, areas, tries=1)
+                except _Moved:
+                    run.opened[id(step)] = i + 1
+                    raise
         elif isinstance(step, Shortcut):
             self._shortcut(pid, run, step.event, stage, part, areas)
         elif isinstance(step, Hold):
@@ -866,25 +877,78 @@ class DungeonManager:
         _st, _objs, here = self._look(pid, run, stage, part, areas)
         zone = sorted(portal.zone, key=lambda t: max(abs(t[0] - here[0]), abs(t[1] - here[1])))
         self._set_step(run, f"{run.area.name if run.area else ''}：走上傳點 {event}")
-        for tile in zone[:tries]:
-            if max(abs(tile[0] - here[0]), abs(tile[1] - here[1])) <= 2:
-                away = self._step_off(tile, here, part, areas)
-                if away is not None:
-                    actor.walk(away)
-            far = max(abs(tile[0] - here[0]), abs(tile[1] - here[1]))
-            actor.walk(tile, timeout=min(20.0, 2.0 + far * WALK_PER_TILE))
-            end = self._clock() + ENTER_SETTLE
-            last_dialog = 0.0
-            while self._clock() < end:
-                self._wait(run, 0.3)
-                self._look(pid, run, stage, part, areas)  # raises _Moved once it worked
-                if self._clock() - last_dialog >= 1.0:
-                    last_dialog = self._clock()
-                    d = self._cmd(pid, run, "dialog")
-                    if d.get("open") and not d.get("options"):
-                        self._cmd(pid, run, "next")  # a "not yet" message: close it
-            _st, _objs, here = self._look(pid, run, stage, part, areas)
+        try:
+            for tile in zone[:tries]:
+                if max(abs(tile[0] - here[0]), abs(tile[1] - here[1])) <= 2:
+                    away = self._step_off(tile, here, part, areas)
+                    if away is not None:
+                        self._map_events(pid, run, False)
+                        actor.walk(away)
+                self._walk_in(pid, run, tile, portal.zone, stage, part, areas)
+                end = self._clock() + ENTER_SETTLE
+                last_dialog = 0.0
+                while self._clock() < end:
+                    self._wait(run, 0.3)
+                    self._look(pid, run, stage, part, areas)  # raises _Moved once it worked
+                    if self._clock() - last_dialog >= 1.0:
+                        last_dialog = self._clock()
+                        d = self._cmd(pid, run, "dialog")
+                        if d.get("open") and not d.get("options"):
+                            self._cmd(pid, run, "next")  # a "not yet" message: close it
+                _st, _objs, here = self._look(pid, run, stage, part, areas)
+        finally:
+            self._map_events(pid, run, False)  # no zone fires on the walks after this
         return False
+
+    def _walk_in(self, pid, run, tile: Tile, cells, stage, part, areas) -> None:
+        """Walk onto a portal tile the way the navigator does (_Run._walk_to):
+        map events off on the way, on ARM_TILES from the zone so the step in
+        fires it, and the target clicked again when a hit (毒氣) stopped the walk
+        short. Raises _Moved once the portal worked."""
+        actor = self._actor(pid, run)
+        _st, _objs, here = self._look(pid, run, stage, part, areas)
+
+        def close(pos: Tile) -> bool:
+            return min(max(abs(pos[0] - c[0]), abs(pos[1] - c[1])) for c in cells) <= ARM_TILES
+
+        armed = close(here)
+        self._map_events(pid, run, armed)
+        actor.walk(tile, wait=False)
+        far = max(abs(tile[0] - here[0]), abs(tile[1] - here[1]))
+        end = self._clock() + min(30.0, 4.0 + far * WALK_PER_TILE)
+        still = 0
+        while self._clock() < end:
+            self._wait(run, 0.5)
+            last = here
+            _st, _objs, here = self._look(pid, run, stage, part, areas)
+            if here in cells:
+                return
+            if (
+                not areas.walkable(tile)
+                and max(abs(here[0] - tile[0]), abs(here[1] - tile[1])) <= 1
+            ):
+                return  # a zone cell in a wall: beside it is as far as a walk goes
+            if not armed and close(here):
+                armed = True
+                self._map_events(pid, run, True)
+                actor.walk(tile, wait=False)  # walk on into the zone with events on
+                still = 0
+                continue
+            still = still + 1 if here == last else 0
+            if still >= WALK_STALL:
+                actor.walk(tile, wait=False)
+                still = 0
+
+    def _map_events(self, pid: int, run: _Run, on: bool) -> None:
+        """The client's map event switch (hook `mapevents`): zones fire only while
+        it is 1. The navigator leaves it 0 after its walks, a mouse click sets it
+        (live 2026-10-09: the entrance zone did nothing until the user clicked)."""
+        if not run.events_ok:
+            return
+        r = self._cmd(pid, run, f"mapevents {1 if on else 0}")
+        if not r.get("ok") and r.get("error") != "busy":
+            run.events_ok = False  # an older hook without the command
+            log.info("dungeon pid=%d no mapevents: %s", pid, r.get("error"))
 
     def _step_off(self, tile: Tile, here: Tile, part, areas: MapAreas) -> Tile | None:
         """A tile STEP_OFF away from a zone tile, in this area, on our side if we can."""
@@ -915,7 +979,7 @@ class DungeonManager:
         boss = self._npcs_of((step.until_dead,), areas)
         mobs = self._npcs_of(step.fight, areas)
         elites = boss | self._elites(step.fight, areas)
-        seen_boss = False
+        seen_boss = swept = False
         start = idle_since = self._clock()
         while self._clock() - start < HOLD_MAX:
             st, objs, _tile = self._look(pid, run, stage, part, areas)
@@ -932,8 +996,17 @@ class DungeonManager:
                 )
                 self._fight(pid, run, st, objs, live, elites)
                 idle_since = self._clock()
+                swept = False
                 self._wait(run, STEP)
                 continue
+            if not swept:
+                # The hall is wider than the view (天市垣: spawns at x 113 and
+                # 125, the exit at 104; live 2026-10-09 it stood at the exit
+                # waiting): look at the spawn points before waiting.
+                swept = True
+                groups = (*step.fight, step.until_dead)
+                if self._sweep(pid, run, groups, mobs | boss, stage, part, areas):
+                    continue
             if self._clock() - idle_since >= HOLD_IDLE:
                 return  # nothing here for a while: someone may have killed the boss
             self._set_step(run, "等怪重生")

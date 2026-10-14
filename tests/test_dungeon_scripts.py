@@ -70,3 +70,16 @@ def test_entry_and_finish_are_on_the_entry_map(dungeon):
         for event in _portals(step):
             p = areas.portals[event]
             assert p.to_stage in dungeon.stages
+
+
+def test_placements_come_from_raw_pixels_not_tile_y():
+    """Live 2026-10-09: tile_y put 凌霄閣's last exit one tile north, and the
+    character stood on (104, 9) without it firing."""
+    areas = load_areas("stage", 42)
+    assert areas.portals[20].zone == ((104, 8), (104, 7))
+
+
+def test_a_landing_is_where_the_game_puts_the_character():
+    """Landing seen live after the 杭州城 exit (navigator log): (29, 3); tile_y says (29, 4)."""
+    areas = load_areas("stage", 231)
+    assert (29, 3) in [t for tiles in areas.landings.values() for t in tiles]
