@@ -1,7 +1,6 @@
 """Tests for scripts/db_release.py: pinning tthol.sqlite to a release asset."""
 
 import hashlib
-import io
 import json
 import sys
 from datetime import date
@@ -33,60 +32,64 @@ def _lock(tmp_path, content=NEW, tag="db-2026-10-01"):
 def _serving(content):
     urls = []
 
-    def opener(url, timeout):
-        urls.append(url)
-        return io.BytesIO(content)
+    def fetch(lock, dest):
+        urls.append((lock["tag"], lock["asset"]))
+        dest.write_bytes(content)
 
-    return opener, urls
+    return fetch, urls
 
 
 def test_pull_downloads_when_missing(tmp_path):
     db = tmp_path / "tthol.sqlite"
-    opener, urls = _serving(NEW)
-    assert pull(db_path=db, lock_path=_lock(tmp_path), opener=opener) == "downloaded"
+    fetch, urls = _serving(NEW)
+    assert pull(db_path=db, lock_path=_lock(tmp_path), fetch=fetch) == "downloaded"
     assert db.read_bytes() == NEW
-    assert urls == [
-        "https://github.com/hanshino/tthol-toolkit/releases/download/db-2026-10-01/tthol.sqlite"
-    ]
+    assert urls == [("db-2026-10-01", "tthol.sqlite")]
     assert not (tmp_path / "tthol.sqlite.download").exists()
 
 
 def test_pull_skips_when_current(tmp_path):
     db = tmp_path / "tthol.sqlite"
     db.write_bytes(NEW)
-    opener, urls = _serving(NEW)
-    assert pull(db_path=db, lock_path=_lock(tmp_path), opener=opener) == "current"
+    fetch, urls = _serving(NEW)
+    assert pull(db_path=db, lock_path=_lock(tmp_path), fetch=fetch) == "current"
     assert urls == []
 
 
 def test_pull_refuses_to_overwrite_an_unpublished_db(tmp_path):
     db = tmp_path / "tthol.sqlite"
     db.write_bytes(OLD)
-    opener, urls = _serving(NEW)
+    fetch, urls = _serving(NEW)
     with pytest.raises(DbReleaseError, match="differs"):
-        pull(db_path=db, lock_path=_lock(tmp_path), opener=opener)
+        pull(db_path=db, lock_path=_lock(tmp_path), fetch=fetch)
     assert db.read_bytes() == OLD
     assert urls == []
-    pull(force=True, db_path=db, lock_path=_lock(tmp_path), opener=opener)
+    pull(force=True, db_path=db, lock_path=_lock(tmp_path), fetch=fetch)
     assert db.read_bytes() == NEW
 
 
 def test_corrupt_download_keeps_the_existing_file(tmp_path):
     db = tmp_path / "tthol.sqlite"
     db.write_bytes(OLD)
-    opener, _ = _serving(b"truncated")
+    fetch, _ = _serving(b"truncated")
     with pytest.raises(DbReleaseError, match="sha256 mismatch"):
-        pull(force=True, db_path=db, lock_path=_lock(tmp_path), opener=opener)
+        pull(force=True, db_path=db, lock_path=_lock(tmp_path), fetch=fetch)
     assert db.read_bytes() == OLD
     assert not (tmp_path / "tthol.sqlite.download").exists()
 
 
-def test_network_failure_is_reported(tmp_path):
-    def opener(_url, timeout):
-        raise OSError("HTTP Error 404: Not Found")
+def test_download_failure_is_reported(tmp_path, monkeypatch):
+    calls = []
 
-    with pytest.raises(DbReleaseError, match="release published"):
-        pull(db_path=tmp_path / "tthol.sqlite", lock_path=_lock(tmp_path), opener=opener)
+    def gh(*args):
+        calls.append(args)
+        return db_release.subprocess.CompletedProcess(args, 1, "", "release not found")
+
+    monkeypatch.setattr(db_release, "_gh", gh)
+    with pytest.raises(DbReleaseError, match="release not found"):
+        pull(db_path=tmp_path / "tthol.sqlite", lock_path=_lock(tmp_path))
+    assert calls[0][:5] == ("release", "download", "db-2026-10-01", "--repo", db_release.REPO)
+    assert not (tmp_path / "tthol.sqlite.download").exists()
 
 
 def test_next_tag_appends_a_counter_for_same_day_releases():

@@ -68,6 +68,8 @@ jobs:
 
       - name: Fetch game DB
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: uv run scripts/db_release.py pull
 
       - name: PyInstaller build

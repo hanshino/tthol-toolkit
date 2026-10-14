@@ -5,8 +5,8 @@ repo only tracks db.lock.json, which pins the DB version this commit uses
     uv run scripts/db_release.py pull [--force]   download the pinned DB (skips if already current)
     uv run scripts/db_release.py publish          upload the working DB as a new release, rewrite the lock
 
-`pull` uses the public download URL and needs no token; `publish` needs a
-logged-in gh CLI. DB releases are tagged db-YYYY-MM-DD and published as
+Both need the gh CLI with access to the (private) repo: a logged-in gh
+locally, GH_TOKEN in CI. DB releases are tagged db-YYYY-MM-DD and published as
 prereleases that are never marked latest, so they do not trigger release.yml
 (which builds on v* tags) and do not replace the app download on the
 Releases page.
@@ -20,7 +20,6 @@ import json
 import os
 import subprocess
 import sys
-import urllib.request
 from datetime import date
 from pathlib import Path
 
@@ -50,11 +49,28 @@ def read_lock(path: Path = LOCK_PATH) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def release_url(lock: dict) -> str:
-    return f"https://github.com/{REPO}/releases/download/{lock['tag']}/{lock['asset']}"
+def gh_fetch(lock: dict, dest: Path) -> None:
+    """Download the pinned asset to dest with the gh CLI (works on a private repo)."""
+    r = _gh(
+        "release",
+        "download",
+        lock["tag"],
+        "--repo",
+        REPO,
+        "--pattern",
+        lock["asset"],
+        "--output",
+        str(dest),
+        "--clobber",
+    )
+    if r.returncode != 0:
+        raise DbReleaseError(
+            f"Download of {lock['tag']} failed: {(r.stderr or r.stdout).strip()}"
+            " (is the release published, and is gh logged in?)"
+        )
 
 
-def download_locked(lock: dict, dest: Path, opener=urllib.request.urlopen) -> None:
+def download_locked(lock: dict, dest: Path, fetch=gh_fetch) -> None:
     """Download the pinned DB to dest; replace dest only once the sha256 matches.
 
     Writes to a temp file first, so a failed or corrupt download never damages
@@ -62,15 +78,7 @@ def download_locked(lock: dict, dest: Path, opener=urllib.request.urlopen) -> No
     """
     tmp = dest.with_name(dest.name + ".download")
     try:
-        try:
-            resp = opener(release_url(lock), timeout=60)
-        except OSError as exc:
-            raise DbReleaseError(
-                f"Download of {lock['tag']} failed: {exc} (is the release published?)"
-            ) from exc
-        with resp, open(tmp, "wb") as f:
-            while chunk := resp.read(CHUNK):
-                f.write(chunk)
+        fetch(lock, tmp)
         actual = sha256_file(tmp)
         if actual != lock["sha256"]:
             raise DbReleaseError(f"sha256 mismatch: expected {lock['sha256']}, got {actual}")
@@ -80,7 +88,7 @@ def download_locked(lock: dict, dest: Path, opener=urllib.request.urlopen) -> No
 
 
 def pull(
-    force: bool = False, db_path: Path = DB_PATH, lock_path: Path = LOCK_PATH, opener=None
+    force: bool = False, db_path: Path = DB_PATH, lock_path: Path = LOCK_PATH, fetch=None
 ) -> str:
     """Bring db_path to the pinned version. Returns "current" or "downloaded"."""
     lock = read_lock(lock_path)
@@ -98,7 +106,7 @@ def pull(
             f"To discard it and take the pinned version, add --force."
         )
     print(f"Downloading {lock['tag']} ({lock['size'] / 1024 / 1024:.1f} MB)...")
-    download_locked(lock, db_path, **({"opener": opener} if opener else {}))
+    download_locked(lock, db_path, **({"fetch": fetch} if fetch else {}))
     print(f"{DB_FILE} is now {lock['tag']}.")
     return "downloaded"
 
