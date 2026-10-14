@@ -209,9 +209,9 @@ class FakeGuard:
 def make(game=None, combat=None, config=None, hp_items=(24007,)):
     game = game or FakeGame()
     store = GuardStore()
-    store.save("寒江孤影", GuardConfig(potion=GuardPotionRule(hp_items=list(hp_items))))
-    store.save_section("寒江孤影", COMBAT_SECTION, combat or CombatRule(basic=True))
-    store.save_section("寒江孤影", TOWER_SECTION, config or TowerConfig())
+    store.save("測試戌", GuardConfig(potion=GuardPotionRule(hp_items=list(hp_items))))
+    store.save_section("測試戌", COMBAT_SECTION, combat or CombatRule(basic=True))
+    store.save_section("測試戌", TOWER_SECTION, config or TowerConfig())
     clock = {"t": 0.0}
 
     def read_locked(pid, fn):
@@ -231,7 +231,7 @@ def make(game=None, combat=None, config=None, hp_items=(24007,)):
     mgr = TowerManager(
         guard=guard,
         read_locked=read_locked,
-        character_name=lambda pid: "寒江孤影",
+        character_name=lambda pid: "測試戌",
         channel=game,
         store=store,
         attack_skills=lambda: DEFS,
@@ -242,9 +242,9 @@ def make(game=None, combat=None, config=None, hp_items=(24007,)):
         leave_game=lambda pid: game.leave(),
     )
     run = _Run(
-        "寒江孤影",
-        store.load_section("寒江孤影", COMBAT_SECTION, CombatRule),
-        store.load_section("寒江孤影", TOWER_SECTION, TowerConfig),
+        "測試戌",
+        store.load_section("測試戌", COMBAT_SECTION, CombatRule),
+        store.load_section("測試戌", TOWER_SECTION, TowerConfig),
     )
     with mgr._lock:
         mgr._runs[1] = run
@@ -839,7 +839,7 @@ def test_old_records_without_done_count_any_cleared_floor():
 
     mgr, run, game, _ = make()
     today = _time.strftime("%Y-%m-%d", _time.localtime(1000.0))
-    mgr._store.save_section("寒江孤影", RECORD_SECTION, TowerRecord(date=today, top_floor=3))
+    mgr._store.save_section("測試戌", RECORD_SECTION, TowerRecord(date=today, top_floor=3))
     assert mgr.done_today(1)
     assert mgr.summary(1).state == "done_today"
 
@@ -853,21 +853,21 @@ def test_marking_done_by_hand_keeps_the_floors_and_can_be_taken_back():
     today = _time.strftime("%Y-%m-%d", _time.localtime(1000.0))
     # Finished in game after the toolkit's run stopped at floor 29.
     mgr._store.save_section(
-        "寒江孤影", RECORD_SECTION, TowerRecord(date=today, top_floor=29, done=False)
+        "測試戌", RECORD_SECTION, TowerRecord(date=today, top_floor=29, done=False)
     )
-    assert not mgr.done_for("寒江孤影")
-    mgr.mark_done("寒江孤影", True)
-    assert mgr.done_for("寒江孤影")
-    rec = mgr._store.load_section("寒江孤影", RECORD_SECTION, TowerRecord)
+    assert not mgr.done_for("測試戌")
+    mgr.mark_done("測試戌", True)
+    assert mgr.done_for("測試戌")
+    rec = mgr._store.load_section("測試戌", RECORD_SECTION, TowerRecord)
     assert rec.top_floor == 29 and rec.date == today
-    mgr.mark_done("寒江孤影", False)
-    assert not mgr.done_for("寒江孤影")
+    mgr.mark_done("測試戌", False)
+    assert not mgr.done_for("測試戌")
 
 
 def test_marking_done_with_no_run_today_writes_today():
     mgr, run, game, _ = make()
-    mgr.mark_done("寒江孤影", True)
-    assert mgr.done_for("寒江孤影") and mgr.summary(1).state == "done_today"
+    mgr.mark_done("測試戌", True)
+    assert mgr.done_for("測試戌") and mgr.summary(1).state == "done_today"
 
 
 # ---- 狐光靈珠 skips at 燕飄風 ----------------------------------------------------
@@ -1009,7 +1009,7 @@ def test_no_skip_once_a_stage_is_started_today():
     game = YanGame(orbs=3)
     mgr, run = make_yan(game, skip_to=3)
     today = _time.strftime("%Y-%m-%d", _time.localtime(1000.0))
-    mgr._store.save_section("寒江孤影", RECORD_SECTION, TowerRecord(date=today, top_floor=5))
+    mgr._store.save_section("測試戌", RECORD_SECTION, TowerRecord(date=today, top_floor=5))
     mgr._tick(1, run)
     assert 65807 not in game.chosen and game.stage == 1704
 
@@ -1236,7 +1236,7 @@ def test_box_potions_get_auto_use_unless_the_user_set_a_rule():
     periodic = ItemFact("丹", True, True, True, None, None)
     plain = ItemFact("回血", True, True, False, None, None)
     mgr._item_facts = lambda i: {1: periodic, 2: periodic, 3: plain}.get(i)
-    mgr._store.save_items("寒江孤影", ItemRules(items={2: ItemRule(action="store")}))
+    mgr._store.save_items("測試戌", ItemRules(items={2: ItemRule(action="store")}))
     assert mgr._auto_use(1, run, [1, 2, 3, 4]) == [1]
-    rules = mgr._store.load_items("寒江孤影").items
+    rules = mgr._store.load_items("測試戌").items
     assert rules[1].action == "use_periodic" and rules[2].action == "store" and 3 not in rules

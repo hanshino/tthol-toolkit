@@ -11,7 +11,7 @@ def test_callbacks_update_state():
     sess._on_state("LOCATED")
     sess._on_stats(
         [
-            ("角色名稱", "無塵"),
+            ("角色名稱", "測試酉"),
             ("等級", 20),
             ("血量", 100),
             ("最大血量", 120),
@@ -27,7 +27,7 @@ def test_callbacks_update_state():
     row = sess.row()
     assert row is not None
     assert row.link == "ok"
-    assert row.name == "無塵"
+    assert row.name == "測試酉"
     assert row.vitals.hp == 100
     assert row.vitals.hp_max == 120
     assert row.position.x == 1

@@ -98,7 +98,7 @@ def test_keep_active_starts_once_when_located_and_stops_when_gone(
     wm.set_keep_active(keep)
     wm.world_snapshot()
     assert keep.started == []  # not located yet: no window to keep
-    sess.name = "寒江孤影"
+    sess.name = "測試戌"
     wm.world_snapshot()
     wm.world_snapshot()
     assert keep.started == [7]  # once: a manual stop afterwards sticks
@@ -113,21 +113,21 @@ def test_another_character_on_the_window_makes_modules_forget(mock_find, mock_se
     mock_find.return_value = [{"pid": 7}]
     sess = mock_sess_cls.return_value
     sess.row.return_value = None
-    sess.link, sess.last_error, sess.name = "weak", None, "寒江孤影"
+    sess.link, sess.last_error, sess.name = "weak", None, "測試戌"
     wm = WorkerManager()
     forgot = []
     wm.add_forget(forgot.append)
     wm.world_snapshot()
     sess.name = ""  # logged out, at the character select: no switch yet
     wm.world_snapshot()
-    sess.name = "寒江孤影"  # the same one back: nothing to forget
+    sess.name = "測試戌"  # the same one back: nothing to forget
     wm.world_snapshot()
     sess.name = ";w9w"  # one garbage read mid-login
     wm.world_snapshot()
-    sess.name = "寒江孤影"
+    sess.name = "測試戌"
     wm.world_snapshot()
     assert forgot == []
-    sess.name = "赫斯提雅"
+    sess.name = "測試辛"
     wm.world_snapshot()
     wm.world_snapshot()
     assert forgot == [7]
@@ -143,13 +143,13 @@ def test_a_dispatch_confirmed_switch_is_not_forgotten_again(mock_find, mock_sess
     mock_find.return_value = [{"pid": 7}]
     sess = mock_sess_cls.return_value
     sess.row.return_value = None
-    sess.link, sess.last_error, sess.name = "weak", None, "寒江孤影"
+    sess.link, sess.last_error, sess.name = "weak", None, "測試戌"
     wm = WorkerManager()
     forgot = []
     wm.add_forget(forgot.append)
     wm.world_snapshot()
-    sess.name = "赫斯提雅"
-    wm.confirm_character(7, "赫斯提雅")  # the dispatch logged it in
+    sess.name = "測試辛"
+    wm.confirm_character(7, "測試辛")  # the dispatch logged it in
     assert forgot == [7]
     wm.world_snapshot()
     wm.world_snapshot()
@@ -176,14 +176,14 @@ def test_family_is_asked_once_per_login_where_the_hook_has_it(
     wm.set_hook_caps(caps)
     wm.set_family_query(lambda pid: asked.append(pid) or {"ok": True})
     wm.world_snapshot()
-    sess.name = "寒江孤影"
+    sess.name = "測試戌"
     wm.world_snapshot()
     assert asked == []  # this hook has no `family`
     feats["now"] = ["chat", "family"]
     wm.world_snapshot()
     wm.world_snapshot()
     assert asked == [7]  # once, not polled
-    sess.name = "赫斯提雅"
+    sess.name = "測試辛"
     wm.world_snapshot()
     wm.world_snapshot()  # a new name is trusted on its second read
     assert asked == [7, 7]  # a new login on the window

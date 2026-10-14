@@ -72,7 +72,7 @@ def test_verify_structure_rejects_struct_without_name():
 
 
 def test_verify_structure_accepts_struct_with_valid_big5_name():
-    pm = FakePm(_NORMAL_INTS, name="奧黑比呂".encode("big5"))
+    pm = FakePm(_NORMAL_INTS, name="測試丁".encode("big5"))
     assert verify_structure(pm, 0, _FIELDS) >= 0.8
 
 
@@ -88,7 +88,7 @@ def test_verify_structure_shifted_rejects_struct_without_name():
 
 
 def test_verify_structure_shifted_accepts_struct_with_valid_big5_name():
-    pm = FakePm(_SHIFTED_INTS, name="晨曦破空".encode("big5"))
+    pm = FakePm(_SHIFTED_INTS, name="測試戊".encode("big5"))
     assert verify_structure_shifted(pm, 0, _FIELDS) >= 0.8
 
 
@@ -136,11 +136,11 @@ def test_verify_structure_shifted_accepts_pure_numeric_name():
 # until the current value falls back under the max.
 def test_verify_structure_accepts_current_above_max():
     ints = {**_NORMAL_INTS, 0: 53764, 4: 48877, 8: 6124, 12: 6170}
-    pm = FakePm(ints, name="晨曦破空".encode("big5"))
+    pm = FakePm(ints, name="測試戊".encode("big5"))
     assert verify_structure(pm, 0, _FIELDS) >= 0.8
 
 
 def test_verify_structure_rejects_current_far_above_max():
     ints = {**_NORMAL_INTS, 0: 9000, 4: 1000}
-    pm = FakePm(ints, name="晨曦破空".encode("big5"))
+    pm = FakePm(ints, name="測試戊".encode("big5"))
     assert verify_structure(pm, 0, _FIELDS) == 0.0

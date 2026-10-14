@@ -80,7 +80,7 @@ BANK_COMMANDS = ("warehouse", "bank", "bankin", "bankout")
 STORE_MAX = 255  # most one hook `store` moves
 SUMMON_COMMANDS = ("petsummon", "petdismiss")
 STACK = 200  # most a bag stack holds (the snapshots never show more): one buy at most this many
-# Slots: the bag holds 40 (the fullest snapshot, 止戰詩園 2026-10-02), the pet bag 8 (user).
+# Slots: the bag holds 40 (the fullest snapshot, 測試己 2026-10-02), the pet bag 8 (user).
 BAG_SLOTS = 40
 PET_SLOTS = 8
 MAX_STOPS = 3
@@ -89,7 +89,7 @@ OPEN_WAIT = 20.0  # talk -> shop window
 CONFIRM_WAIT = 3.0  # a sale / buy / put showing up in the bag
 # The warehouse list fills a moment after the window opens (the server sends
 # it then): read at once, a warehouse not opened since the game started read
-# empty and a withdraw found nothing (live 2026-10-07, 晨曦破空). Read until two
+# empty and a withdraw found nothing (live 2026-10-07, 測試戊). Read until two
 # reads agree, no sooner than WAREHOUSE_SETTLE; an empty one waits out
 # WAREHOUSE_WAIT before it counts as empty.
 WAREHOUSE_SETTLE = 0.8
@@ -1132,7 +1132,7 @@ class _Trip:
         r = self.cmd("closepanel")
         if not r.get("ok") and r.get("error") == "no window open":
             # The hook's warehouse flag can stay set with no window on screen
-            # (live 2026-10-07, 晨曦破空): closepanel's word wins.
+            # (live 2026-10-07, 測試戊): closepanel's word wins.
             log.info(
                 "closepanel: no window open, though %s read open", left, extra={"cat": "supply"}
             )

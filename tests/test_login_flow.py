@@ -224,32 +224,32 @@ def flow_for(client):
 
 
 def secrets(
-    character="債務居士", username="acct1", password="pw1", protect=None, server="飛雁山莊(花)"
+    character="測試甲", username="test123", password="pw1", protect=None, server="飛雁山莊(花)"
 ):
     return LoginSecrets(character, username, server, password, protect)
 
 
-ACCOUNTS = {"acct1": ("pw1", None, ["", "債務居士", "酷覓星"]), "acct2": ("pw2", "pp2", ["阿克婭"])}
+ACCOUNTS = {"test123": ("pw1", None, ["", "測試甲", "測試壬"]), "acct2": ("pw2", "pp2", ["測試寅"])}
 
 
 def test_logs_in_and_locates_the_character():
     client = FakeClient(ACCOUNTS, stale_account=11)
     r = flow_for(client).login(1, secrets())
     assert r.ok, r
-    assert client.kind == "game" and client.character_name(1) == "債務居士"
-    assert client.server == 0 and client.texts["acct"] == "acct1"  # the old account cleared first
+    assert client.kind == "game" and client.character_name(1) == "測試甲"
+    assert client.server == 0 and client.texts["acct"] == "test123"  # the old account cleared first
     assert client.rescans >= 1
 
 
 def test_protect_password_is_typed():
     client = FakeClient(ACCOUNTS)
-    r = flow_for(client).login(1, secrets("阿克婭", "acct2", "pw2", protect="pp2"))
+    r = flow_for(client).login(1, secrets("測試寅", "acct2", "pw2", protect="pp2"))
     assert r.ok, r
 
 
 def test_protect_asked_but_not_stored_fails():
     client = FakeClient(ACCOUNTS)
-    r = flow_for(client).login(1, secrets("阿克婭", "acct2", "pw2"))
+    r = flow_for(client).login(1, secrets("測試寅", "acct2", "pw2"))
     assert not r.ok and r.reason == "protect"
 
 
@@ -263,7 +263,7 @@ def test_wrong_password_is_tried_once():
 def test_character_not_on_the_account_goes_back_to_login():
     client = FakeClient(ACCOUNTS)
     r = flow_for(client).login(1, secrets(character="不存在"))
-    assert not r.ok and r.reason == "no-character" and "債務居士" in r.detail
+    assert not r.ok and r.reason == "no-character" and "測試甲" in r.detail
     assert client.kind == "login"
 
 
@@ -279,20 +279,20 @@ def test_ad_box_after_the_slot_click_is_closed():
 
 
 def test_picks_up_at_character_select():
-    client = FakeClient({"acct1": ACCOUNTS["acct1"]}, kind="select")
+    client = FakeClient({"test123": ACCOUNTS["test123"]}, kind="select")
     r = flow_for(client).login(1, secrets())
     assert r.ok and not client.typed  # nothing typed: it was already past 帳密
 
 
 def test_someone_else_in_game_is_logged_out_first():
     client = FakeClient(ACCOUNTS, kind="game", in_game_as="路人甲")
-    client.user = "acct1"
+    client.user = "test123"
     r = flow_for(client).login(1, secrets())
-    assert r.ok and client.character_name(1) == "債務居士"
+    assert r.ok and client.character_name(1) == "測試甲"
 
 
 def test_already_in_game_as_the_character():
-    client = FakeClient(ACCOUNTS, kind="game", in_game_as="債務居士")
+    client = FakeClient(ACCOUNTS, kind="game", in_game_as="測試甲")
     r = flow_for(client).login(1, secrets())
     assert r.ok and not client.clicks
 
@@ -311,9 +311,9 @@ def test_a_name_that_never_matches_fails():
 
 
 def test_logout_from_game_and_from_select():
-    client = FakeClient(ACCOUNTS, kind="game", in_game_as="債務居士")
+    client = FakeClient(ACCOUNTS, kind="game", in_game_as="測試甲")
     assert flow_for(client).logout(1) and client.kind == "login"
-    client = FakeClient({"acct1": ACCOUNTS["acct1"]}, kind="select")
+    client = FakeClient({"test123": ACCOUNTS["test123"]}, kind="select")
     assert flow_for(client).logout(1) and client.kind == "login"
 
 
@@ -333,7 +333,7 @@ def test_a_disconnect_right_after_entering_logs_in_again():
     notes = []
     r = flow_for(client).login(1, secrets(), note=notes.append)
     assert r.ok, r
-    assert "連線中斷，重新登入" in notes and client.character_name(1) == "債務居士"
+    assert "連線中斷，重新登入" in notes and client.character_name(1) == "測試甲"
 
 
 def test_disconnects_beyond_one_fail_the_login():
@@ -344,7 +344,7 @@ def test_disconnects_beyond_one_fail_the_login():
 
 
 def test_an_ordinary_box_in_game_is_just_closed():
-    client = FakeClient(ACCOUNTS, kind="game", in_game_as="債務居士")
+    client = FakeClient(ACCOUNTS, kind="game", in_game_as="測試甲")
     client.game_box = "info"
     flow = flow_for(client)
     assert flow.dismiss(1) == "closed" and client.kind == "game"
@@ -354,6 +354,6 @@ def test_an_ordinary_box_in_game_is_just_closed():
 
 
 def test_logout_under_a_disconnect_box():
-    client = FakeClient(ACCOUNTS, kind="game", in_game_as="債務居士")
+    client = FakeClient(ACCOUNTS, kind="game", in_game_as="測試甲")
     client.game_box = "drop"
     assert flow_for(client).logout(1) and client.kind == "login"

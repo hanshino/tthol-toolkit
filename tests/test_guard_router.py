@@ -12,7 +12,7 @@ async def client(tmp_path):
         read_locked=lambda pid, fn: (
             (40, 100, 5, 10) if fn is read_vitals else ({24008: 3}, {24206: 9})
         ),
-        character_name=lambda pid: "寒江孤影" if pid == 1 else None,
+        character_name=lambda pid: "測試戌" if pid == 1 else None,
         store=GuardStore(),
         potions=lambda: {24008: Potion("瓊丹妙露", hp=20, hp_share=True)},
         item_facts={
@@ -30,7 +30,7 @@ async def test_status_defaults(client):
     body = (await client.get("/api/characters/1/guard")).json()
     assert body["running"] is False
     assert body["hook_cmd"] is False
-    assert body["character"] == "寒江孤影"
+    assert body["character"] == "測試戌"
     assert body["config"]["potion"]["hp_items"] == []
     assert body["vitals"] == {"hp": 40, "hp_max": 100, "mp": 5, "mp_max": 10}
 
@@ -80,7 +80,7 @@ async def test_potions(client):
 
 async def test_item_rules_round_trip_and_view(client):
     body = (await client.get("/api/characters/1/item-rules")).json()
-    assert body["character"] == "寒江孤影" and body["rules"] == {"items": {}}
+    assert body["character"] == "測試戌" and body["rules"] == {"items": {}}
     assert {c["item_id"]: c["actions"] for c in body["candidates"]} == {
         24008: ["keep", "sell", "store"],
         24206: ["keep", "use_on_status", "sell", "store"],

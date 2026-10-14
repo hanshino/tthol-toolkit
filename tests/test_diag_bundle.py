@@ -18,7 +18,7 @@ def _ev(ts, level="ERROR", code="E_INV_NOT_FOUND", msg="Inventory not found in m
         level=level,
         logger="tthol.worker",
         pid=27160,
-        char="無塵",
+        char="測試酉",
         cat="inventory",
         code=code,
         message=msg,
@@ -30,7 +30,7 @@ def test_human_line_includes_identity_and_code():
     line = render_human_line(_ev(1700000000.0))
     assert "ERROR" in line
     assert "27160" in line
-    assert "無塵" in line
+    assert "測試酉" in line
     assert "E_INV_NOT_FOUND" in line
     assert "Inventory not found in memory" in line
     assert "\n" not in line
@@ -40,7 +40,7 @@ def test_report_md_leads_with_errors_and_environment():
     md = render_report_md(
         events=[_ev(1.0), _ev(2.0, level="INFO", code=None, msg="located")],
         header={"app_version": "1.2.1", "static_base": "0x778afc", "frozen": True},
-        sessions=[{"pid": 27160, "name": "無塵", "link": "ok"}],
+        sessions=[{"pid": 27160, "name": "測試酉", "link": "ok"}],
     )
     assert "# tthol-reader diagnostic report" in md
     assert "1.2.1" in md

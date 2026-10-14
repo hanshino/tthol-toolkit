@@ -17,7 +17,7 @@ def _row(ts, level="ERROR", code="E_INV_NOT_FOUND", pid=27160, msg="m"):
         "level": level,
         "logger": "tthol.worker",
         "pid": pid,
-        "char": "無塵",
+        "char": "測試酉",
         "cat": "inventory",
         "code": code,
         "message": msg,

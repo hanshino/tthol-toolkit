@@ -152,20 +152,20 @@ def _system(template_id: int, *args: str) -> bytes:
 
 
 def test_decode_system_reads_template_and_args():
-    # Captured 2026-10-05: 家族成員阿克婭上線了!
-    assert decode_system(bytes.fromhex("fdadeaaafca74ad4d500")) == (60077, ["阿克婭"])
+    # Captured 2026-10-05: 家族成員測試寅上線了!
+    assert decode_system(bytes.fromhex("fdadeab4fab8d5b14700")) == (60077, ["測試寅"])
     assert decode_system(_system(6031, "東", "西")) == (6031, ["東", "西"])
     assert decode_system(b"\xfd\x01") is None
 
 
 def test_fill_matches_specifiers_to_args():
-    assert hook_hub.fill("家族成員%s上線了!", ["阿克婭"]) == "家族成員阿克婭上線了!"
+    assert hook_hub.fill("家族成員%s上線了!", ["測試寅"]) == "家族成員測試寅上線了!"
     assert hook_hub.fill("得到 %d%% 經驗", ["30"]) == "得到 30% 經驗"
     assert hook_hub.fill("家族成員%s上線了!", []) is None
 
 
 def test_render_shout_fills_the_template_without_repeating_the_name():
-    text = hook_hub.render_shout("6035 天芯 聖龍靴毛胚 蔚藍聖龍鞋", "天芯", STRINGS)
+    text = hook_hub.render_shout("6035 測試亥 聖龍靴毛胚 蔚藍聖龍鞋", "測試亥", STRINGS)
     assert text == "開運到，歡喜開 聖龍靴毛胚 禮得 蔚藍聖龍鞋 好寶。"
 
 
@@ -178,16 +178,16 @@ def test_render_shout_keeps_spaces_in_the_last_arg():
     "text",
     [
         "收4J刀劍，價錢好談",  # a plain shout
-        "6035 天芯 聖龍靴毛胚",  # too few args for the template
-        "7777 天芯",  # unknown id
+        "6035 測試亥 聖龍靴毛胚",  # too few args for the template
+        "7777 測試亥",  # unknown id
     ],
 )
 def test_render_shout_leaves_other_text_alone(text):
-    assert hook_hub.render_shout(text, "天芯", STRINGS) == text
+    assert hook_hub.render_shout(text, "測試亥", STRINGS) == text
 
 
 def test_render_system_without_a_template_shows_the_id():
-    assert hook_hub.render_system(60077, ["阿克婭"], {}) == "#60077 阿克婭"
+    assert hook_hub.render_system(60077, ["測試寅"], {}) == "#60077 測試寅"
 
 
 def test_hub_fills_templates_when_the_log_is_read():
@@ -198,13 +198,13 @@ def test_hub_fills_templates_when_the_log_is_read():
         return STRINGS
 
     hub = HookHub(list_pids=lambda: [], strings=strings)
-    hub._ingest(5, _msg(bytes.fromhex("fdadeaaafca74ad4d500")))
-    hub._ingest(5, _msg(_chat(b"\0" * 10, 200, "天芯", "6035 天芯 聖龍靴毛胚 蔚藍聖龍鞋")))
+    hub._ingest(5, _msg(bytes.fromhex("fdadeab4fab8d5b14700")))
+    hub._ingest(5, _msg(_chat(b"\0" * 10, 200, "測試亥", "6035 測試亥 聖龍靴毛胚 蔚藍聖龍鞋")))
     hub._ingest(5, _msg(_chat(OTHER, 1, "路人", "6035 不是廣播")))
     msgs = hub.chat(5).messages
     assert [(m.channel, m.name, m.text) for m in msgs] == [
-        ("system", "", "家族成員阿克婭上線了!"),
-        ("shout", "天芯", "開運到，歡喜開 聖龍靴毛胚 禮得 蔚藍聖龍鞋 好寶。"),
+        ("system", "", "家族成員測試寅上線了!"),
+        ("shout", "測試亥", "開運到，歡喜開 聖龍靴毛胚 禮得 蔚藍聖龍鞋 好寶。"),
         ("normal", "路人", "6035 不是廣播"),
     ]
     hub.chat(5)
@@ -216,12 +216,12 @@ def test_hub_retries_the_template_table_later(monkeypatch):
     monkeypatch.setattr(hook_hub.time, "monotonic", lambda: clock[0])
     table = [None]
     hub = HookHub(list_pids=lambda: [], strings=lambda pid: table[0])
-    hub._ingest(5, _msg(_system(60077, "阿克婭")))
-    assert hub.chat(5).messages[0].text == "#60077 阿克婭"  # character not located yet
+    hub._ingest(5, _msg(_system(60077, "測試寅")))
+    assert hub.chat(5).messages[0].text == "#60077 測試寅"  # character not located yet
     table[0] = STRINGS
-    assert hub.chat(5).messages[0].text == "#60077 阿克婭"  # not retried right away
+    assert hub.chat(5).messages[0].text == "#60077 測試寅"  # not retried right away
     clock[0] += hook_hub.STRINGS_RETRY
-    assert hub.chat(5).messages[0].text == "家族成員阿克婭上線了!"
+    assert hub.chat(5).messages[0].text == "家族成員測試寅上線了!"
 
 
 def test_read_string_table_walks_the_tree():

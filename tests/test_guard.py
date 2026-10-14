@@ -195,19 +195,19 @@ def test_store_round_trip_and_defaults(tmp_path):
 
     db = SnapshotDB(str(tmp_path / "s.db"))
     store = GuardStore(db)
-    assert store.load("寒江孤影") == GuardConfig()
+    assert store.load("測試戌") == GuardConfig()
     cfg = GuardConfig(potion=rule(hp_items=[QIONG, YIQI]))
-    store.save("寒江孤影", cfg)
-    assert GuardStore(SnapshotDB(str(tmp_path / "s.db"))).load("寒江孤影") == cfg
+    store.save("測試戌", cfg)
+    assert GuardStore(SnapshotDB(str(tmp_path / "s.db"))).load("測試戌") == cfg
     assert store.load("別人") == GuardConfig()
     rules = ItemRules(
         items={JIEDU: ItemRule(action="use_on_status"), 24007: ItemRule(action="sell", keep=50)}
     )
-    store.save_items("寒江孤影", rules)
-    assert GuardStore(SnapshotDB(str(tmp_path / "s.db"))).load_items("寒江孤影") == rules
+    store.save_items("測試戌", rules)
+    assert GuardStore(SnapshotDB(str(tmp_path / "s.db"))).load_items("測試戌") == rules
     # Each feature is its own section: saving the guard leaves the items alone.
-    store.save("寒江孤影", GuardConfig())
-    assert store.load_items("寒江孤影") == rules
+    store.save("測試戌", GuardConfig())
+    assert store.load_items("測試戌") == rules
 
 
 def test_store_survives_a_bad_section():
@@ -225,7 +225,7 @@ def test_migrate_legacy_guard_json(tmp_path):
 
     path = tmp_path / "guard.json"
     old = {
-        "寒江孤影": {
+        "測試戌": {
             "potion": {"hp_pct": 55, "mp_pct": 30, "hp_items": [JIN], "mp_items": []},
             "cure": {"items": [JIEDU]},
             "buff": {"skills": [713]},
@@ -233,12 +233,12 @@ def test_migrate_legacy_guard_json(tmp_path):
     }
     path.write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
     db = MemorySettings()
-    db.set_setting("寒江孤影", "guard.buff", {"skills": [762]})  # newer: kept
+    db.set_setting("測試戌", "guard.buff", {"skills": [762]})  # newer: kept
     assert migrate_legacy_store(db, path) == 1
     store = GuardStore(db)
-    assert store.load("寒江孤影").potion.hp_pct == 55
-    assert store.load("寒江孤影").buff.skills == [762]
-    assert store.load_items("寒江孤影").items == {JIEDU: ItemRule(action="use_on_status")}
+    assert store.load("測試戌").potion.hp_pct == 55
+    assert store.load("測試戌").buff.skills == [762]
+    assert store.load_items("測試戌").items == {JIEDU: ItemRule(action="use_on_status")}
     assert not path.exists() and (tmp_path / "guard.json.migrated").exists()
     assert migrate_legacy_store(db, path) == 0  # once
 
@@ -259,7 +259,7 @@ class FakeChannel:
         return r
 
 
-def make_manager(tmp_path, samples, replies=(), cfg=None, name="寒江孤影", cure_items=()):
+def make_manager(tmp_path, samples, replies=(), cfg=None, name="測試戌", cure_items=()):
     clock = {"t": 0.0}
     seq = list(samples)
     store = GuardStore()
@@ -663,7 +663,7 @@ def test_ticks_and_packets_feed_the_run_record(tmp_path, caplog):
     run.pid = 1
     mgr._tick(1, run)
     drink = next(r for r in caplog.records if r.name == "tthol.run" and "×3" in r.getMessage())
-    assert drink.cat == "guard" and drink.char_pid == 1 and drink.char_name == "寒江孤影"
+    assert drink.cat == "guard" and drink.char_pid == 1 and drink.char_name == "測試戌"
     assert drink.detail["hp"] == 400 and drink.detail["hp_max"] == 1000
     assert drink.detail["rule"] == "potion" and drink.detail["phase"] == "sent"
     mgr.on_vitals(1, 250, 500)  # a hit between two reads, from the packet

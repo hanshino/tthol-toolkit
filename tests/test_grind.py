@@ -84,9 +84,9 @@ class FakeGuard:
 def make(combat=None, config=None, hp_items=(24007,), busy=lambda pid: None):
     game = FakeGame()
     store = GuardStore()
-    store.save("寒江孤影", GuardConfig(potion=GuardPotionRule(hp_items=list(hp_items))))
-    store.save_section("寒江孤影", COMBAT_SECTION, combat or CombatRule(basic=True))
-    store.save_section("寒江孤影", SECTION, config or GrindConfig(radius=5))
+    store.save("測試戌", GuardConfig(potion=GuardPotionRule(hp_items=list(hp_items))))
+    store.save_section("測試戌", COMBAT_SECTION, combat or CombatRule(basic=True))
+    store.save_section("測試戌", SECTION, config or GrindConfig(radius=5))
     clock = {"t": 0.0}
 
     def read_locked(pid, fn):
@@ -106,7 +106,7 @@ def make(combat=None, config=None, hp_items=(24007,), busy=lambda pid: None):
     mgr = GrindManager(
         guard=guard,
         read_locked=read_locked,
-        character_name=lambda pid: "寒江孤影",
+        character_name=lambda pid: "測試戌",
         channel=game,
         store=store,
         attack_skills=lambda: DEFS,
@@ -117,9 +117,9 @@ def make(combat=None, config=None, hp_items=(24007,), busy=lambda pid: None):
         busy=busy,
     )
     run = _Run(
-        "寒江孤影",
-        store.load_section("寒江孤影", COMBAT_SECTION, CombatRule),
-        store.load_section("寒江孤影", SECTION, GrindConfig),
+        "測試戌",
+        store.load_section("測試戌", COMBAT_SECTION, CombatRule),
+        store.load_section("測試戌", SECTION, GrindConfig),
     )
     run.pid = 1
     with mgr._lock:
@@ -191,7 +191,7 @@ def test_a_summon_is_left_alone():
     mgr, run, game, _, _ = make()
     game.mobs = [mob(6, 8062, 7, (51, 50))]
     game.followers = [
-        NearbyObject(6, 8062, 7, 51 * 40, 50 * 40, "～小水母～", 0, 100, "寒江孤影", False)
+        NearbyObject(6, 8062, 7, 51 * 40, 50 * 40, "～小水母～", 0, 100, "測試戌", False)
     ]
     mgr._tick(1, run)
     assert not [line for line in game.sent if line.startswith(("attack", "cast"))]

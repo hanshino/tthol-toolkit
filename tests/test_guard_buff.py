@@ -166,7 +166,7 @@ def make(
     clock = {"t": 100.0}
     store = GuardStore()
     store.save(
-        "寒江孤影",
+        "測試戌",
         GuardConfig(
             potion=GuardPotionRule(hp_items=[], mp_items=[]),
             buff=GuardBuffRule(skills=skills, hero=hero, travel=travel, love=love),
@@ -186,7 +186,7 @@ def make(
 
     mgr = GuardManager(
         read_locked=read_locked,
-        character_name=lambda pid: "寒江孤影",
+        character_name=lambda pid: "測試戌",
         channel=channel or FakeChannel(),
         store=store,
         potions=lambda: {},
@@ -199,7 +199,7 @@ def make(
         wall=lambda: WALL0 + clock["t"],
     )
     mgr._hook_caps.put(1, frozenset(caps))
-    run = _Run("寒江孤影", mgr.config(1))
+    run = _Run("測試戌", mgr.config(1))
     with mgr._lock:
         mgr._runs[1] = run
     return mgr, run, clock, state
@@ -577,7 +577,7 @@ def test_stealth_off_casts_nothing_while_walking(tmp_path):
 # ---- 把愛傳出去 --------------------------------------------------------------------
 
 LOVE_CAPS = ("use", "cast", "status", "love")
-NEAR, FAR = Player(501, "乖乖連羽", 40.0), Player(502, "路人甲", 300.0)
+NEAR, FAR = Player(501, "測試未", 40.0), Player(502, "路人甲", 300.0)
 
 
 def loves(mgr):
@@ -590,7 +590,7 @@ def test_love_gives_each_heart_to_the_nearest_player_and_confirms(tmp_path):
     mgr._tick(1, run)
     assert loves(mgr) == ["love 501"]
     (line,) = [e for e in run.log if e.rule == "love"]
-    assert line.text == "把愛傳出去給 乖乖連羽" and line.phase == "sent"
+    assert line.text == "把愛傳出去給 測試未" and line.phase == "sent"
     clock["t"] += 0.5
     mgr._tick(1, run)
     assert loves(mgr) == ["love 501"]  # waits for the bag
@@ -641,7 +641,7 @@ def test_love_that_never_leaves_the_bag_passes_the_player_over_then_rests(tmp_pa
     state["bag"], state["players"] = {LOVE_ITEM: 3}, [NEAR, FAR]
     mgr._tick(1, run)
     clock["t"] += LOVE_CONFIRM
-    mgr._tick(1, run)  # not gone: 乖乖連羽 is passed over, 路人甲 next
+    mgr._tick(1, run)  # not gone: 測試未 is passed over, 路人甲 next
     assert loves(mgr) == ["love 501", "love 502"]
     first = [e for e in run.log if e.rule == "love"][0]
     assert first.phase == "unconfirmed"

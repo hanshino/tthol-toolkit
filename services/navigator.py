@@ -71,7 +71,7 @@ EXIT_TRIES = 3  # walks to an exit zone before giving up on it
 RECLICK = (2.5, 5.0)
 SETTLE = 1.5  # after a map change, before reading `near` again
 # HP 0 this long in a row is a death. A map load reads 0 for a moment (live
-# 2026-10-07: 聖火狂狐 stopped as dead entering 探幽曲徑 at full health).
+# 2026-10-07: 測試庚 stopped as dead entering 探幽曲徑 at full health).
 DEATH_CONFIRM = 3.0
 # Map events (doors, exits, click zones) fire only while the client's map
 # event switch is 1. A mouse click on the ground sets it; opening any panel
@@ -460,7 +460,7 @@ class _Run:
                 if str(r.get("error") or "") != "no window open":
                     raise _Stop("busy", "商店或倉庫視窗開著，這個 hook 關不掉（沒有 closepanel）")
                 # The hook's warehouse flag can stay set with no window on
-                # screen (live 2026-10-07, 晨曦破空): closepanel's word wins.
+                # screen (live 2026-10-07, 測試戊): closepanel's word wins.
                 if not d.get("open"):
                     return
             if d.get("options") and not d.get("waiting"):

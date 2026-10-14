@@ -4,7 +4,7 @@ from services.api_types import AutoClickStatus, CharacterRow, ErrorInfo, Positio
 def _row(**kw) -> CharacterRow:
     base = dict(
         pid=1,
-        name="無塵",
+        name="測試酉",
         sect="少林",
         link="ok",
         level=20,

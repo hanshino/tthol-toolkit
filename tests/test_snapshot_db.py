@@ -155,12 +155,14 @@ def test_account_characters_lists_every_known_character(db):
 
 def test_latest_warehouse_is_the_accounts_newest(db):
     acct = db.create_account("A")
-    db.set_character_account("華沁", acct)
+    db.set_character_account("測試癸", acct)
     db.set_character_account("天外", acct)
-    db.save_snapshot("華沁", "warehouse", [{"item_id": 1, "qty": 9}])
+    db.save_snapshot("測試癸", "warehouse", [{"item_id": 1, "qty": 9}])
     db.save_snapshot("天外", "warehouse", [{"item_id": 1, "qty": 2}])
-    db._con.execute("UPDATE snapshots SET scanned_at='2026-01-01T00:00:00' WHERE character='華沁'")
-    got = db.latest_warehouse("華沁")
+    db._con.execute(
+        "UPDATE snapshots SET scanned_at='2026-01-01T00:00:00' WHERE character='測試癸'"
+    )
+    got = db.latest_warehouse("測試癸")
     assert got["character"] == "天外" and got["items"] == [{"item_id": 1, "qty": 2}]
     assert db.latest_warehouse("路人") is None
 

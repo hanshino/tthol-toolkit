@@ -634,7 +634,7 @@ def test_a_door_that_did_not_fire_is_stepped_off_and_into_again_armed():
 
 class StuckFlagGame(FakeGame):
     """The hook reads the warehouse open while nothing is on screen: closepanel
-    says no window open (live 2026-10-07, 晨曦破空)."""
+    says no window open (live 2026-10-07, 測試戊)."""
 
     def send(self, pid, line):
         if line == "warehouse":

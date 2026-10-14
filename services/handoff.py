@@ -609,7 +609,7 @@ class HandoffManager:
 
     def _here(self, run: _Run) -> tuple[int | None, tuple[int, int], tuple[int, int]]:
         """(stage id, tile, own (npc id, inst)) now. The stage is a memory read
-        that can miss for a moment (live 2026-10-08: 華沁 started receiving with
+        that can miss for a moment (live 2026-10-08: 測試癸 started receiving with
         no map): it is read again for a few seconds, then None."""
         found = None
         for n in range(20):

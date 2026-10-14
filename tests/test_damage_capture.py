@@ -291,7 +291,7 @@ def test_snapshot_leaves_out_the_character_name():
     from services.stat_sim_export import RawCharacter
 
     raw = RawCharacter(
-        name="阿克婭", sect=2, level=96, bare=[1] * 6, remaining_points=0,
+        name="測試寅", sect=2, level=96, bare=[1] * 6, remaining_points=0,
         equipment=[
             {"slot": "HAND_R", "item_id": 30412, "plus": 9, "zhenjie": 786},
             {"slot": "CAP", "item_id": 100, "plus": 0, "zhenjie": 0},
@@ -306,7 +306,7 @@ def test_snapshot_leaves_out_the_character_name():
     data.statuses = {52: "八卦"}
     snap = build_snapshot(raw, data, [8, 0, 32])
     assert snap["sect_masks"] == [8, 0, 32]
-    assert "阿克婭" not in json.dumps(snap, ensure_ascii=False)
+    assert "測試寅" not in json.dumps(snap, ensure_ascii=False)
     assert snap["panel"] == {"atk": 3412, "matk": 1086, "critical": 210}
     assert snap["weapons"] == [
         {"slot": "HAND_R", "item_id": 30412, "name": "血飲雙刺", "plus": 9, "zhenjie": 786}

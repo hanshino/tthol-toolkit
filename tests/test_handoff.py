@@ -571,7 +571,7 @@ def test_an_empty_bag_still_goes_to_the_warehouse():
 
 
 def test_a_map_read_that_misses_for_a_moment_is_read_again():
-    # Live 2026-10-08: 華沁 started receiving with no map, and the sender gave up.
+    # Live 2026-10-08: 測試癸 started receiving with no map, and the sender gave up.
     world, store, supply, _nav, mgr = setup()
     world.add(1, "倉庫", [])
     world.add(2, "送貨", [(A, 1)])

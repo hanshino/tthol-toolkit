@@ -250,8 +250,8 @@ def make(game=None, combat=None, config=None, script=SCRIPT, maps=None):
     maps = maps or build_maps()
     game = game or FakeGame(maps)
     store = GuardStore()
-    store.save("寒江孤影", GuardConfig(potion=GuardPotionRule(hp_items=[24007])))
-    store.save_section("寒江孤影", COMBAT_SECTION, combat or CombatRule(basic=True))
+    store.save("測試戌", GuardConfig(potion=GuardPotionRule(hp_items=[24007])))
+    store.save_section("測試戌", COMBAT_SECTION, combat or CombatRule(basic=True))
     clock = {"t": 0.0}
 
     def read_locked(pid, fn):
@@ -273,7 +273,7 @@ def make(game=None, combat=None, config=None, script=SCRIPT, maps=None):
         script,
         guard=FakeGuard(),
         read_locked=read_locked,
-        character_name=lambda pid: "寒江孤影",
+        character_name=lambda pid: "測試戌",
         channel=game,
         store=store,
         navigator=FakeNavigator(game),
@@ -283,7 +283,7 @@ def make(game=None, combat=None, config=None, script=SCRIPT, maps=None):
         wall=lambda: 1_000_000.0 + clock["t"],
         wait=wait,
     )
-    run = _Run("寒江孤影", combat or CombatRule(basic=True), config or DungeonConfig())
+    run = _Run("測試戌", combat or CombatRule(basic=True), config or DungeonConfig())
     run.pid = 1
     with mgr._lock:
         mgr._runs[1] = run
@@ -291,7 +291,7 @@ def make(game=None, combat=None, config=None, script=SCRIPT, maps=None):
 
 
 def record(store):
-    return store.load_section("寒江孤影", "dungeon.lingxiao.record", DungeonRecord)
+    return store.load_section("測試戌", "dungeon.lingxiao.record", DungeonRecord)
 
 
 def test_a_full_run_from_another_map_to_the_report():
@@ -447,7 +447,7 @@ def test_start_waits_out_the_cooldown_only_outside():
     mgr, _, game, store = make()
     mgr._runs.clear()
     store.save_section(
-        "寒江孤影", "dungeon.lingxiao.record", DungeonRecord(entered_at=1_000_000.0 - 600)
+        "測試戌", "dungeon.lingxiao.record", DungeonRecord(entered_at=1_000_000.0 - 600)
     )
     ok, reason = mgr.start(1)
     assert not ok and "冷卻" in reason
@@ -479,7 +479,7 @@ def test_the_last_exit_through_a_shortcut_finishes_the_run():
 
 def test_a_restart_inside_keeps_the_entry_time():
     mgr, run, game, store = make()
-    store.save_section("寒江孤影", "dungeon.lingxiao.record", DungeonRecord(entered_at=123.0))
+    store.save_section("測試戌", "dungeon.lingxiao.record", DungeonRecord(entered_at=123.0))
     game.stage, game.tile = 42, (15, 5)  # started again in the right hall
     game.add_mob(33, 9002, 1, (16, 5))
     mgr._loop(1, run)

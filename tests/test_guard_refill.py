@@ -59,7 +59,7 @@ def make(
     clock = {"t": 100.0}
     store = GuardStore()
     store.save(
-        "寒江孤影",
+        "測試戌",
         GuardConfig(
             potion=GuardPotionRule(
                 hp_items=[JIN],
@@ -80,7 +80,7 @@ def make(
 
     mgr = GuardManager(
         read_locked=read_locked,
-        character_name=lambda pid: "寒江孤影",
+        character_name=lambda pid: "測試戌",
         channel=channel or FakeChannel(),
         store=store,
         potions=lambda: {},
@@ -92,7 +92,7 @@ def make(
     )
     mgr._item_name = lambda i: NAMES.get(i, str(i))
     mgr._hook_caps.put(1, frozenset(caps))
-    run = _Run("寒江孤影", mgr.config(1))
+    run = _Run("測試戌", mgr.config(1))
     with mgr._lock:
         mgr._runs[1] = run
     return mgr, run, clock, state

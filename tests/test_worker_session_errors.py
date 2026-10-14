@@ -44,7 +44,7 @@ def test_on_error_is_no_longer_a_no_op():
 def test_error_reaches_the_row_payload():
     sess = CharSession(pid=27160)
     sess._on_state("LOCATED")
-    sess._on_stats([("角色名稱", "無塵"), ("血量", 100), ("最大血量", 120)])
+    sess._on_stats([("角色名稱", "測試酉"), ("血量", 100), ("最大血量", 120)])
     sess._on_error(
         "Warehouse not found -- open warehouse UI in game first",
         cat="warehouse",
@@ -60,11 +60,11 @@ def test_error_reaches_the_row_payload():
 
 def test_logger_rebinds_to_the_character_name_once_known():
     sess = CharSession(pid=27160)
-    sess._on_stats([("角色名稱", "無塵")])
+    sess._on_stats([("角色名稱", "測試酉")])
     sess._on_error("boom", cat="locate")
 
     ev = diagnostics.get_buffer().query(cat="locate")[0]
-    assert ev.char == "無塵"
+    assert ev.char == "測試酉"
 
 
 def test_default_cat_and_optional_code():

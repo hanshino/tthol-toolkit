@@ -90,8 +90,8 @@ class FakeChannel:
 def make(rules, buffs, bag=None, stage=(1, "莫愁谷入口")):
     clock = {"t": 100.0}
     store = GuardStore()
-    store.save("寒江孤影", GuardConfig(potion=GuardPotionRule(hp_items=[], mp_items=[])))
-    store.save_items("寒江孤影", ItemRules(items=rules))
+    store.save("測試戌", GuardConfig(potion=GuardPotionRule(hp_items=[], mp_items=[])))
+    store.save_items("測試戌", ItemRules(items=rules))
     state = {"buffs": buffs, "bag": bag if bag is not None else {ROUFO: 5, GENGU: 2, JIN: 9}}
 
     def read_locked(pid, fn):
@@ -101,7 +101,7 @@ def make(rules, buffs, bag=None, stage=(1, "莫愁谷入口")):
 
     mgr = GuardManager(
         read_locked=read_locked,
-        character_name=lambda pid: "寒江孤影",
+        character_name=lambda pid: "測試戌",
         channel=FakeChannel(),
         store=store,
         potions=lambda: {},
@@ -112,7 +112,7 @@ def make(rules, buffs, bag=None, stage=(1, "莫愁谷入口")):
         clock=lambda: clock["t"],
         wall=lambda: WALL0 + clock["t"],
     )
-    run = _Run("寒江孤影", mgr.config(1), store.load_items("寒江孤影"))
+    run = _Run("測試戌", mgr.config(1), store.load_items("測試戌"))
     with mgr._lock:
         mgr._runs[1] = run
     return mgr, run, clock, state

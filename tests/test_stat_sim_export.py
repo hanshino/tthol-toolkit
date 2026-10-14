@@ -52,9 +52,9 @@ def _item(pm, slot, inst, item_id, enhance_raw=0):
 
 
 def _character(pm, *, compat=False):
-    """止戰詩園-like character: 天外天 Lv190, cap + weapon, three skills."""
+    """測試己-like character: 天外天 Lv190, cap + weapon, three skills."""
     pm.u32(OBJ, CHAR_OBJ_VTABLE)
-    pm.write(HP + NAME_OFFSET, "止戰詩園".encode("big5") + b"\x00")
+    pm.write(HP + NAME_OFFSET, "測試己".encode("big5") + b"\x00")
     _i32(pm, HP + ex.SECT_OFFSET, 8)
     _i32(pm, HP + ex.LEVEL_OFFSET, 190)
     _i32(pm, HP + reader.BARE_ATTRS_OFFSET, 59, 1, 1, 144, 21, 40)
@@ -152,7 +152,7 @@ def test_payload_matches_the_tthol1_contract():
     payload = ex.build_payload(ex.read_character(_character(FakePm()), HP), "1.3.0", AT)
     assert payload["v"] == 1 and payload["app"] == "1.3.0"
     assert payload["at"] == "2026-10-03T14:05:00Z"
-    assert (payload["name"], payload["sect"], payload["level"]) == ("止戰詩園", 8, 190)
+    assert (payload["name"], payload["sect"], payload["level"]) == ("測試己", 8, 190)
     assert payload["bare"] == {"str": 59, "pow": 1, "vit": 1, "agi": 144, "dex": 21, "wis": 40}
     assert payload["remainingPoints"] == 11
     assert list(payload["equipment"]) == [
@@ -299,7 +299,7 @@ async def test_export_endpoint_returns_code_and_link(monkeypatch):
     body = resp.json()
     assert body["url"] == "https://genbu.hanshino.dev/tools/stat-sim#import=" + body["code"]
     payload = ex.decode(body["code"])
-    assert payload["name"] == "止戰詩園"
+    assert payload["name"] == "測試己"
     from services.backup import APP_VERSION
 
     assert payload["app"] == APP_VERSION

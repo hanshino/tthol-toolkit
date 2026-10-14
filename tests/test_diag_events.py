@@ -29,7 +29,7 @@ def test_event_from_record_reads_extras():
     ev = event_from_record(
         _record(
             char_pid=27160,
-            char_name="無塵",
+            char_name="測試酉",
             cat="inventory",
             code=ErrorCode.E_INV_NOT_FOUND,
             detail={"hp_addr": 123},
@@ -39,7 +39,7 @@ def test_event_from_record_reads_extras():
     assert ev.level == "ERROR"
     assert ev.logger == "tthol.worker"
     assert ev.pid == 27160
-    assert ev.char == "無塵"
+    assert ev.char == "測試酉"
     assert ev.cat == "inventory"
     assert ev.code == "E_INV_NOT_FOUND"
     assert ev.detail == {"hp_addr": 123}

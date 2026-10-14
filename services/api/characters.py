@@ -53,7 +53,7 @@ async def character_detail(pid: int, request: Request) -> CharacterDetail:
 
         return CharacterDetail(
             pid=pid,
-            name="無塵",
+            name="測試酉",
             sect="少林",
             link="ok",
             stats=CharacterStats(

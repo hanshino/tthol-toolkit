@@ -14,7 +14,7 @@ from services.api_types import (
 
 def mock_chars() -> list[Character]:
     return [
-        Character(pid=1001, name="無塵", sect="少林", level=20, link="ok"),
+        Character(pid=1001, name="測試酉", sect="少林", level=20, link="ok"),
         Character(pid=1002, name="風清揚", sect="華山", level=25, link="ok"),
         Character(pid=1003, name="令狐沖", sect="華山", level=22, link="weak"),
     ]
@@ -27,7 +27,7 @@ def mock_world() -> WorldSnapshot:
         chars=[
             CharacterRow(
                 pid=1001,
-                name="無塵",
+                name="測試酉",
                 sect="少林",
                 link="ok",
                 level=20,
@@ -53,7 +53,7 @@ def mock_snapshots() -> list[SnapshotRow]:
     return [
         SnapshotRow(
             snapshot_id=1,
-            character_name="無塵",
+            character_name="測試酉",
             account_id=1,
             source="inventory",
             saved_at="2026-04-01T10:00:00",

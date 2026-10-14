@@ -110,7 +110,7 @@ def fill(template: str, args: list[str]) -> str | None:
 
 
 def render_shout(text: str, name: str, strings: dict[int, str]) -> str:
-    """'6035 天芯 聖龍靴毛胚 蔚藍聖龍鞋' -> its template, minus the 'name 說>' lead the row already shows."""
+    """'6035 測試亥 聖龍靴毛胚 蔚藍聖龍鞋' -> its template, minus the 'name 說>' lead the row already shows."""
     head, _, rest = text.partition(" ")
     if not head.isdigit() or int(head) not in strings:
         return text

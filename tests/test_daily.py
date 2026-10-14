@@ -4,7 +4,7 @@ from services.api_types import DailyQueueConfig, DailySummary
 from services.daily import QUEUE_SECTION, DailyQueueManager
 from services.guard import GuardStore
 
-NAME = "寒江孤影"
+NAME = "測試戌"
 
 
 class FakeModule:

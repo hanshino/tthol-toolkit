@@ -1,6 +1,6 @@
 # 配裝模擬器匯出（TTHOL1）：tthol-memory 實作計畫
 
-> 狀態：**已實作**（`feat/stat-sim-export`，2026-10-03）。第 1–6 項完成，第 7 項的資料部分驗過了：天外天 Lv186「阿克婭」從 app API 和 CLI 匯出的內容一致，丟進 genbu `assembleImport` + `computePanel` 後，面板 19 項有 18 項完全一致，負重上限差 +157（在已知誤差 +0..+215 內），轉生點數 140，沒有診斷訊息。還沒驗證：「開啟 ↗」在 pywebview 是否交給系統瀏覽器，以及 compat 佈局的角色。
+> 狀態：**已實作**（`feat/stat-sim-export`，2026-10-03）。第 1–6 項完成，第 7 項的資料部分驗過了：天外天 Lv186「測試寅」從 app API 和 CLI 匯出的內容一致，丟進 genbu `assembleImport` + `computePanel` 後，面板 19 項有 18 項完全一致，負重上限差 +157（在已知誤差 +0..+215 內），轉生點數 140，沒有診斷訊息。還沒驗證：「開啟 ↗」在 pywebview 是否交給系統瀏覽器，以及 compat 佈局的角色。
 >
 > 跟原計畫不同的地方：
 > - 第 4 項沒有在 worker 加快取，改成 API 請求時用 `ReaderWorker.read_locked()` 在目前的鎖定位址即時讀取；讀的過程中鎖定換了就作廢（回 409）。
@@ -50,7 +50,7 @@
 - 屬性丹不會出現在 buff 陣列；`bare` 不含丹藥（實測）。偵測要靠「面板六圍 − bare − 裝備 − 被動 ≠ 0」，genbu 那邊做。
 - 道具實例數值不含強化，genbu 自己加。
 - 隨機素質裝備（meta_group）同名會有多個 id，例如天御蒼龍甲 50444 的 DB 固定值是空的；一律匯出實例上的 id。
-- 晨曦破空（移花宮 Lv192）的體力固定比模擬多 1000，是伺服器端給這隻角色的加成，客戶端查不到來源，**不是匯出的 bug**。
+- 測試戊（移花宮 Lv192）的體力固定比模擬多 1000，是伺服器端給這隻角色的加成，客戶端查不到來源，**不是匯出的 bug**。
 - 內勁在內力很低時可能差 1（內力 9 那筆，騎 22391 地獄燭龍之劍），仍待查，公式在 tthol_data `scripts/stat_formula_investigation.md`。
 - 本 repo 的 `tthol.sqlite` 比 genbu / tthol_data 舊（沒有 `item_rand_counts`），這也是拆解放在 genbu 的原因之一。
 

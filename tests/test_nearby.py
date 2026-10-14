@@ -84,12 +84,12 @@ def test_scan_reads_each_live_object():
         1820,
         3660,
         name="～絳雪～".encode("cp950"),
-        tag="～翔奕～".encode("cp950"),
+        tag="～測試申～".encode("cp950"),
     )
     mob, follower = scan_nearby(pm)
     assert mob == NearbyObject(handle=h, npc_id=5050, instance=7, px=1780, py=3660,
                                name="蠍子", state=9, hp_pct=64, tag=None, is_self=False)  # fmt: skip
-    assert (follower.handle, follower.name, follower.tag) == (f, "～絳雪～", "～翔奕～")
+    assert (follower.handle, follower.name, follower.tag) == (f, "～絳雪～", "～測試申～")
 
 
 def test_scan_skips_garbage_freed_placeholder_and_stale_slots():
@@ -132,26 +132,26 @@ def test_build_classifies_places_and_sorts():
         _raw(6150, 1140, 5179, handle=1),  # NPC (28, 129)
         _raw(5050, 1220, 4980, handle=2, hp=140),  # monster (30, 124), hp clamped
         _raw(
-            60004, 1500, 4619, handle=3, name="雷子雲", tag="鳳凰霸天", state=CHAR_STATE_STALLING
+            60004, 1500, 4619, handle=3, name="測試辰", tag="測試巳", state=CHAR_STATE_STALLING
         ),  # (37, 115)
         _raw(
-            5751, 1260, 4980, handle=6, name="～絳雪～", tag="雷子雲"
+            5751, 1260, 4980, handle=6, name="～絳雪～", tag="測試辰"
         ),  # is_monster, but a follower (31, 124)
-        _raw(60004, 1260, 4619, handle=4, name="美中仙"),  # player (31, 115)
+        _raw(60004, 1260, 4619, handle=4, name="測試卯"),  # player (31, 115)
         _raw(60004, 1220, 4899, handle=5, name="me", is_self=True),
     ]
     out = nearby.build(objs, (30, 122), NPCS).entities
     assert [(e.kind, e.name, e.x, e.y, e.distance) for e in out] == [
-        ("player", "雷子雲", 37, 115, 7),  # same distance: handle order
-        ("player", "美中仙", 31, 115, 7),
+        ("player", "測試辰", 37, 115, 7),  # same distance: handle order
+        ("player", "測試卯", 31, 115, 7),
         ("follower", "～絳雪～", 31, 124, 2),
         ("monster", "蠍子", 30, 124, 2),
         ("npc", "曹大叔", 28, 129, 7),
     ]
     stall, player, follower, monster, npc = out
-    assert (stall.family, player.family, stall.owner) == ("鳳凰霸天", None, None)
+    assert (stall.family, player.family, stall.owner) == ("測試巳", None, None)
     assert (follower.owner, follower.family, follower.level, follower.hp_pct) == (
-        "雷子雲",
+        "測試辰",
         None,
         29,
         None,

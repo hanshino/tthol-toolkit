@@ -26,12 +26,12 @@ def test_bind_attaches_pid_and_name_to_every_line(tmp_path, monkeypatch):
     buf = diagnostics.get_buffer()
     buf.clear()
 
-    log = diagnostics.bind(27160, "無塵")
+    log = diagnostics.bind(27160, "測試酉")
     log.error("boom", extra={"cat": "locate", "code": "E_LOCK_LOST"})
 
     ev = buf.query()[0]
     assert ev.pid == 27160
-    assert ev.char == "無塵"
+    assert ev.char == "測試酉"
     assert ev.code == "E_LOCK_LOST"
 
 
@@ -67,11 +67,11 @@ def test_bind_rebind_updates_name(tmp_path, monkeypatch):
     buf.clear()
 
     diagnostics.bind(1, None).info("before", extra={"cat": "locate"})
-    diagnostics.bind(1, "無塵").info("after", extra={"cat": "locate"})
+    diagnostics.bind(1, "測試酉").info("after", extra={"cat": "locate"})
 
     by_msg = {e.message: e for e in buf.query()}
     assert by_msg["before"].char is None
-    assert by_msg["after"].char == "無塵"
+    assert by_msg["after"].char == "測試酉"
 
 
 def test_verbose_only_moves_the_tthol_logger(tmp_path, monkeypatch):

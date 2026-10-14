@@ -60,7 +60,7 @@ def make(bag, warehouse=None, snapshot=None, items=(BOOK,), bag_slots=40, **kw):
         hook_caps=FakeCaps(),
         item_info=lambda i: ({BOOK: "天外天秘笈", ORE: "鐵礦"}[i], False, False, "book"),
         warehouse_snapshot=lambda name: snapshot,
-        account_name=lambda name: "華沁 / 天外",
+        account_name=lambda name: "測試癸 / 天外",
         record_bag=lambda name, items: recorded.append((name, items)),
         **kw,
     )
@@ -100,14 +100,14 @@ def test_start_refuses_an_empty_list_a_full_bag_or_a_busy_character():
 
 def test_view_counts_from_the_accounts_snapshot_first():
     snap = {
-        "character": "華沁",
+        "character": "測試癸",
         "scanned_at": "2026-10-08T15:12:40",
         "items": [{"item_id": BOOK, "qty": 1}, {"item_id": BOOK, "qty": 1}],
     }
     mgr, _s, _ = make([(BOOK, 1)], warehouse=[(ORE, 9)], snapshot=snap)
     v = mgr.view(1)
-    assert v.warehouse_from == "snapshot" and v.warehouse_holder == "華沁"
-    assert v.account == "華沁 / 天外" and v.hook_ready
+    assert v.warehouse_from == "snapshot" and v.warehouse_holder == "測試癸"
+    assert v.account == "測試癸 / 天外" and v.hook_ready
     row = v.rows[0]
     assert (row.name, row.bag, row.warehouse, row.stacks) == ("天外天秘笈", 1, 2, 2)
     assert [w.item_id for w in v.warehouse] == [BOOK]

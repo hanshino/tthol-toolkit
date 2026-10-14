@@ -9,7 +9,7 @@ from services.snapshot_db import SnapshotDB
 
 class WM:
     def character_name(self, pid):
-        return {1: "阿克婭"}.get(pid)
+        return {1: "測試寅"}.get(pid)
 
     def live_pids(self):
         return [1, 2]
@@ -17,7 +17,7 @@ class WM:
 
 class Daily:
     def precheck(self, name):
-        return ("done", "今日都做完了") if name == "債務居士" else ("run", None)
+        return ("done", "今日都做完了") if name == "測試甲" else ("run", None)
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ async def client():
         daily=Daily(),
         window_problem=lambda pid: "這個視窗沒有 hook" if pid == 2 else None,
         confirm_character=lambda pid, name: None,
-        in_game_as=lambda pid: {1: "阿克婭"}.get(pid),
+        in_game_as=lambda pid: {1: "測試寅"}.get(pid),
     )
     app = build_app(
         services={"worker_manager": WM(), "login_store": store, "dispatch_manager": dispatch}
@@ -52,7 +52,7 @@ FORM = {
 async def test_add_from_the_game_names_the_character_and_returns_no_secret(client):
     r = await client.put("/api/characters/1/login", json=FORM)
     assert r.status_code == 200
-    assert r.json()["character"] == "阿克婭" and r.json()["has_password"] is True
+    assert r.json()["character"] == "測試寅" and r.json()["has_password"] is True
     assert "secret" not in r.text
     listed = await client.get("/api/logins")
     assert "secret" not in listed.text and listed.json()[0]["has_protect"] is True
@@ -69,11 +69,11 @@ async def test_the_list_only_changes_known_characters(client):
     new = {"character": "路人", "username": "x", "server": "私服"}
     assert (await client.put("/api/logins", json=new)).status_code == 404
     await client.put("/api/characters/1/login", json=FORM)
-    edit = {"character": "阿克婭", "username": "acct2", "server": "私服", "enabled": False}
+    edit = {"character": "測試寅", "username": "acct2", "server": "私服", "enabled": False}
     r = await client.put("/api/logins", json=edit)
     assert r.status_code == 200 and r.json()["has_password"] is True  # kept
     assert r.json()["enabled"] is False
-    assert (await client.delete("/api/logins/阿克婭")).json()["ok"] is True
+    assert (await client.delete("/api/logins/測試寅")).json()["ok"] is True
 
 
 async def test_plan_shows_verdicts_and_window_problems(client):
@@ -82,7 +82,7 @@ async def test_plan_shows_verdicts_and_window_problems(client):
     assert plan["candidates"][0]["verdict"] == "run"
     assert plan["servers"][0] == "飛雁山莊(花)"
     assert plan["windows"] == [
-        {"pid": 1, "name": "阿克婭", "problem": None},
+        {"pid": 1, "name": "測試寅", "problem": None},
         {"pid": 2, "name": None, "problem": "這個視窗沒有 hook"},
     ]
 

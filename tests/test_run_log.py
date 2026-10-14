@@ -54,7 +54,7 @@ def test_sweep_never_deletes_the_file_being_written(tmp_path):
 def _record(msg, created):
     rec = logging.LogRecord("tthol.run", logging.INFO, __file__, 1, msg, None, None)
     rec.created = created
-    rec.cat, rec.char_pid, rec.char_name, rec.detail = "tower", 11444, "醉不可射", {"floor": 50}
+    rec.cat, rec.char_pid, rec.char_name, rec.detail = "tower", 11444, "測試丙", {"floor": 50}
     return rec
 
 
@@ -67,7 +67,7 @@ def test_day_handler_writes_one_file_per_local_day_and_sweeps(tmp_path):
     h.close()
     first = json.loads((tmp_path / "2026-10-07.jsonl").read_text(encoding="utf-8"))
     assert first["message"] == "第 50 層（第 10 房）"
-    assert first["pid"] == 11444 and first["char"] == "醉不可射" and first["cat"] == "tower"
+    assert first["pid"] == 11444 and first["char"] == "測試丙" and first["cat"] == "tower"
     assert first["detail"] == {"floor": 50}
     assert (tmp_path / "2026-10-08.jsonl").exists()
     assert not stale.exists()  # opening the day's file swept the folder
@@ -127,10 +127,10 @@ def test_a_death_writes_the_trace_once(caplog):
     caplog.set_level(logging.INFO, logger="tthol.run")
     run_log.vitals(7, 21000, 50, hp_max=33085, mp_max=4781, now=100.0, src="packet")
     run_log.vitals(7, 0, 50, now=100.1, src="packet")
-    run_log.check(7, "零錢包", now=101.0)
+    run_log.check(7, "測試乙", now=101.0)
     assert _messages(caplog) == []  # a map load reads 0 for a moment
-    run_log.check(7, "零錢包", now=103.2)
-    run_log.check(7, "零錢包", now=104.0)
+    run_log.check(7, "測試乙", now=103.2)
+    run_log.check(7, "測試乙", now=104.0)
     deaths = [d for m, d in _messages(caplog) if m == "death"]
     assert len(deaths) == 1
     assert deaths[0]["hp_max"] == 33085
