@@ -46,6 +46,7 @@ from services.combat import (
     skill_candidates,
 )
 from services.game_input import leave_game
+from services.hook_actions import Actor, own_tile  # noqa: F401  (own_tile: re-export)
 from services.guard import GuardManager, GuardStore, read_holdings, read_learned, read_stage_id
 from services import run_log
 from services.box_tidy import BoxTidy, Loot, load_loot
@@ -75,7 +76,6 @@ from services.tower import (
     attack_reach,
     floor_gates,
     load_tower,
-    pick_option,
 )
 
 log = logging.getLogger("tthol.tower")
@@ -101,8 +101,6 @@ EXIT_DIALOG = 2.0  # after stepping on the exit, for its dialog to open
 EXIT_SETTLE = 6.0  # after the exit dialog closed, for the teleport to show
 DEATH_CONFIRM = 3.0  # HP 0 this long in a row is a death; a map load reads 0 a moment
 BODIES_MAX = 15.0  # a body that has not faded by then is not waited for
-WALK_WAIT = 6.0
-TALK_WAIT = 40.0
 FOX_RETALK = 6.0  # after a fox talk, give the teleport this long before talking again
 CAPS_EVERY = 30.0  # re-read the hook's command list this often for the view
 BUFF_WAIT = 30.0  # at the 關 start, wait at most this long for the guard's buffs
@@ -110,18 +108,6 @@ PIPE_RETRIES = 5  # a command pipe that is briefly unavailable (map load) is ret
 # missions 18913-18919 (神武玄天塔-辰星關 ...): sestage 1704-1710 in order.
 STAGE_NAMES = ("辰星關", "太白關", "熒惑關", "歲星關", "鎮星關", "冽星關", "颶星關")
 TITLE = "神武玄天塔"
-
-
-def own_tile(st: dict, objs: list[dict]) -> tuple[int, int]:
-    """The character's tile from its own `near` entry (pixels / 40).
-
-    `status`'s tile lags a teleport inside one map (九尾狐仙 -> room 1, the
-    exits): it only moves on the next step, so it is the fallback only.
-    """
-    me = next((o for o in objs if o.get("h") == st.get("self")), None)
-    if me is not None:
-        return me["x"] // TILE_PX, me["y"] // TILE_PX
-    return st["tile"][0], st["tile"][1]
 
 
 def _stage_name(floor: int) -> str:
@@ -1381,27 +1367,18 @@ class TowerManager:
 
     # -- moving and talking ------------------------------------------------------------
 
+    def _actor(self, pid: int, run: _Run) -> Actor:
+        return Actor(
+            lambda line: self._cmd(pid, run, line), lambda s: self._wait(run, s), self._clock
+        )
+
     def _walk(self, pid: int, run: _Run, tile: tuple[int, int], wait: bool = True) -> None:
-        line = f"walk {tile[0] * TILE_PX + TILE_PX // 2} {tile[1] * TILE_PX + TILE_PX // 2}"
-        for _ in range(6):  # refused (path false) while the last walk still runs
-            if self._cmd(pid, run, line).get("path"):
-                break
-            self._wait(run, 0.3)
-        if not wait:
-            return
-        end = self._clock() + WALK_WAIT
-        while self._clock() < end:
-            self._wait(run, 0.5)
-            st = self._cmd(pid, run, "status")
-            if not st.get("ok"):
-                continue
-            t = own_tile(st, self._near(pid, run))
-            if abs(t[0] - tile[0]) <= 1 and abs(t[1] - tile[1]) <= 1:
-                return
+        self._actor(pid, run).walk(tile, wait)
 
     def _talk(self, pid: int, run: _Run, npc: dict, want, avoid, **kw) -> str:
-        self._cmd(pid, run, f"talk {npc['h']}")
-        return self._dialog(pid, run, want, avoid, TALK_WAIT, **kw)
+        return self._actor(pid, run).talk(
+            npc, want, avoid, leave_id=LEAVE, too_low_id=TOO_LOW, **kw
+        )
 
     def _dialog(
         self,
@@ -1414,50 +1391,7 @@ class TowerManager:
         once: bool = False,
         fallback: tuple[int, ...] = (),
     ) -> str:
-        """Drive the dialog by jump id. map / closed / no-choice / low / stuck / none / timeout.
-
-        `once`: each wanted id is chosen at most once; when the dialog offers
-        one again (it looped back), only `fallback` ids are chosen from then on.
-        """
-        st = self._cmd(pid, run, "status")
-        me0 = st.get("self")
-        end = self._clock() + timeout
-        seen = chose = False
-        picked: set[int] = set()
-        fell_back = False
-        while self._clock() < end:
-            self._wait(run, 0.2)
-            st = self._cmd(pid, run, "status")
-            if not st.get("ok") or st.get("self") != me0:
-                self._wait(run, 2.0)
-                return "map"
-            d = self._cmd(pid, run, "dialog")
-            if not d.get("open"):
-                if seen:
-                    return "closed" if chose else "no-choice"
-                continue
-            seen = True
-            if d.get("waiting"):
-                continue
-            options = d.get("options") or []
-            if options:
-                if leave and LEAVE in options:
-                    self._cmd(pid, run, f"option {options.index(LEAVE)}")
-                    self._wait(run, 2.0)
-                    return "left"
-                if once:
-                    if not fell_back and any(o in picked for o in options):
-                        want, fell_back = fallback, True  # looped back: refused
-                    i = next((options.index(w) for w in want if w in options), None)
-                else:
-                    i = pick_option(options, want, avoid)
-                if i is None:
-                    return "stuck"
-                picked.add(options[i])
-                self._cmd(pid, run, f"option {i}")
-                chose = True
-                continue
-            if d.get("next") == TOO_LOW:
-                return "low"
-            self._cmd(pid, run, "next")
-        return "timeout" if seen else "none"
+        """Drive the dialog by jump id (services/hook_actions.Actor.dialog)."""
+        return self._actor(pid, run).dialog(
+            want, avoid, timeout, leave, once, fallback, leave_id=LEAVE, too_low_id=TOO_LOW
+        )

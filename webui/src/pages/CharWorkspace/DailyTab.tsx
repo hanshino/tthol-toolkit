@@ -3,6 +3,8 @@ import { get, post, put } from '../../api/client';
 import type { CombatRule, DailyQueueItem, DailyView, GuardStartResult, TowerAttackReach, TowerConfig, TowerEstimate, TowerStatus, TowerView } from '../../api/types';
 import { reportClientError } from '../../diag/report';
 import { CombatSection } from './CombatSection';
+import { DungeonPanel } from './DungeonPanel';
+import './assist.css';
 import './guard.css';
 import './daily.css';
 
@@ -28,7 +30,61 @@ const today = () => {
 
 type Settings = { combat: CombatRule; config: TowerConfig };
 
+// 日常 holds the queue on top and one sub-tab per module below it (the 輔助
+// pattern, #47): wide shows a side menu, narrow a row of buttons.
+type Sub = 'tower' | 'lingxiao';
+const SUBS: { k: Sub; n: string; s: string }[] = [
+  { k: 'tower', n: '神武玄天塔', s: '每天一次 · 爬層' },
+  { k: 'lingxiao', n: '凌霄閣', s: '三層副本 · 冷卻 4 小時' },
+];
+const SUB_KEY = 'tthol.daily.sub';
+
+function loadSub(): Sub {
+  try {
+    const v = localStorage.getItem(SUB_KEY);
+    return SUBS.some(s => s.k === v) ? (v as Sub) : 'tower';
+  } catch {
+    return 'tower';
+  }
+}
+
 export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
+  const [sub, setSub] = useState<Sub>(loadSub);
+  const visited = useRef(new Set<Sub>());
+  visited.current.add(sub);
+  const pick = (k: Sub) => {
+    setSub(k);
+    try { localStorage.setItem(SUB_KEY, k); } catch { /* storage blocked */ }
+  };
+  return (
+    <div className="gd">
+      <QueueSection pid={pid} active={active} />
+      <div className="as">
+        <div className="as-in">
+          <nav className="as-nav" role="tablist" aria-label="日常模組">
+            {SUBS.map(s => (
+              <button key={s.k} type="button" role="tab" id={`dl-tab-${s.k}`} aria-controls={`dl-panel-${s.k}`}
+                aria-selected={sub === s.k} className="as-tab" onClick={() => pick(s.k)}>
+                <span className="as-tab-n">{s.n}</span>
+                <span className="as-tab-s">{s.s}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="as-body">
+            {SUBS.filter(s => visited.current.has(s.k)).map(s => (
+              <div key={s.k} role="tabpanel" id={`dl-panel-${s.k}`} aria-labelledby={`dl-tab-${s.k}`} hidden={sub !== s.k}>
+                {s.k === 'tower' && <TowerPanel pid={pid} active={active && sub === 'tower'} />}
+                {s.k === 'lingxiao' && <DungeonPanel pid={pid} dungeon="lingxiao" active={active && sub === 'lingxiao'} />}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TowerPanel({ pid, active }: { pid: number; active: boolean }) {
   const [view, setView] = useState<TowerView | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -150,8 +206,6 @@ export function DailyTab({ pid, active }: { pid: number; active: boolean }) {
 
   return (
     <div className="gd">
-      <QueueSection pid={pid} active={active} />
-
       <section className="gd-panel gd-strip" aria-label="日常課題執行">
         <span className={`gd-state${running ? ' is-on' : ''}${running && st.problem ? ' is-warn' : ''}`}>
           <i />{running ? (st.problem ? '等待中' : '執行中') : '已停止'}

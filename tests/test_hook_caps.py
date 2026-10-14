@@ -27,7 +27,7 @@ def make(channel, connected=True):
 def test_features_follow_the_manifest():
     caps, _ = make(Channel("use", *FEATURES["daily.tower"]))
     # grind's commands are a subset of the tower's
-    assert set(caps.features(1)) == {"chat", "guard", "grind", "daily.tower"}
+    assert set(caps.features(1)) == {"chat", "guard", "grind", "daily.tower", "daily.lingxiao"}
     old, _ = make(Channel("use"))
     old.features(1)
     assert set(old.features(1)) == {"chat", "guard"}

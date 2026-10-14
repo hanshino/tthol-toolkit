@@ -41,6 +41,8 @@ from services.supply import SupplyManager
 from services.handoff import TRADE_PACKET, HandoffManager
 from services.withdraw import WithdrawManager
 from services.grind import GrindManager
+from services.dungeon import DungeonManager
+from services.dungeon_scripts import DUNGEONS
 from services.map_db import stage_names_by_id
 from services.tower_run import ATTACK_PACKET, CAST_START_PACKET, TowerManager
 from services.buff_tracker import BUFF_PACKET, BuffTracker
@@ -164,7 +166,39 @@ def _build_services(dev: bool) -> dict:
     )
     hook.add_packet_listener(ATTACK_PACKET, tower.on_attack_packet)
     hook.add_packet_listener(CAST_START_PACKET, tower.on_cast_packet)
-    daily = DailyQueueManager([tower], character_name=wm.character_name, store=GuardStore(db))
+
+    # 副本 (dungeon scripts): one 日常 module per script, next to the tower.
+    def dungeon_busy(pid: int) -> str | None:
+        if tower.running(pid):
+            return "這隻角色正在登塔"
+        if supply.status(pid).running:
+            return "這隻角色正在補給"
+        if grind.running(pid):
+            return "這隻角色正在打怪"
+        if handoff.running(pid) or withdraw.running(pid):
+            return "這隻角色正在交貨或領倉"
+        return None
+
+    dungeons = {
+        d.key: DungeonManager(
+            d,
+            guard=guard,
+            read_locked=wm.read_locked,
+            character_name=wm.character_name,
+            channel=channel,
+            store=GuardStore(db),
+            navigator=navigator,
+            hook_caps=hook_caps,
+            busy=dungeon_busy,
+        )
+        for d in DUNGEONS
+    }
+    for d in dungeons.values():
+        hook.add_packet_listener(ATTACK_PACKET, d.on_attack_packet)
+        hook.add_packet_listener(CAST_START_PACKET, d.on_cast_packet)
+    daily = DailyQueueManager(
+        [tower, *dungeons.values()], character_name=wm.character_name, store=GuardStore(db)
+    )
 
     # 打怪: fight around a spot on any map.
     def grind_busy(pid: int) -> str | None:
@@ -176,6 +210,8 @@ def _build_services(dev: bool) -> dict:
             return "這隻角色正在補給"
         if handoff.running(pid) or withdraw.running(pid):
             return "這隻角色正在交貨或領倉"
+        if any(d.running(pid) for d in dungeons.values()):
+            return "這隻角色正在打副本"
         return None
 
     grind = GrindManager(
@@ -200,6 +236,8 @@ def _build_services(dev: bool) -> dict:
             return "這隻角色正在補給"
         if grind.running(pid):
             return "這隻角色正在打怪"
+        if any(d.running(pid) for d in dungeons.values()):
+            return "這隻角色正在打副本"
         return None
 
     def account_of(name: str) -> int | None:
@@ -260,6 +298,7 @@ def _build_services(dev: bool) -> dict:
         daily.forget,
         tower.forget,
         grind.forget,
+        *(d.forget for d in dungeons.values()),
         handoff.forget,
         withdraw.forget,
         supply.forget,
@@ -328,6 +367,7 @@ def _build_services(dev: bool) -> dict:
         "handoff_manager": handoff,
         "withdraw_manager": withdraw,
         "grind_manager": grind,
+        "dungeon_managers": dungeons,
         "daily_manager": daily,
         "login_store": logins,
         "dispatch_manager": dispatch,
@@ -475,6 +515,8 @@ def main() -> int:
         services["daily_manager"].shutdown()
         services["tower_manager"].shutdown()
         services["grind_manager"].shutdown()
+        for d in services["dungeon_managers"].values():
+            d.shutdown()
         services["handoff_manager"].shutdown()
         services["guard_manager"].shutdown()
         services["buff_tracker"].shutdown()

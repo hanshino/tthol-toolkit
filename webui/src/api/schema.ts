@@ -1070,6 +1070,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/characters/{pid}/dungeon/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** View */
+        get: operations["view_api_characters__pid__dungeon__key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/dungeon/{key}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_characters__pid__dungeon__key__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/dungeon/{key}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Settings */
+        put: operations["put_settings_api_characters__pid__dungeon__key__settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/dungeon/{key}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_characters__pid__dungeon__key__start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/characters/{pid}/dungeon/{key}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_characters__pid__dungeon__key__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters/{pid}/daily": {
         parameters: {
             query?: never;
@@ -3016,6 +3101,127 @@ export interface components {
             anchor_x: number;
             /** Anchor Y */
             anchor_y: number;
+        };
+        /**
+         * DungeonConfig
+         * @description Per character and dungeon (character_settings section "dungeon.<key>").
+         */
+        DungeonConfig: {
+            /**
+             * Mission
+             * @default true
+             */
+            mission: boolean;
+        };
+        /**
+         * DungeonRecord
+         * @description The last run the toolkit saw (section "dungeon.<key>.record"); the game's
+         *     re-entry timer and daily flag cannot be read, so these stand in for them.
+         */
+        DungeonRecord: {
+            /** Date */
+            date?: string | null;
+            /**
+             * Done
+             * @default false
+             */
+            done: boolean;
+            /** Entered At */
+            entered_at?: number | null;
+            /** Finished At */
+            finished_at?: number | null;
+            /**
+             * Chests
+             * @default 0
+             */
+            chests: number;
+            /** Ended */
+            ended?: string | null;
+        };
+        /** DungeonSettings */
+        DungeonSettings: {
+            combat: components["schemas"]["CombatRule"];
+            config: components["schemas"]["DungeonConfig"];
+        };
+        /** DungeonStatus */
+        DungeonStatus: {
+            /** Running */
+            running: boolean;
+            /** Character */
+            character?: string | null;
+            /** Step */
+            step?: string | null;
+            /** Problem */
+            problem?: string | null;
+            /** Warning */
+            warning?: string | null;
+            /** Area */
+            area?: string | null;
+            /** Floor */
+            floor?: string | null;
+            /**
+             * Moving
+             * @default false
+             */
+            moving: boolean;
+            /** Started */
+            started?: number | null;
+            /** Ended */
+            ended?: string | null;
+            /** Outcome */
+            outcome?: ("done" | "error" | "user") | null;
+            /**
+             * Log
+             * @default []
+             */
+            log: components["schemas"]["TowerLogEntry"][];
+        };
+        /** DungeonView */
+        DungeonView: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /**
+             * Floors
+             * @default []
+             */
+            floors: string[];
+            status: components["schemas"]["DungeonStatus"];
+            /**
+             * @default {
+             *       "mission": true
+             *     }
+             */
+            config: components["schemas"]["DungeonConfig"];
+            /**
+             * @default {
+             *       "basic": false,
+             *       "rotation": [],
+             *       "target": "nearest",
+             *       "avoid_packs": false
+             *     }
+             */
+            combat: components["schemas"]["CombatRule"];
+            /**
+             * Skills
+             * @default []
+             */
+            skills: components["schemas"]["AttackSkillCandidate"][];
+            /**
+             * @default {
+             *       "done": false,
+             *       "chests": 0
+             *     }
+             */
+            record: components["schemas"]["DungeonRecord"];
+            /** Cooldown Until */
+            cooldown_until?: number | null;
+            /**
+             * Hook Ready
+             * @default false
+             */
+            hook_ready: boolean;
         };
         /**
          * EquipSlot
@@ -7313,6 +7519,170 @@ export interface operations {
             header?: never;
             path: {
                 pid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_api_characters__pid__dungeon__key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DungeonView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_characters__pid__dungeon__key__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DungeonStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_settings_api_characters__pid__dungeon__key__settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DungeonSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DungeonSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_characters__pid__dungeon__key__start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardStartResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_characters__pid__dungeon__key__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: number;
+                key: string;
             };
             cookie?: never;
         };

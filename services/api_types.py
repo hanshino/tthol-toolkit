@@ -1784,3 +1784,58 @@ class GrindView(_Base):
     skills: list[AttackSkillCandidate] = []
     monsters: list[GrindMonster] = []  # in view now, plus the picked ones
     hook_ready: bool = False
+
+
+# ---- 副本 (dungeon scripts: services/dungeon.py) ------------------------------
+
+
+class DungeonConfig(_Base):
+    """Per character and dungeon (character_settings section "dungeon.<key>")."""
+
+    # Take the daily mission at the start and report it at the end (one more chest).
+    mission: bool = True
+
+
+class DungeonRecord(_Base):
+    """The last run the toolkit saw (section "dungeon.<key>.record"); the game's
+    re-entry timer and daily flag cannot be read, so these stand in for them."""
+
+    date: str | None = None  # local day of the last finished run
+    done: bool = False  # that run went through to the end
+    entered_at: float | None = None  # unix s, the entry portal worked
+    finished_at: float | None = None
+    chests: int = 0  # chests seen in the bag after the run
+    ended: str | None = None
+
+
+class DungeonStatus(_Base):
+    running: bool
+    character: str | None = None
+    step: str | None = None  # what it is doing, in user words
+    problem: str | None = None
+    warning: str | None = None
+    area: str | None = None  # script area name
+    floor: str | None = None  # progress label of the area
+    moving: bool = False  # walking to the entrance with the navigator
+    started: float | None = None
+    ended: str | None = None
+    outcome: Literal["done", "error", "user"] | None = None
+    log: list[TowerLogEntry] = []
+
+
+class DungeonSettings(_Base):
+    combat: CombatRule  # the character's one combat setting, shared by every module
+    config: DungeonConfig
+
+
+class DungeonView(_Base):
+    key: str
+    title: str
+    floors: list[str] = []
+    status: DungeonStatus
+    config: DungeonConfig = DungeonConfig()
+    combat: CombatRule = CombatRule()
+    skills: list[AttackSkillCandidate] = []
+    record: DungeonRecord = DungeonRecord()
+    cooldown_until: float | None = None  # unix s; None = can enter
+    hook_ready: bool = False
