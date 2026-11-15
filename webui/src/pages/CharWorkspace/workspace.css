@@ -1,3 +1,4 @@
+/* Hallmark · checked: 2026-11-15 · built: the project · shape: app screen · redesign: polish · full stamp in styles.css */
 /* Character workspace. Button rules are written as `button.x` (and selected
    tabs restate their underline on hover) so they outrank the global button
    styles in styles.css. */
@@ -15,25 +16,25 @@
 .ws-sub { font-size: 12px; color: var(--tt-dim); }
 .ws-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex: none; }
 
-button.ws-btn, button.ws-toggle { font-size: 12px; letter-spacing: 1px; padding: 6px 12px; min-height: 32px; background: var(--tt-bg); color: var(--tt-dim); }
+button.ws-btn, button.ws-toggle { font-size: 12px; padding: 6px 12px; min-height: 32px; background: var(--tt-bg); color: var(--tt-dim); }
 button.ws-btn[data-attn] { color: var(--tt-gold); }
 .ws-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 button.ws-toggle { display: flex; align-items: center; gap: 8px; }
 button.ws-toggle[aria-pressed="true"] { color: var(--tt-ok); border-color: var(--tt-ok); }
 .ws-switch { width: 26px; height: 14px; border-radius: 7px; background: var(--tt-line-soft); display: flex; align-items: center; padding: 2px; box-sizing: border-box; transition: background 120ms ease; }
 .ws-switch > span { width: 10px; height: 10px; border-radius: 50%; background: var(--tt-text); transition: transform 120ms ease; }
-button.ws-toggle[aria-pressed="true"] .ws-switch { background: #3f6a5e; }
+button.ws-toggle[aria-pressed="true"] .ws-switch { background: var(--tt-ok-dim); }
 button.ws-toggle[aria-pressed="true"] .ws-switch > span { transform: translateX(12px); }
 
 .ws-vitals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: end; }
 .ws-vital { display: grid; gap: 4px; min-width: 0; }
 .ws-vrow { display: flex; justify-content: space-between; gap: 8px; }
-.ws-vlabel { color: var(--tt-dim); letter-spacing: 2px; font-size: 11px; }
+.ws-vlabel { color: var(--tt-dim); font-size: 11px; }
 .ws-vnum { font-family: var(--tt-font-mono); color: var(--tt-dim); font-size: 11px; }
 .ws-vnum[data-warn] { color: var(--tt-bad); }
 .ws-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-buffs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.ws-auto { margin-left: auto; font-size: 11px; color: var(--tt-ok); letter-spacing: 1px; }
+.ws-auto { margin-left: auto; font-size: 11px; color: var(--tt-ok); }
 .ws-head[data-stale] .ws-dim-when-lost, .ws-body[data-stale] { opacity: 0.55; }
 button.ws-back { font-size: 12px; padding: 4px 10px; justify-self: start; }
 
@@ -54,7 +55,7 @@ button.ws-tab:hover:not(:disabled) { background: transparent; color: var(--tt-te
 button.ws-tab[aria-selected="true"],
 button.ws-tab[aria-selected="true"]:hover:not(:disabled) { color: var(--tt-gold); border-bottom-color: var(--tt-gold); }
 .ws-tab-n { font-family: var(--tt-font-serif); font-size: 14px; letter-spacing: 3px; }
-.ws-tab-s { font-size: 10.5px; color: var(--tt-dim); }
+.ws-tab-s { font-size: 11px; color: var(--tt-dim); }
 
 .ws-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; }
 .ws-empty { padding: 40px; text-align: center; color: var(--tt-dim); font-size: 13px; border: 1px dashed var(--tt-line); }
@@ -100,7 +101,7 @@ button.sk-cat[aria-pressed="true"] .sk-cat-n { color: var(--tt-gold); }
 .sk-cat-bar > span { display: block; height: 100%; background: var(--tt-gold); }
 
 .sk-head, button.sk-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 160px 56px; gap: 12px; align-items: center; }
-.sk-head { padding: 8px 14px; font-size: 11px; letter-spacing: 2px; color: var(--tt-dim); border-bottom: 1px solid var(--tt-line); }
+.sk-head { padding: 8px 14px; font-size: 11px; color: var(--tt-dim); border-bottom: 1px solid var(--tt-line); }
 .sk-head > span:last-child, .sk-mp { text-align: right; }
 button.sk-row {
   width: 100%; text-align: left; padding: 7px 14px; letter-spacing: 0;
@@ -111,11 +112,11 @@ button.sk-row[aria-pressed="true"] { background: var(--tt-raised); box-shadow: i
 .sk-icon { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: var(--tt-bg); border: 1px solid var(--tt-line); }
 .sk-icon img { image-rendering: pixelated; display: block; }
 .sk-row[data-passive] .sk-icon { border-style: dashed; }
-.sk-row[data-maxed] .sk-icon { border-color: #7d7350; }
+.sk-row[data-maxed] .sk-icon { border-color: var(--tt-gold-dim); }
 .sk-name { display: grid; gap: 3px; min-width: 0; }
 .sk-name-n { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sk-tags { display: flex; gap: 5px; }
-.sk-tag-max { color: var(--tt-gold); border-color: #7d7350; }
+.sk-tag-max { color: var(--tt-gold); border-color: var(--tt-gold-dim); }
 .sk-lv { display: grid; gap: 5px; }
 .sk-lv-t { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--tt-font-mono); font-size: 12px; }
 .sk-lv-t > span:last-child { color: var(--tt-dim); }

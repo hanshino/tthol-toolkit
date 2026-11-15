@@ -181,6 +181,12 @@ export function Minimap({
     left: `${((x - v.x0) / vw) * 100}%`,
     top: `${((v.y1 - y) / vh) * 100}%`,
   });
+  // Live markers move every second: same point, handed to CSS as numbers so
+  // the slide runs on `translate` (see .mm-mob in minimap.css).
+  const atLive = (x: number, y: number) => ({
+    '--mx': ((x - v.x0) / vw) * 100,
+    '--my': ((v.y1 - y) / vh) * 100,
+  }) as CSSProperties;
   // Keep a label inside the view near the left / right edge...
   const side = (x: number) => {
     const f = (x - v.x0) / vw;
@@ -347,7 +353,7 @@ export function Minimap({
             style={at(s.x, s.y)} tabIndex={0} role="img"
             aria-label={`${s.name ?? `#${s.npc_id}`} Lv ${s.level ?? '—'}`}
           >
-            <b className="mm-tip" data-side={side(s.x)} data-up={up(s.y)}>{s.name ?? `#${s.npc_id}`} · Lv {s.level ?? '—'}</b>
+            <b className="mm-tip" data-side={side(s.x)} data-up={up(s.y)}>{s.name ?? `#${s.npc_id}`}　Lv {s.level ?? '—'}</b>
           </span>
         ))}
         {shown.npcs && npcs.map((n, i) => (
@@ -382,7 +388,7 @@ export function Minimap({
         {liveShown.monsters && monsters.map((e) => (
           <span
             key={e.handle} className="mm-pt mm-mob" data-tone={levelTone(e.level, charLevel)}
-            data-lit={litHandle === e.handle || undefined} style={at(e.px, e.py)}
+            data-lit={litHandle === e.handle || undefined} style={atLive(e.px, e.py)}
             tabIndex={0} role="img" aria-label={`${e.name ?? `#${e.npc_id}`} Lv ${e.level ?? '—'}`}
           >
             <b className="mm-name" data-side={side(e.px)} data-up={up(e.py)}>{e.name ?? `#${e.npc_id}`}</b>
@@ -391,15 +397,15 @@ export function Minimap({
         {liveShown.followers && followers.map((e) => (
           <span
             key={e.handle} className="mm-pt mm-follower" data-lit={litHandle === e.handle || undefined}
-            style={at(e.px, e.py)} tabIndex={0} role="img" aria-label={`${e.owner ?? ''} 的跟隨 ${e.name ?? ''}`}
+            style={atLive(e.px, e.py)} tabIndex={0} role="img" aria-label={`${e.owner ?? ''} 的跟隨 ${e.name ?? ''}`}
           >
-            <b className="mm-tip" data-side={side(e.px)} data-up={up(e.py)}>{e.name ?? `#${e.npc_id}`} · {e.owner}</b>
+            <b className="mm-tip" data-side={side(e.px)} data-up={up(e.py)}>{e.name ?? `#${e.npc_id}`}（{e.owner}）</b>
           </span>
         ))}
         {liveShown.players && players.map((e) => (
           <span
             key={e.handle} className="mm-pt mm-other" data-lit={litHandle === e.handle || undefined}
-            style={at(e.px, e.py)} tabIndex={0} role="img" aria-label={`玩家 ${e.name ?? ''}`}
+            style={atLive(e.px, e.py)} tabIndex={0} role="img" aria-label={`玩家 ${e.name ?? ''}`}
           >
             <b className="mm-name" data-side={side(e.px)} data-up={up(e.py)}>{e.name ?? '玩家'}</b>
           </span>

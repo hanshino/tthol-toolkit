@@ -12,7 +12,7 @@ const POLL_MS = 400;
 export function placeText(l: MarketListing): string {
   const map = l.map || '—';
   if (l.x != null && l.y != null) return `${map} (${l.x}, ${l.y})`;
-  if (l.viewer_x != null && l.viewer_y != null) return `${map} · (${l.viewer_x}, ${l.viewer_y}) 附近`;
+  if (l.viewer_x != null && l.viewer_y != null) return `${map} (${l.viewer_x}, ${l.viewer_y}) 附近`;
   return map;
 }
 

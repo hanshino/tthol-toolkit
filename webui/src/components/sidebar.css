@@ -1,3 +1,4 @@
+/* Hallmark · checked: 2026-11-15 · built: the project · shape: app screen · redesign: polish · full stamp in styles.css */
 /* Sidebar: global nav + character list. Button rules are written as
    `button.x` so they outrank the global button styles in styles.css. */
 .sb {
@@ -6,7 +7,7 @@
 }
 .sb-brand { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--tt-line-soft); }
 .sb-title { font-family: var(--tt-font-serif); font-size: 15px; font-weight: 600; letter-spacing: 4px; }
-.sb-tag { font-size: 10px; color: var(--tt-dim); letter-spacing: 1px; }
+.sb-tag { font-size: 11px; color: var(--tt-dim); }
 .sb-nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; }
 
 button.sb-item, button.sb-char {
@@ -27,18 +28,18 @@ button.sb-item:focus-visible, button.sb-char:focus-visible { outline: 1px solid 
 button.sb-char[data-stale] { opacity: 0.6; }
 
 .sb-item-n { font-family: var(--tt-font-serif); font-size: 14px; letter-spacing: 3px; }
-.sb-item-s { font-size: 10.5px; color: var(--tt-dim); }
+.sb-item-s { font-size: 11px; color: var(--tt-dim); }
 .sb-sec {
   display: flex; justify-content: space-between; align-items: baseline;
   padding: 10px 16px 6px; border-top: 1px solid var(--tt-line-soft);
-  font-size: 11px; color: var(--tt-dim); letter-spacing: 2px;
+  font-size: 11px; color: var(--tt-dim);
 }
 .sb-mono { font-family: var(--tt-font-mono); letter-spacing: 0; }
 .sb-chars { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 0 8px 8px; }
 .sb-empty { padding: 12px 8px; font-size: 11px; color: var(--tt-dim); line-height: 1.6; }
 .sb-char-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .sb-char-name { font-family: var(--tt-font-serif); font-size: 13px; letter-spacing: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sb-char-meta { font-size: 10.5px; color: var(--tt-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-char-meta { font-size: 11px; color: var(--tt-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px; border-top: 1px solid var(--tt-line-soft); }
 button.sb-item.sb-diag { width: auto; min-height: 32px; align-items: center; }
-.sb-ver { font-size: 10px; color: var(--tt-dim); }
+.sb-ver { font-size: 11px; color: var(--tt-dim); }

@@ -14,10 +14,10 @@ const GLOBAL_NAV: { k: GlobalView; n: string; s: string }[] = [
 
 function charMeta(c: CharacterRow): string {
   if (isUnlocated(c)) {
-    return c.last_error?.code === 'E_LOCATE_EXHAUSTED' ? `pid ${c.pid} · 定位失敗` : `pid ${c.pid} · 連線中`;
+    return c.last_error?.code === 'E_LOCATE_EXHAUSTED' ? `pid ${c.pid}　定位失敗` : `pid ${c.pid}　連線中`;
   }
-  if (isStopped(c)) return `Lv ${c.level} · 偵測已停止`;
-  return `Lv ${c.level} · ${c.position.map_name ?? '—'}`;
+  if (isStopped(c)) return `Lv ${c.level}　偵測已停止`;
+  return `Lv ${c.level}　${c.position.map_name ?? '—'}`;
 }
 
 export function Sidebar({
@@ -59,7 +59,7 @@ export function Sidebar({
         <span className="sb-mono">{linked}/{chars.length} 已連</span>
       </div>
       <nav className="sb-chars" aria-label="角色">
-        {chars.length === 0 && <div className="sb-empty">尚未偵測到遊戲程式 — 開啟遊戲後會自動出現在這裡</div>}
+        {chars.length === 0 && <div className="sb-empty">尚未偵測到遊戲程式，開啟遊戲後會自動出現在這裡</div>}
         {chars.map(c => (
           <button
             key={c.pid}
@@ -67,7 +67,7 @@ export function Sidebar({
             className="sb-char"
             aria-current={view.kind === 'char' && view.pid === c.pid ? 'page' : undefined}
             data-stale={isStopped(c) || undefined}
-            title={`${c.name} · pid ${c.pid}`}
+            title={`${c.name}（pid ${c.pid}）`}
             onClick={() => onOpenChar(c.pid)}
           >
             <LinkDot status={c.link} />

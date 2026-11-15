@@ -64,7 +64,7 @@ export function Snapshots({ chars, onOpenChar }: { chars: CharacterRow[]; onOpen
             onChange={onImportPick}
             style={{ display: 'none' }}
           />
-          <span style={{ color: 'var(--tt-mute)', fontSize: 11, letterSpacing: 1 }}>
+          <span style={{ color: 'var(--tt-mute)', fontSize: 11 }}>
             匯出整個留影資料庫為 JSON；匯入會合併既有備份，不覆蓋現有資料
           </span>
         </div>
@@ -94,7 +94,7 @@ export function Snapshots({ chars, onOpenChar }: { chars: CharacterRow[]; onOpen
               >
                 <div style={{ fontFamily: 'var(--tt-font-serif)', letterSpacing: 2 }}>{r.character_name}</div>
                 <div style={{ fontSize: 11, color: 'var(--tt-mute)', fontFamily: 'var(--tt-font-mono)' }}>
-                  {r.saved_at} · {r.source} · {r.item_count} 件
+                  {r.saved_at}　{r.source}　{r.item_count} 件
                 </div>
               </button>
             ))}
@@ -110,7 +110,7 @@ export function Snapshots({ chars, onOpenChar }: { chars: CharacterRow[]; onOpen
                   const pid = pidForName(chars, selected.character_name);
                   return pid !== null && (
                     <button type="button" className="tr-holder-link" style={{ marginLeft: 12, fontSize: 12 }}
-                      onClick={() => onOpenChar(pid, 'items')}>開啟角色 →</button>
+                      onClick={() => onOpenChar(pid, 'items')}>開啟角色</button>
                   );
                 })()}
               </div>

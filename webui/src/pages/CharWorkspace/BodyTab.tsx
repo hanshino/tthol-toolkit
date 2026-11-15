@@ -94,7 +94,7 @@ function GearRow({ slot, meta, selected, onSelect }: {
   const sockets = (slot.inlays ?? []).reduce((n, i) => n + i.count, 0);
   const sub = [
     meta?.type_label, meta?.level ? `Lv.${meta.level}` : '', sockets ? `鑲嵌 ${sockets}` : '',
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join('　');
   return (
     <button
       type="button" className="body-gear-row" aria-pressed={selected} onClick={onSelect}
@@ -137,7 +137,7 @@ function Grid({ pairs, signed }: { pairs: readonly (readonly [string, number])[]
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
       {pairs.map(([k, v]) => (
         <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, whiteSpace: 'nowrap' }}>
-          <span style={{ color: 'var(--tt-dim)', letterSpacing: 2 }}>{k}</span>
+          <span style={{ color: 'var(--tt-dim)' }}>{k}</span>
           {signed && v > 0
             ? <span className="body-signed">+<StatNum value={v} /></span>
             : <StatNum value={v} />}

@@ -131,7 +131,7 @@ export function Diagnostics() {
               style={{
                 display: 'block', textAlign: 'center', padding: '6px 14px',
                 border: '1px solid var(--tt-line)', color: 'var(--tt-text)',
-                textDecoration: 'none', fontSize: 13, letterSpacing: 2,
+                textDecoration: 'none', fontSize: 13,
                 cursor: 'pointer',
               }}
             >

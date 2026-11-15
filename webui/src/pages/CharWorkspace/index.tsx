@@ -14,11 +14,11 @@ import './workspace.css';
 
 const tabs: { k: CharTab; n: string; s: string }[] = [
   { k: 'items', n: '行囊', s: '道具' },
-  { k: 'body', n: '根脈', s: '屬性 · 裝備' },
-  { k: 'skills', n: '武學', s: '技能 · 經脈' },
+  { k: 'body', n: '根脈', s: '屬性、裝備' },
+  { k: 'skills', n: '武學', s: '技能、經脈' },
   { k: 'maps', n: '行止', s: '地圖' },
   { k: 'market', n: '市集', s: '攤位調查' },
-  { k: 'damage', n: '戰錄', s: '傷害 · DPS' },
+  { k: 'damage', n: '戰錄', s: '傷害、DPS' },
   { k: 'assist', n: '輔助', s: '英雄培養' },
 ];
 

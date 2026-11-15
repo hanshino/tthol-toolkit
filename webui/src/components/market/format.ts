@@ -28,7 +28,7 @@ export function attrText(plus: number, stats: ItemStat[], inlays: Inlay[], max =
   parts.push(...stats.slice(0, max).map(s => `${s.label} ${s.value.toLocaleString()}`));
   if (stats.length > max) parts.push(`…另 ${stats.length - max} 項`);
   parts.push(...inlays.map(i => `${i.name}${i.count > 1 ? `×${i.count}` : ''}`));
-  return parts.join(' · ');
+  return parts.join('、');
 }
 
 export function agoText(t: number | null | undefined, now = Date.now() / 1000): string {

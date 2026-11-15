@@ -1,3 +1,4 @@
+/* Hallmark · checked: 2026-11-15 · built: the project · shape: app screen · redesign: polish · full stamp in styles.css */
 /* 總覽: one card per character. */
 .db-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 10px; }
 .db-card { background: var(--tt-raised); border: 1px solid var(--tt-line-soft); padding: 12px; display: grid; gap: 10px; align-content: start; min-width: 0; }
@@ -7,6 +8,10 @@
   color: var(--tt-text); letter-spacing: 0; cursor: pointer;
 }
 .db-nm:hover, .db-nm:focus-visible { background: none; }
+.db-nm:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: 2px; }
+/* The board sits straight on the page: its cards are the only frame. */
+.db-sec { display: grid; gap: 10px; }
+.db-title { font-family: var(--tt-font-serif); font-size: 13px; letter-spacing: 4px; font-weight: 600; color: var(--tt-dim); }
 .db-nm:hover b { color: var(--tt-gold); }
 .db-nm b { font: 500 15px var(--tt-font-serif); letter-spacing: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; transition: color .15s; }
 .db-nm > span { font-size: 11px; color: var(--tt-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -14,5 +19,5 @@
 .db-step { font-size: 12px; color: var(--tt-dim); line-height: 1.45; }
 .db-vitals { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .db-vit { display: grid; gap: 2px; min-width: 0; }
-.db-vit span { font: 10px var(--tt-font-mono); color: var(--tt-dim); }
+.db-vit span { font: 11px var(--tt-font-mono); color: var(--tt-dim); }
 .db-err { font-size: 11px; color: var(--tt-bad); line-height: 1.5; }

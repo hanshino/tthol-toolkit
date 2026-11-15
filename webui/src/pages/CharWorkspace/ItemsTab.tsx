@@ -90,13 +90,13 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
   const invStatus: LinkStatus = invFresh ? 'ok' : 'weak';
   const invSub = invTs === null
     ? '等待角色定位後自動讀取'
-    : invFresh ? `自動更新中 · ${clock(invTs)}` : `暫停更新 · 最後 ${clock(invTs)}`;
+    : invFresh ? `自動更新中　${clock(invTs)}` : `暫停更新，最後 ${clock(invTs)}`;
 
   const whTs = detail?.warehouse_updated_at ?? null;
   const whOpen = detail?.warehouse_open ?? false;
   const whSub = whOpen
-    ? `倉庫開啟中 · 自動更新`
-    : whTs === null ? '在遊戲中開啟倉庫即可讀取' : `倉庫已關閉 · 顯示 ${clock(whTs)} 的內容`;
+    ? `倉庫開啟中，自動更新`
+    : whTs === null ? '在遊戲中開啟倉庫即可讀取' : `倉庫已關閉，顯示 ${clock(whTs)} 的內容`;
 
   const counts: Record<Tab, number> = {
     all: slots.length, inventory: inventory.length, pet: pet.length, warehouse: warehouse.length,
@@ -129,7 +129,7 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
   const emptyText = query.trim()
     ? `沒有符合「${query.trim()}」的道具`
     : tab === 'warehouse' && whTs === null
-      ? '尚未讀取庫房 — 在遊戲中開啟倉庫即可自動讀取'
+      ? '尚未讀取庫房，在遊戲中開啟倉庫即可自動讀取'
       : invTs === null ? '角色定位後會自動讀取行囊' : '這裡沒有道具';
 
   const totalQty = shown.reduce((a, e) => a + e.qty, 0);
@@ -213,7 +213,7 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
 
           <div className="inv-foot">
             <span>
-              {prefs.merge ? `${shown.length} 種道具` : `${shown.length} 格`} · 共 {totalQty.toLocaleString()} 個
+              {prefs.merge ? `${shown.length} 種道具` : `${shown.length} 格`}，共 {totalQty.toLocaleString()} 個
             </span>
             <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <button type="button" className="is-ghost" onClick={() => saveSnapshot('inventory')}
@@ -225,7 +225,7 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
                 {saving === 'warehouse' ? '保存中…' : '↧ 留影庫'}
               </button>
               <button type="button" className="is-ghost" onClick={onOpenSnapshots} title="到留影頁查看已保存的快照">
-                看留影 →
+                看留影
               </button>
             </span>
           </div>

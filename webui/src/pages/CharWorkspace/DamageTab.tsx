@@ -167,7 +167,7 @@ export function DamageTab({ pid, active }: { pid: number; active: boolean }) {
                 </section>
                 <section className="dmg-panel">
                   <div className="dmg-head">
-                    <h3>每一下傷害 · 近 {HIT_WINDOW / 60} 分鐘</h3>
+                    <h3>每一下傷害（近 {HIT_WINDOW / 60} 分鐘）</h3>
                     <Legend />
                   </div>
                   <HitChart hits={hits} elapsed={elapsed} />
@@ -231,7 +231,7 @@ function TargetCard({ target }: { target: DamageTarget | null }) {
       <div className="dmg-chips">
         {debuffs.length === 0
           ? <span className="dmg-chip">無減益</span>
-          : debuffs.map(g => <span key={g} className="dmg-chip is-debuff">{g === 15 ? '卸冑 · 防禦 ×0.4' : `減益 ${g}`}</span>)}
+          : debuffs.map(g => <span key={g} className="dmg-chip is-debuff">{g === 15 ? '卸冑：防禦 ×0.4' : `減益 ${g}`}</span>)}
       </div>
     </section>
   );
@@ -391,7 +391,7 @@ function DpsChart({ hits, elapsed, win, gap }: { hits: Hit[]; elapsed: number; w
       </svg>
       {hp && (
         <Tip x={X(hp.x)} y={((Number.isNaN(hp.v) ? Y(0) : Y(hp.v)) / H) * (ref.current?.getBoundingClientRect().height ?? H)}>
-          <span className="dmg-mono">{mmss(hp.x)}</span> · 近 {win} 秒<br />
+          <span className="dmg-mono">{mmss(hp.x)}</span>　近 {win} 秒<br />
           {Number.isNaN(hp.v) ? '沒在戰鬥' : <>DPS <b>{fmt(hp.v)}</b></>}
         </Tip>
       )}
@@ -433,11 +433,11 @@ function HitChart({ hits, elapsed }: { hits: Hit[]; elapsed: number }) {
       </svg>
       {hover && (
         <Tip x={X(hover.t)} y={(Y(hover.damage ?? 0) / H) * (ref.current?.getBoundingClientRect().height ?? H)}>
-          <span className="dmg-mono">{mmss(hover.t)}</span> · {sourceLabel(hover)}<br />
+          <span className="dmg-mono">{mmss(hover.t)}</span>　{sourceLabel(hover)}<br />
           {(hover.segments ?? []).map((s, i) => (
             <span key={i}>{RESULT_LABEL[s[0]] ?? `類型 ${s[0]}`}{s[1] ? <> <b>{fmt(s[1])}</b></> : null}{i < (hover.segments ?? []).length - 1 ? '、' : ''}</span>
           ))}
-          {hover.target && <><br />{hover.target.name ?? `npc ${hover.target.npc_id}`}{debuffsAt(hover.target).includes(15) ? ' · 卸冑' : ''}</>}
+          {hover.target && <><br />{hover.target.name ?? `npc ${hover.target.npc_id}`}{debuffsAt(hover.target).includes(15) ? '（卸冑）' : ''}</>}
         </Tip>
       )}
     </div>
@@ -466,12 +466,12 @@ function Sources({ hits, total }: { hits: Hit[]; total: number }) {
         {rows.map(r => <i key={r.label} style={{ width: `${(r.sum / (total || 1)) * 100}%`, background: `var(${SOURCE_VAR[r.src]})` }} />)}
       </div>
       <table className="dmg-table">
-        <thead><tr><th>來源</th><th>段數</th><th>平均</th><th>最低–最高</th><th>佔總傷害</th></tr></thead>
+        <thead><tr><th>來源</th><th>段數</th><th>平均</th><th>最低～最高</th><th>佔總傷害</th></tr></thead>
         <tbody>
           {rows.map(r => (
             <tr key={r.label}>
               <td><span className="dmg-sw" style={{ background: `var(${SOURCE_VAR[r.src]})` }} />{r.label}</td>
-              <td>{r.n}</td><td>{fmt(r.sum / r.n)}</td><td>{fmt(r.min)}–{fmt(r.max)}</td>
+              <td>{r.n}</td><td>{fmt(r.sum / r.n)}</td><td>{fmt(r.min)}～{fmt(r.max)}</td>
               <td>{total ? ((r.sum / total) * 100).toFixed(1) : '0'}%</td>
             </tr>
           ))}
@@ -519,7 +519,7 @@ function HitLog({ hits }: { hits: Hit[] }) {
   const rows = hits.slice(-LOG_ROWS).reverse();
   return (
     <section className="dmg-panel">
-      <div className="dmg-head"><h3>出手紀錄</h3><span className="dmg-lbl">共 {hits.length} 下 · 顯示最近 {Math.min(LOG_ROWS, hits.length)} 下</span></div>
+      <div className="dmg-head"><h3>出手紀錄</h3><span className="dmg-lbl">共 {hits.length} 下，顯示最近 {Math.min(LOG_ROWS, hits.length)} 下</span></div>
       <div className="dmg-logwrap">
         <table className="dmg-table dmg-log">
           <thead><tr><th>時間</th><th>來源</th><th>結果</th><th>傷害</th><th>目標</th><th>目標狀態</th><th>目標依據</th></tr></thead>

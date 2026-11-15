@@ -83,8 +83,8 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
           </div>
           <div className="ws-sub">
             {unlocated
-              ? `pid ${char.pid} · 尚未定位`
-              : `${char.sect ? `${char.sect} · ` : ''}Lv ${char.level} · pid ${char.pid}`}
+              ? `pid ${char.pid}　尚未定位`
+              : `${char.sect ? `${char.sect}　` : ''}Lv ${char.level}　pid ${char.pid}`}
           </div>
         </div>
         <div className="ws-actions">
@@ -118,14 +118,14 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
             <div className="ws-vital">
               <span className="ws-vlabel">方位</span>
               <span className="ws-vnum ws-ellipsis">
-                {char.position.map_name ?? '—'} · {char.position.x},{char.position.y}
+                {char.position.map_name ?? '—'}　{char.position.x},{char.position.y}
               </span>
             </div>
           </div>
           <div className="ws-buffs ws-dim-when-lost">
             <BuffChips buffs={char.buffs} emptyText="目前無增益狀態" />
             {char.autoclick.running && (
-              <span className="ws-auto">● 英雄培養執行中{runtime != null ? ` · ${runtime}s` : ''}</span>
+              <span className="ws-auto">● 英雄培養執行中{runtime != null ? `　${runtime}s` : ''}</span>
             )}
           </div>
         </>
@@ -135,7 +135,7 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
         <div className="ws-banner is-warn" role="status">
           <div>
             <span className="ws-badge">斷</span>
-            遊戲程式已關閉 — 以下是 {clock(goneSince)} 的最後資料
+            遊戲程式已關閉，以下是 {clock(goneSince)} 的最後資料
           </div>
           <button type="button" className="ws-back" onClick={onBackToOverview}>回總覽</button>
         </div>
@@ -143,7 +143,7 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
 
       {stopped && !err && (
         <div className="ws-banner is-warn" role="status">
-          <div><span className="ws-badge">停</span>角色偵測已停止 — 按「↻ 重偵」重新偵測</div>
+          <div><span className="ws-badge">停</span>角色偵測已停止，按「↻ 重偵」重新偵測</div>
         </div>
       )}
 
@@ -237,7 +237,7 @@ function StatSimActions({ pid, disabled, onError }: {
         onClick={() => run('open')}
         title="在瀏覽器開啟 genbu 配裝模擬器並直接匯入"
       >
-        {busy === 'open' ? '讀取中…' : '開啟 ↗'}
+        {busy === 'open' ? '讀取中…' : '開啟模擬器'}
       </button>
       <span className="ws-sr" role="status">{copied ? '已複製到剪貼簿' : ''}</span>
     </>

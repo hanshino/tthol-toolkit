@@ -86,7 +86,7 @@ export function MapAnalysis({ char, active = true }: { char: CharacterRow; activ
   return (
     <div className="ma">
       <div className="ma-map">
-        <Panel title={`輿圖 · ${pos.map_name ?? info.stage.name}　#${pos.stage_id ?? info.stage.stage_id}`}>
+        <Panel title={`輿圖　${pos.map_name ?? info.stage.name}　#${pos.stage_id ?? info.stage.stage_id}`}>
           <Minimap
             pid={char.pid}
             position={pos} charLevel={charLevel} highlight={hl}
@@ -150,7 +150,7 @@ export function MapAnalysis({ char, active = true }: { char: CharacterRow; activ
                   <span className="ma-name">{m.name ?? `#${m.npc_id}`}</span>
                   <span className="ma-mono" data-tone={levelTone(m.level, charLevel)}>Lv {m.level ?? '—'}</span>
                   <span className="ma-mono ma-dim">HP {m.hp ?? '—'}</span>
-                  <span className="ma-mono ma-gold">{m.drop_money_min ?? 0}–{m.drop_money_max ?? 0}</span>
+                  <span className="ma-mono ma-gold">{m.drop_money_min ?? 0}～{m.drop_money_max ?? 0}</span>
                   <span style={{ textAlign: 'right' }}><StatNum value={m.count} /></span>
                 </div>
               ))}
@@ -164,7 +164,7 @@ export function MapAnalysis({ char, active = true }: { char: CharacterRow; activ
                 {...lights({ npcId: sp.npc_id })}
               >
                 <span className="ma-name">{sp.name ?? `#${sp.npc_id}`}</span>
-                <span className="ma-mono ma-dim">{sp.distance ?? '—'} 格 · {sp.x},{sp.y}</span>
+                <span className="ma-mono ma-dim">{sp.distance ?? '—'} 格　{sp.x},{sp.y}</span>
               </div>
             ))
           ))}

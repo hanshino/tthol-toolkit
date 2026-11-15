@@ -1,3 +1,4 @@
+/* Hallmark · checked: 2026-11-15 · built: the project · shape: app screen · redesign: polish · full stamp in styles.css */
 /* Minimap: a map thumbnail with markers placed by percentage, so marker size
    stays fixed in screen px whatever the map's scale. Buttons are written as
    `button.x` to outrank the global button styles in styles.css. */
@@ -6,11 +7,11 @@
 .mm-layers { display: flex; gap: 6px; }
 button.mm-layer {
   display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 10px;
-  font-size: 12px; letter-spacing: 1px; color: var(--tt-mute); background: var(--tt-bg);
+  font-size: 12px; color: var(--tt-mute); background: var(--tt-bg);
   transition: color 150ms ease, border-color 150ms ease;
 }
 button.mm-layer[aria-pressed="true"] { color: var(--tt-text); border-color: var(--tt-accent-dim); }
-button.mm-layer:disabled { opacity: 0.4; cursor: default; }
+button.mm-layer:disabled { opacity: 0.4; cursor: not-allowed; border-style: dashed; }
 button.mm-layer:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
 button.mm-layer > i { width: 8px; height: 8px; border-radius: 50%; }
 button.mm-layer[data-layer="warps"] > i { background: var(--tt-accent); border-radius: 1px; transform: rotate(45deg); }
@@ -36,11 +37,11 @@ button.mm-scope[aria-pressed="true"] { color: var(--tt-gold); border-color: var(
 
 /* z-index scale: spawns 10, npcs 20, warps 30, player 40, hovered tip 50 */
 .mm-pt { position: absolute; transform: translate(-50%, -50%); }
-.mm-spawn { z-index: 10; width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+.mm-spawn { z-index: 10; width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 0 0 1px var(--tt-map-outline); }
 .mm-spawn[data-tone="ok"] { background: var(--tt-ok); }
 .mm-spawn[data-tone="bad"] { background: var(--tt-bad); }
 .mm-spawn[data-tone="mute"] { background: var(--tt-mute); }
-.mm-npc { z-index: 20; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7); }
+.mm-npc { z-index: 20; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-gold); box-shadow: 0 0 0 1px var(--tt-map-outline); }
 .mm-warp { z-index: 30; width: 10px; height: 10px; }
 .mm-warp::before {
   content: ""; position: absolute; inset: 0; transform: rotate(45deg);
@@ -58,7 +59,7 @@ button.mm-scope[aria-pressed="true"] { color: var(--tt-gold); border-color: var(
 .mm-track > .mm-player { left: 0; top: 0; }
 .mm-player {
   z-index: 40; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box;
-  background: #fff; border: 3px solid var(--tt-seal); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
+  background: var(--tt-map-core); border: 3px solid var(--tt-seal); box-shadow: 0 0 0 1px var(--tt-map-outline);
 }
 .mm-player::after {
   content: ""; position: absolute; inset: -7px; border-radius: 50%; border: 2px solid var(--tt-seal);
@@ -72,12 +73,12 @@ button.mm-scope[aria-pressed="true"] { color: var(--tt-gold); border-color: var(
 .mm-route-line { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none; overflow: visible; }
 .mm-route-line > polyline {
   fill: none; stroke: var(--tt-gold); stroke-width: 2; stroke-dasharray: 6 4;
-  stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+  stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px var(--tt-map-outline));
 }
-.mm-hop { z-index: 35; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8); pointer-events: none; }
+.mm-hop { z-index: 35; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-gold); box-shadow: 0 0 0 1px var(--tt-map-outline); pointer-events: none; }
 .mm-goal {
   z-index: 38; width: 12px; height: 12px; pointer-events: none;
-  border: 2px solid var(--tt-gold); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8);
+  border: 2px solid var(--tt-gold); border-radius: 50%; box-shadow: 0 0 0 1px var(--tt-map-outline);
 }
 .mm-goal[data-bad] { border-color: var(--tt-bad); border-style: dashed; }
 .mm-route { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tt-gold); }
@@ -89,8 +90,8 @@ button.mm-go { color: var(--tt-gold); border-color: var(--tt-gold); }
    exit labels collided on maps whose exits sit close together. */
 .mm-label, .mm-tip {
   position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%);
-  white-space: nowrap; font-weight: normal; font-size: 11px; letter-spacing: 1px; line-height: 1.4;
-  padding: 1px 6px; color: var(--tt-text); background: rgba(12, 16, 20, 0.82); border: 1px solid var(--tt-line);
+  white-space: nowrap; font-weight: normal; font-size: 11px; line-height: 1.4;
+  padding: 1px 6px; color: var(--tt-text); background: var(--tt-map-label-bg); border: 1px solid var(--tt-line);
   pointer-events: none; font-family: var(--tt-font-serif);
 }
 .mm-label[data-side="start"], .mm-tip[data-side="start"] { left: -2px; transform: none; }
@@ -108,9 +109,9 @@ button.mm-go { color: var(--tt-gold); border-color: var(--tt-gold); }
 /* Hovering a table row: lift its points, fade the rest. */
 .mm-map[data-hl] .mm-spawn:not([data-lit]), .mm-map[data-hl] .mm-npc,
 .mm-map[data-hl] .mm-warp:not([data-lit]) { opacity: 0.3; }
-.mm-spawn[data-lit] { z-index: 45; width: 10px; height: 10px; box-shadow: 0 0 0 2px var(--tt-text), 0 0 0 3px rgba(0, 0, 0, 0.7); }
+.mm-spawn[data-lit] { z-index: 45; width: 10px; height: 10px; box-shadow: 0 0 0 2px var(--tt-text), 0 0 0 3px var(--tt-map-outline); }
 .mm-warp[data-lit] { z-index: 45; }
-.mm-warp[data-lit]::before { background: var(--tt-gold); border-color: #fff; }
+.mm-warp[data-lit]::before { background: var(--tt-gold); border-color: var(--tt-map-core); }
 .mm-warp[data-lit] > .mm-label { border-color: var(--tt-gold); color: var(--tt-gold); }
 .mm-pt { transition: opacity 150ms ease; }
 
@@ -134,16 +135,23 @@ button.mm-mode:focus-visible { outline: 1px solid var(--tt-gold); outline-offset
 button.mm-layer[data-layer="players"] > i { background: var(--tt-live-player); }
 button.mm-layer[data-layer="monsters"] > i { background: var(--tt-bad); border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
 .mm-live { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--tt-dim); }
-.mm-live > i { width: 6px; height: 6px; border-radius: 50%; background: var(--tt-ok); box-shadow: 0 0 0 3px rgba(124, 168, 152, 0.18); }
+.mm-live > i { width: 6px; height: 6px; border-radius: 50%; background: var(--tt-ok); box-shadow: 0 0 0 3px var(--tt-live-halo); }
 .mm-live[data-bad] { color: var(--tt-bad); }
 .mm-live[data-bad] > i { background: var(--tt-bad); box-shadow: none; }
 
 /* z: monsters 32, other players 36 (under the own dot at 40). Positions jump
    once a second; a short slide keeps a walking monster readable. */
-.mm-mob, .mm-other { transition: left 600ms linear, top 600ms linear, opacity 150ms ease; }
+/* Live markers carry their position as --mx / --my (percent of the map) and
+   are placed with `translate` in container units, so the slide stays on the
+   compositor. .mm-pt's own transform still centres the marker on the point. */
+.mm-map { container-type: size; }
+.mm-mob, .mm-other, .mm-follower {
+  left: 0; top: 0; translate: calc(var(--mx) * 1cqw) calc(var(--my) * 1cqh);
+  transition: translate 600ms linear, opacity 150ms ease;
+}
 .mm-mob { z-index: 32; width: 13px; height: 12px; }
 .mm-mob::before, .mm-mob::after { content: ""; position: absolute; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-.mm-mob::before { inset: 0; background: rgba(0, 0, 0, 0.8); }
+.mm-mob::before { inset: 0; background: var(--tt-map-outline); }
 .mm-mob::after { inset: 2px 2.5px 1px; }
 .mm-mob[data-tone="ok"]::after { background: var(--tt-ok); }
 .mm-mob[data-tone="bad"]::after { background: var(--tt-bad); }
@@ -156,8 +164,7 @@ button.mm-layer[data-layer="monsters"] > i { background: var(--tt-bad); border-r
    on hover only (a town view can hold more followers than players). */
 .mm-follower {
   z-index: 34; width: 7px; height: 7px; border-radius: 50%; box-sizing: border-box;
-  border: 2px solid var(--tt-live-player); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
-  transition: left 600ms linear, top 600ms linear, opacity 150ms ease;
+  border: 2px solid var(--tt-live-player); box-shadow: 0 0 0 1px var(--tt-map-outline);
 }
 .mm-follower:hover, .mm-follower:focus-visible { z-index: 50; outline: none; }
 .mm-follower[data-lit] { z-index: 45; }
@@ -168,7 +175,7 @@ button.mm-layer[data-layer="followers"] > i { box-sizing: border-box; background
 .mm-name {
   position: absolute; top: calc(100% + 3px); left: 50%; transform: translateX(-50%);
   white-space: nowrap; font-weight: normal; font-family: var(--tt-font-serif); font-size: 11px; line-height: 1.3;
-  letter-spacing: 1px; padding: 0 4px; color: var(--tt-text); background: rgba(12, 16, 20, 0.72); pointer-events: none;
+  padding: 0 4px; color: var(--tt-text); background: var(--tt-map-label-bg); pointer-events: none;
 }
 .mm-name[data-side="start"] { left: -2px; transform: none; }
 .mm-name[data-side="end"] { left: auto; right: -2px; transform: none; }
@@ -207,11 +214,11 @@ button.ma-tab:focus-visible { outline: 1px solid var(--tt-gold); outline-offset:
 }
 .ma-row[tabindex]:hover, .ma-row[tabindex]:focus-visible { background: var(--tt-raised); outline: none; }
 .ma-row.ma-mon { display: grid; grid-template-columns: 1.2fr 48px 80px 96px 56px; }
-.ma-head { font-size: 11px; color: var(--tt-mute); letter-spacing: 2px; }
+.ma-head { font-size: 11px; color: var(--tt-mute); }
 .ma-name { font-family: var(--tt-font-serif); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ma-mono { font-family: var(--tt-font-mono); }
 .ma-tags { display: flex; align-items: center; gap: 6px; flex: none; }
-.ma-tag { font-size: 11px; letter-spacing: 1px; padding: 0 6px; color: var(--tt-accent); border: 1px solid var(--tt-accent-dim); }
+.ma-tag { font-size: 11px; padding: 0 6px; color: var(--tt-accent); border: 1px solid var(--tt-accent-dim); }
 .ma-dim { color: var(--tt-dim); }
 .ma-gold { color: var(--tt-gold); }
 .ma-mono[data-tone="ok"] { color: var(--tt-ok); }
@@ -220,7 +227,7 @@ button.ma-tab:focus-visible { outline: 1px solid var(--tt-gold); outline-offset:
 
 /* 周遭: live objects, grouped, nearest first. */
 .ma-tab-sep { width: 1px; height: 18px; align-self: center; background: var(--tt-line); margin: 0 6px; }
-.ma-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tt-ok); box-shadow: 0 0 0 3px rgba(124, 168, 152, 0.18); }
+.ma-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tt-ok); box-shadow: 0 0 0 3px var(--tt-live-halo); }
 .ma-row.ma-live { display: grid; grid-template-columns: 14px minmax(0, 1.3fr) 48px 104px 56px 72px; }
 .ma-group { padding: 10px 8px 4px; font-family: var(--tt-font-serif); font-size: 12px; letter-spacing: 3px; }
 .ma-group[data-kind="player"] { color: var(--tt-live-player); }
@@ -234,7 +241,7 @@ button.ma-tab:focus-visible { outline: 1px solid var(--tt-gold); outline-offset:
 .ma-mark[data-tone="ok"] { background: var(--tt-ok); }
 .ma-mark[data-tone="bad"] { background: var(--tt-bad); }
 .ma-mark[data-tone="mute"] { background: var(--tt-mute); }
-.ma-stall { margin-left: 6px; color: var(--tt-warn); border-color: #6a5a3a; }
+.ma-stall { margin-left: 6px; color: var(--tt-warn); border-color: var(--tt-warn-dim); }
 .ma-hp { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .ma-hp-bar { flex: 1; height: 4px; background: var(--tt-line-soft); }
 .ma-hp-bar > span { display: block; height: 100%; background: var(--tt-bad); }

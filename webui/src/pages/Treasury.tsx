@@ -86,7 +86,7 @@ export function Treasury({ chars, onOpenChar }: { chars: CharacterRow[]; onOpenC
         {error && <Empty text={`讀取失敗：${error}`} />}
         {!error && loading && <Empty text="讀取中…" />}
         {!error && !loading && filtered.length === 0 && (
-          <Empty text={search ? '查無符合的道具' : '尚無留影資料 — 請先到角色頁面儲存背包/庫房 snapshot'} />
+          <Empty text={search ? '查無符合的道具' : '尚無留影資料，請先到角色頁面儲存背包/庫房 snapshot'} />
         )}
         {!error && !loading && filtered.length > 0 && (
           <div className="tr-split">
@@ -157,7 +157,7 @@ function ExportMenu() {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--tt-mute)', letterSpacing: 2 }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--tt-mute)' }}>{label}</div>
       <div style={{ fontSize: 24 }}><StatNum value={value} /></div>
     </div>
   );
@@ -168,7 +168,7 @@ function ItemHeader() {
     <div style={{
       display: 'grid', gridTemplateColumns: ROW_COLUMNS,
       gap: 12, padding: '4px 8px',
-      fontSize: 11, color: 'var(--tt-mute)', letterSpacing: 2,
+      fontSize: 11, color: 'var(--tt-mute)',
       borderBottom: '1px solid var(--tt-line-soft)',
     }}>
       <span />
@@ -248,7 +248,7 @@ function HolderSection({ item, chars, onOpenChar }: {
               {pid !== null
                 ? <button type="button" className="tr-holder-link" onClick={() => onOpenChar(pid, 'items')} title="開啟這個角色的行囊">{h.character}</button>
                 : <span>{h.character}</span>}
-              <span className="tr-holder-src">{h.source === 'warehouse' ? '庫房' : '隨身'}{h.account ? ` · ${h.account}` : ''}</span>
+              <span className="tr-holder-src">{h.source === 'warehouse' ? '庫房' : '隨身'}{h.account ? `　${h.account}` : ''}</span>
               <span className="tr-holder-qty">{h.qty.toLocaleString()}</span>
             </div>
           );

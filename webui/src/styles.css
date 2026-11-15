@@ -1,3 +1,7 @@
+/* Hallmark · checked: 2026-11-15 · genre: modern-minimal (inferred)
+ * floor: 23 FAIL left on purpose (18 x 67 tracked serif titles, the design's voice; 3 x 19 empty-cell dash; 56 and 67 "JSONL" false positives)
+ * fixed: 4, 10a, 19, 26a, 39a, 40, 48, 63, 67 (sans labels and buttons), 75 · structural: 2 printed (narrow header, tab subtitles)
+ * built: the project · shape: app screen · redesign: polish · v2.0.0 */
 :root {
   --tt-bg: #0c1014;
   --tt-panel: #141a20;
@@ -6,7 +10,7 @@
   --tt-line-soft: #1f2830;
   --tt-text: #d8e2e8;
   --tt-dim: #8a9aa4;
-  --tt-mute: #5a6a74;
+  --tt-mute: #7c8c96; /* 4.5:1 on --tt-raised, the lightest surface it sits on */
   --tt-accent: #5a8898;
   --tt-accent-dim: #3a5868;
   --tt-gold: #c9b884;
@@ -16,6 +20,25 @@
   --tt-seal: #a04848;
   --tt-live-player: #9fd3e3; /* other players on the live map: lighter than every data marker */
   --tt-grid: rgba(90, 136, 152, 0.05);
+  --tt-sunken: #10161b; /* a well below --tt-panel: icon slots, summary strips */
+  --tt-ok-dim: #3f6a5e;
+  --tt-warn-dim: #6a5838;
+  --tt-gold-dim: #7d7350;
+  --tt-seal-text: #e0a0a0;
+  --tt-on-seal: #fff;
+  --tt-map-core: #fff; /* own dot and lit exits on the minimap */
+  --tt-map-outline: rgba(0, 0, 0, 0.75); /* dark ring that keeps a marker readable on any map art */
+  --tt-map-label-bg: rgba(12, 16, 20, 0.82);
+  --tt-live-halo: rgba(124, 168, 152, 0.18);
+  --tt-qty-outline: #000; /* stack counts drawn over item icons */
+  --tt-scroll-thumb: rgba(255, 255, 255, 0.06);
+  --tt-scroll-thumb-hover: rgba(255, 255, 255, 0.12);
+  /* Damage chart series. Checked with the dataviz palette validator against
+     --tt-panel: lightness, chroma, CVD separation and contrast all pass. */
+  --dmg-atk: #3987e5;
+  --dmg-crit: #c98500;
+  --dmg-skill: #9085e9;
+  --dmg-grid: rgba(138, 154, 164, 0.12);
   --tt-font: "Noto Sans TC", "Source Han Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
   --tt-font-serif: "Noto Serif TC", "Source Han Serif TC", "Songti TC", "PMingLiU", serif;
   --tt-font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
@@ -24,15 +47,14 @@ html, body, #root { margin: 0; height: 100%; background: var(--tt-bg); color: va
 * { box-sizing: border-box; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,.06); }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.12); }
+::-webkit-scrollbar-thumb { background: var(--tt-scroll-thumb); }
+::-webkit-scrollbar-thumb:hover { background: var(--tt-scroll-thumb-hover); }
 input::placeholder { color: var(--tt-mute); }
 
 /* ---- Buttons ------------------------------------------------------ */
 button {
   font-family: var(--tt-font);
   font-size: 13px;
-  letter-spacing: 2px;
   color: var(--tt-text);
   background: var(--tt-panel);
   border: 1px solid var(--tt-line);
@@ -40,6 +62,7 @@ button {
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
+button:focus-visible, a.tt-btn:focus-visible { outline: 1px solid var(--tt-gold); outline-offset: -1px; }
 button:hover:not(:disabled) {
   background: var(--tt-raised);
   border-color: var(--tt-gold);
@@ -60,7 +83,6 @@ button.is-ghost {
   background: transparent;
   border: none;
   color: var(--tt-dim);
-  letter-spacing: 1px;
 }
 button.is-ghost:hover:not(:disabled) {
   color: var(--tt-text);
@@ -82,7 +104,6 @@ a.tt-btn {
   display: inline-block;
   font-family: var(--tt-font);
   font-size: 13px;
-  letter-spacing: 2px;
   color: var(--tt-text);
   background: var(--tt-panel);
   border: 1px solid var(--tt-line);
@@ -104,10 +125,10 @@ input, select, textarea {
   background: var(--tt-bg);
   border: 1px solid var(--tt-line);
   padding: 6px 10px;
-  outline: none;
 }
-input:focus, select:focus, textarea:focus {
-  border-color: var(--tt-gold);
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 1px solid var(--tt-gold);
+  outline-offset: -1px;
 }
 
 /* Checkboxes in the app's own look (square, line frame, gold when on) instead

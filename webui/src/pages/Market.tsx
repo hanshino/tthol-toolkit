@@ -135,7 +135,7 @@ export function Market({ chars }: { chars: CharacterRow[] }) {
       <header className="mk-bar">
         <div style={{ display: 'grid', gap: 2 }}>
           <h1 style={{ margin: 0, fontFamily: 'var(--tt-font-serif)', fontSize: 20, fontWeight: 600, letterSpacing: 4 }}>市價</h1>
-          <span className="mk-hint">從攤位記下的上架紀錄 · 同一筆上架重複看到只算一次</span>
+          <span className="mk-hint">從攤位記下的上架紀錄，同一筆上架重複看到只算一次</span>
         </div>
         <span className="mk-right">
           <a className="tt-btn" download href="/api/market/export.csv">匯出 CSV</a>
@@ -149,7 +149,7 @@ export function Market({ chars }: { chars: CharacterRow[] }) {
         <label><input type="checkbox" checked={showNegotiate} onChange={e => setShowNegotiate(e.target.checked)} />顯示議價</label>
         {totals && (
           <span className="mk-right mk-mono mk-hint">
-            {totals.stalls} 攤 · {totals.listings} 筆上架（議價 {totals.negotiate}）· 最後記錄 {agoText(totals.last_seen)}
+            {totals.stalls} 攤、{totals.listings} 筆上架（議價 {totals.negotiate}），最後記錄 {agoText(totals.last_seen)}
           </span>
         )}
       </div>
@@ -207,7 +207,7 @@ export function Market({ chars }: { chars: CharacterRow[] }) {
                         {i.min == null ? '議價' : silverText(i.min)}
                       </span>
                       <span className="mk-item-meta" data-many={i.listings > 1 || undefined}>
-                        {i.listings} 筆 · {i.sellers} 攤 · {agoText(i.last_seen)}
+                        {i.listings} 筆、{i.sellers} 攤　{agoText(i.last_seen)}
                       </span>
                     </span>
                   </button>
@@ -224,7 +224,7 @@ export function Market({ chars }: { chars: CharacterRow[] }) {
                       <span style={{ fontFamily: 'var(--tt-font-serif)', fontSize: 17, letterSpacing: 2 }}>{current.name}</span>
                       <span className="mk-hint">
                         {curMeta?.type_label || '—'}
-                        {current.negotiate ? ` · 議價 ${current.negotiate}` : ''}{current.flagged ? ` · 不採計 ${current.flagged}` : ''}
+                        {current.negotiate ? `　議價 ${current.negotiate}` : ''}{current.flagged ? `　不採計 ${current.flagged}` : ''}
                       </span>
                     </div>
                     {current.listings === 1 && (
@@ -338,9 +338,9 @@ function ListingRow({ l, busy, meta, chars, open, onToggle, onExcludeListing, on
             </div>
             <StallPlace listing={l} chars={chars} />
             <span className="mk-stall-card-foot">
-              {l.viewer_x != null && l.viewer_y != null && <>你在 ({l.viewer_x}, {l.viewer_y}) 看到 · </>}
+              {l.viewer_x != null && l.viewer_y != null && <>你在 ({l.viewer_x}, {l.viewer_y}) 看到，</>}
               最後看到 {dateText(l.last_seen)}
-              {l.ended_at && <span style={{ color: 'var(--tt-warn)' }}> · 重開時已不在，可能收攤了</span>}
+              {l.ended_at && <span style={{ color: 'var(--tt-warn)' }}>。重開時已不在，可能收攤了</span>}
             </span>
           </section>
           <div className="mk-detail-gear">

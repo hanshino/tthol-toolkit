@@ -27,7 +27,7 @@ export function ItemDetail({ entry, children }: { entry: Entry | undefined; chil
           <div className="inv-d-type">
             <span className="inv-cdot" style={{ background: categoryColor(entry.category) }} />
             {m?.type_label || '道具'}
-            {m?.level ? ` · Lv.${m.level}` : ''}
+            {m?.level ? `　Lv.${m.level}` : ''}
           </div>
           <div className="inv-d-id">#{entry.itemId}</div>
         </div>

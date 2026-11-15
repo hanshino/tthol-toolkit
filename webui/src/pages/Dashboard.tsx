@@ -43,7 +43,7 @@ export function Dashboard({ chars, onOpenChar }: { chars: CharacterRow[]; onOpen
             <button
               key={`${a.pid}-${a.text}`} type="button" onClick={() => onOpenChar(a.pid)}
               style={{
-                fontSize: 12, padding: '4px 10px', letterSpacing: 1,
+                fontSize: 12, padding: '4px 10px',
                 color: a.tone === 'bad' ? 'var(--tt-bad)' : 'var(--tt-warn)',
                 borderColor: a.tone === 'bad' ? 'var(--tt-bad)' : 'var(--tt-warn)',
               }}
@@ -55,17 +55,22 @@ export function Dashboard({ chars, onOpenChar }: { chars: CharacterRow[]; onOpen
         </div>
       </Panel>
 
-      <Panel title="總覽">
-        {chars.length === 0
-          ? <div style={{ color: 'var(--tt-dim)', fontSize: 12, padding: 24, textAlign: 'center' }}>尚未偵測到遊戲程式 — 開啟遊戲後會自動出現在這裡</div>
-          : (
+      {chars.length === 0
+        ? (
+          <Panel title="總覽">
+            <div style={{ color: 'var(--tt-dim)', fontSize: 12, padding: 24, textAlign: 'center' }}>尚未偵測到遊戲程式，開啟遊戲後會自動出現在這裡</div>
+          </Panel>
+        )
+        : (
+          <section className="db-sec">
+            <header className="db-title">總覽</header>
             <div className="db-board">
               {chars.map(c => (
                 <Card key={c.pid} c={c} onOpen={() => onOpenChar(c.pid)} />
               ))}
             </div>
-          )}
-      </Panel>
+          </section>
+        )}
     </div>
   );
 }
@@ -74,7 +79,7 @@ function Card({ c, onOpen }: { c: CharacterRow; onOpen: () => void }) {
   const unlocated = isUnlocated(c);
   const sub = unlocated
     ? `pid ${c.pid}`
-    : [`Lv ${c.level}`, c.sect, c.position.map_name].filter(Boolean).join(' · ');
+    : [`Lv ${c.level}`, c.sect, c.position.map_name].filter(Boolean).join('　');
   return (
     <div className={`db-card${isStopped(c) ? ' is-lost' : ''}`}>
       <button type="button" className="db-nm" onClick={onOpen} title="開啟角色">
@@ -92,7 +97,7 @@ function Card({ c, onOpen }: { c: CharacterRow; onOpen: () => void }) {
       {c.last_error && (
         <span className="db-err">
           <span style={{ fontFamily: 'var(--tt-font-serif)', marginRight: 6 }}>錯</span>
-          {friendlyError(c.last_error)} — 點名字進去處理
+          {friendlyError(c.last_error)}，點名字進去處理
         </span>
       )}
     </div>

@@ -12,14 +12,14 @@ import '../../components/market/market.css';
 const POLL_MS = 1000;
 
 const MODES: { k: MarketMode; n: string }[] = [
-  { k: 'auto', n: '自動 · 市集地圖' },
+  { k: 'auto', n: '自動（市集地圖）' },
   { k: 'on', n: '手動開始' },
   { k: 'off', n: '停止' },
 ];
 
 function stateText(s: MarketStatus): string {
-  if (s.active) return `${s.map_name ?? '—'} · 記錄中`;
-  if (s.reason === 'not_market') return `${s.map_name ?? '—'} · 不在市集，暫停`;
+  if (s.active) return `${s.map_name ?? '—'}　記錄中`;
+  if (s.reason === 'not_market') return `${s.map_name ?? '—'}　不在市集，暫停`;
   if (s.reason === 'off') return '已停止';
   if (s.reason === 'no_character') return '角色尚未定位';
   return '準備中';
@@ -86,7 +86,7 @@ export function MarketTab({ pid, onOpenPrices }: { pid: number; onOpenPrices: ()
         <span className="mk-state" data-on={status.active || undefined}>{stateText(status)}</span>
         <span className="mk-hint">逐一點開攤位就會自動記下；重開同一攤不會重複計算</span>
         <span className="mk-right mk-mono mk-hint">
-          本次 {status.session.stalls} 攤 · 新上架 {status.session.new} 筆 · 讀取 {status.session.reads} 次
+          本次 {status.session.stalls} 攤、新上架 {status.session.new} 筆、讀取 {status.session.reads} 次
         </span>
       </div>
 
@@ -94,7 +94,7 @@ export function MarketTab({ pid, onOpenPrices }: { pid: number; onOpenPrices: ()
         <div className="mk-box">
           <div className="mk-box-head">
             <span className="mk-box-title">視野內攤位</span>
-            <span className="mk-mono mk-hint">{stalls.length} 攤 · 已記錄 {seen}</span>
+            <span className="mk-mono mk-hint">{stalls.length} 攤，已記錄 {seen}</span>
           </div>
           <div className="mk-scroll">
             {stalls.length === 0
@@ -114,7 +114,7 @@ export function MarketTab({ pid, onOpenPrices }: { pid: number; onOpenPrices: ()
                     <span className="mk-box-title" style={{ letterSpacing: 2, fontSize: 16 }}>{cur.seller}</span>
                     {cur.sign && <span className="mk-hint">「{cur.sign}」</span>}
                     {cur.x != null && cur.y != null && <span className="mk-hint mk-mono">({cur.x}, {cur.y})</span>}
-                    <span className="mk-right mk-mono mk-hint">{clockText(cur.recorded_at)} · {cur.settle_s} 秒讀完</span>
+                    <span className="mk-right mk-mono mk-hint">{clockText(cur.recorded_at)}，{cur.settle_s} 秒讀完</span>
                   </div>
                   <div className="mk-sum">
                     {cur.new > 0 && <span style={{ color: 'var(--tt-ok)' }}>新上架 {cur.new} 筆</span>}
@@ -166,7 +166,7 @@ export function MarketTab({ pid, onOpenPrices }: { pid: number; onOpenPrices: ()
           <div className="mk-box">
             <div className="mk-box-head">
               <span className="mk-box-title">本次紀錄</span>
-              <button type="button" className="is-ghost" onClick={onOpenPrices}>到市價查看全部 ›</button>
+              <button type="button" className="is-ghost" onClick={onOpenPrices}>到市價查看全部</button>
             </div>
             <div className="mk-scroll mk-log" style={{ maxHeight: 180 }}>
               {status.log.length === 0
@@ -195,7 +195,7 @@ function StallLine({ s, open }: { s: MarketStallInView; open: boolean }) {
   const chip = open
     ? <span className="mk-chip" data-tone="gold">開啟中</span>
     : s.last_recorded
-      ? <span className="mk-chip" data-tone="ok">已記錄 · {agoText(s.last_recorded)}</span>
+      ? <span className="mk-chip" data-tone="ok">已記錄 {agoText(s.last_recorded)}</span>
       : <span className="mk-chip">未看過</span>;
   return (
     <div className="mk-stall" data-open={open || undefined}>
@@ -203,7 +203,7 @@ function StallLine({ s, open }: { s: MarketStallInView; open: boolean }) {
       {chip}
       <span className="mk-stall-sign">
         {s.sign ? `「${s.sign}」` : '（無招牌）'}
-        {s.x != null && s.y != null && <span className="mk-mono"> · ({s.x}, {s.y})</span>}
+        {s.x != null && s.y != null && <span className="mk-mono"> ({s.x}, {s.y})</span>}
       </span>
     </div>
   );

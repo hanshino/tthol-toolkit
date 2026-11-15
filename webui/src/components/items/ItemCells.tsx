@@ -60,7 +60,7 @@ export function Row({ entry, selected, showSources, onSelect }: CellProps) {
     m?.level ? `Lv.${m.level}` : '',
     m?.effect_seconds ? `效果 ${durationText(m.effect_seconds)}` : '',
     m?.no_trade ? '不可交易' : '',
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join('　');
   const where = showSources
     ? entry.sources.map(s => SOURCE_LABEL[s]).join('、')
     : entry.stacks > 1 ? `${entry.stacks} 格` : '';

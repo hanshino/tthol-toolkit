@@ -1,16 +1,9 @@
-/* 戰錄 tab (DamageTab). Series colours were checked with the dataviz palette
-   validator against --tt-panel (#141a20): lightness, chroma, CVD separation
-   and contrast all pass. */
-.dmg {
-  --dmg-atk: #3987e5;
-  --dmg-crit: #c98500;
-  --dmg-skill: #9085e9;
-  --dmg-grid: rgba(138, 154, 164, 0.12);
-  display: grid; gap: 14px;
-}
+/* Hallmark · checked: 2026-11-15 · built: the project · shape: app screen · redesign: polish · full stamp in styles.css */
+/* 戰錄 tab (DamageTab). The series colours (--dmg-*) live in styles.css :root. */
+.dmg { display: grid; gap: 14px; }
 .dmg-mono { font-family: var(--tt-font-mono); font-variant-numeric: tabular-nums; }
 .dmg-dim { color: var(--tt-mute); }
-.dmg-lbl { font-size: 11px; letter-spacing: 2px; color: var(--tt-mute); }
+.dmg-lbl { font-size: 11px; color: var(--tt-mute); }
 .dmg-note { font-size: 11.5px; color: var(--tt-mute); line-height: 1.6; margin: 8px 0 0; }
 .dmg-error { color: var(--tt-bad); font-size: 13px; }
 
@@ -50,7 +43,7 @@ button.dmg-danger { border-color: var(--tt-seal); color: var(--tt-bad); }
 .dmg-main { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 14px; align-items: start; }
 .dmg-charts { display: grid; gap: 14px; min-width: 0; }
 .dmg-seg { display: flex; }
-.dmg-seg button { padding: 3px 10px; font-size: 12px; letter-spacing: 1px; margin-left: -1px; }
+.dmg-seg button { padding: 3px 10px; font-size: 12px; margin-left: -1px; }
 .dmg-seg button[aria-pressed="true"] { border-color: var(--tt-gold); color: var(--tt-gold); position: relative; }
 .dmg-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--tt-dim); }
 .dmg-legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -78,7 +71,7 @@ button.dmg-danger { border-color: var(--tt-seal); color: var(--tt-bad); }
 .dmg-share { display: flex; gap: 2px; height: 10px; margin: 2px 0 10px; }
 .dmg-share i { display: block; height: 100%; }
 .dmg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.dmg-table th { font-weight: 400; color: var(--tt-mute); font-size: 12px; letter-spacing: 1px; text-align: right; padding: 6px 8px; }
+.dmg-table th { font-weight: 400; color: var(--tt-mute); font-size: 12px; text-align: right; padding: 6px 8px; }
 .dmg-table td { padding: 5px 8px; border-top: 1px solid var(--tt-line-soft); text-align: right; font-family: var(--tt-font-mono); font-variant-numeric: tabular-nums; }
 .dmg-table th:first-child, .dmg-table td:first-child { text-align: left; }
 .dmg-table td:first-child { font-family: var(--tt-font); }

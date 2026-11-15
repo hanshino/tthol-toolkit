@@ -146,7 +146,7 @@ export function AutoClickTab({ pid, active }: { pid: number; active: boolean }) 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button type="button" onClick={test} disabled={busy !== null} title="對選中商人發一次點擊">測試點擊</button>
           <span style={{ color: 'var(--tt-mute)', fontSize: 11, marginLeft: 4 }}>
-            {status.running && `已執行 ${status.runtime_seconds ?? 0}s · `}上次點擊 {lastClick}
+            {status.running && `已執行 ${status.runtime_seconds ?? 0}s，`}上次點擊 {lastClick}
           </span>
         </div>
       </section>

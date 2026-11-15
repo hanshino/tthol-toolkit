@@ -55,7 +55,7 @@ export function SkillsTab({ detail, error }: { detail: CharacterDetail | null; e
 
       <section className="sk-panel" style={{ minWidth: 0 }}>
         <div className="inv-toolbar">
-          <span className="sk-panel-t" style={{ padding: 0 }}>{current.label} · {rows.length}</span>
+          <span className="sk-panel-t" style={{ padding: 0 }}>{current.label}　{rows.length}</span>
           <label className="inv-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
