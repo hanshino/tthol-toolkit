@@ -17,37 +17,10 @@ import webview
 
 from services._paths import bundled
 from services import diagnostics
-from services import item_catalog, skill_catalog, window_prefs
+from services import window_prefs
 from services.api import build_app
 from services.auto_click import AutoClickManager
-from services.daily import DailyQueueManager
-from services.dispatch import PING_PROTO, DispatchManager, hook_problem, ping_problem
-from services.login_flow import LoginFlow
-from services.login_screen import GameInput, ScreenReader
-from services.login_store import LoginStore
-from services.family import FAMILY_PACKET, FamilyTracker
-from services.hook_caps import FEATURES, HookCaps
-from services.navigator import Navigator
 from services.damage_capture import DamageRecorderManager
-from services.guard import (
-    POSE_PACKET,
-    GuardManager,
-    GuardStore,
-    migrate_legacy_store,
-    read_stage_id,
-)
-from services.item_rules import load_item_facts
-from services.supply import SupplyManager
-from services.handoff import TRADE_PACKET, HandoffManager
-from services.withdraw import WithdrawManager
-from services.grind import GrindManager
-from services.dungeon import DungeonManager
-from services.dungeon_scripts import DUNGEONS
-from services.map_db import stage_names_by_id
-from services.tower_run import ATTACK_PACKET, CAST_START_PACKET, TowerManager
-from services.buff_tracker import BUFF_PACKET, BuffTracker
-from services.hook_cmd import CommandChannel
-from services.hook_hub import HookHub, read_templates
 from services.fake_active import KeepActiveManager
 from services.market_db import MarketDB
 from services.market_survey import MarketSurveyManager
@@ -69,285 +42,10 @@ def _pick_port() -> int:
 
 def _build_services(dev: bool) -> dict:
     db = SnapshotDB()
-    db.sync_login_accounts()
     autoclick = AutoClickManager()
     keep_active = KeepActiveManager()
-    hook = HookHub()
-    hook.start()
-    # One command channel: its per-pid lock keeps the guard and the buff
-    # tracker from racing for the single pipe instance.
-    channel = CommandChannel()
-    # One `caps` manifest per client for every module; dropped on hook hello / close.
-    hook_caps = HookCaps(channel, connected=lambda pid: hook.status(pid) is not None)
-    hook.add_link_listener(hook_caps.invalidate)
-    buffs = BuffTracker(
-        connected=lambda pid: hook.status(pid) is not None,
-        pids=hook.connected_pids,
-        channel=channel,
-    )
-    hook.add_packet_listener(BUFF_PACKET, buffs.on_packet)
-    buffs.start()
-    wm = WorkerManager(
-        snapshot_db=db, autoclick_manager=autoclick, hook_hub=hook, buff_tracker=buffs
-    )
-    family = FamilyTracker(character_name=wm.character_name, db=db)
-    wm.set_family_tracker(family)
+    wm = WorkerManager(snapshot_db=db, autoclick_manager=autoclick)
     wm.set_keep_active(keep_active)
-    wm.set_hook_caps(hook_caps)
-    hook.add_packet_listener(FAMILY_PACKET, family.on_packet)
-    # Shout / system-line templates come from game memory, through the worker's lock.
-    hook.set_strings(lambda pid: wm.read_locked(pid, read_templates))
-    # Guard settings moved from guard.json into snapshots.db (2026-10-05).
-    migrate_legacy_store(db)
-    guard = GuardManager(
-        read_locked=wm.read_locked,
-        character_name=wm.character_name,
-        channel=channel,
-        store=GuardStore(db),
-        buffs=buffs.buffs,
-        skill_icon=lambda mid, level: skill_catalog.icon_path(mid, level),
-        hook_caps=hook_caps,
-        icon_url=lambda item_id: (
-            item_catalog.icon_path(item_id) if item_catalog.icon_url(item_id) else None
-        ),
-    )
-    # Own HP / MP packets wake the guard at once instead of waiting for its next poll.
-    hook.add_vitals_listener(guard.on_vitals)
-    hook.add_packet_listener(POSE_PACKET, guard.on_pose_packet)
-
-    # 日常 modules: they start the guard and leave potions and buffs to it.
-    # Cross-map walking for the 日常 modules; the 家族馬夫 menus follow the manor.
-    def manor(pid: int) -> int | None:
-        info = family.get(wm.character_name(pid))
-        return info.manor_id if info else None
-
-    def ask_family(pid: int) -> dict | None:
-        if "family" not in hook_caps.features(pid):
-            return None
-        return channel.send(pid, "family")
-
-    navigator = Navigator(
-        channel, wm.read_locked, read_stage_id, manor=manor, ask_family=ask_family
-    )
-
-    # A trip that stored into or took out of the warehouse records what is left,
-    # so the 寶庫 counts the account's warehouse as it is now.
-    def record_warehouse(pid: int, items: list[dict]) -> None:
-        name = wm.character_name(pid)
-        if name:
-            db.save_snapshot(name, "warehouse", items)
-
-    # 補給: sell / store / buy at a town NPC, run first by the 日常 modules.
-    supply = SupplyManager(
-        guard=guard,
-        read_locked=wm.read_locked,
-        character_name=wm.character_name,
-        channel=channel,
-        store=GuardStore(db),
-        navigator=navigator,
-        hook_caps=hook_caps,
-        facts=load_item_facts(),
-        icon_url=lambda item_id: (
-            item_catalog.icon_path(item_id) if item_catalog.icon_url(item_id) else None
-        ),
-        manor=manor,
-        ask_family=ask_family,
-        on_warehouse=record_warehouse,
-    )
-    tower = TowerManager(
-        guard=guard,
-        read_locked=wm.read_locked,
-        character_name=wm.character_name,
-        channel=channel,
-        store=GuardStore(db),
-        navigator=navigator,
-        hook_caps=hook_caps,
-        supply=supply,
-    )
-    hook.add_packet_listener(ATTACK_PACKET, tower.on_attack_packet)
-    hook.add_packet_listener(CAST_START_PACKET, tower.on_cast_packet)
-
-    # 副本 (dungeon scripts): one 日常 module per script, next to the tower.
-    def dungeon_busy(pid: int) -> str | None:
-        if tower.running(pid):
-            return "這隻角色正在登塔"
-        if supply.status(pid).running:
-            return "這隻角色正在補給"
-        if grind.running(pid):
-            return "這隻角色正在打怪"
-        if handoff.running(pid) or withdraw.running(pid):
-            return "這隻角色正在交貨或領倉"
-        return None
-
-    dungeons = {
-        d.key: DungeonManager(
-            d,
-            guard=guard,
-            read_locked=wm.read_locked,
-            character_name=wm.character_name,
-            channel=channel,
-            store=GuardStore(db),
-            navigator=navigator,
-            hook_caps=hook_caps,
-            busy=dungeon_busy,
-        )
-        for d in DUNGEONS
-    }
-    for d in dungeons.values():
-        hook.add_packet_listener(ATTACK_PACKET, d.on_attack_packet)
-        hook.add_packet_listener(CAST_START_PACKET, d.on_cast_packet)
-    daily = DailyQueueManager(
-        [tower, *dungeons.values()], character_name=wm.character_name, store=GuardStore(db)
-    )
-
-    # 打怪: fight around a spot on any map.
-    def grind_busy(pid: int) -> str | None:
-        if daily.status(pid).running:
-            return "這隻角色正在跑日常"
-        if tower.status(pid).running:
-            return "這隻角色正在登塔"
-        if supply.status(pid).running:
-            return "這隻角色正在補給"
-        if handoff.running(pid) or withdraw.running(pid):
-            return "這隻角色正在交貨或領倉"
-        if any(d.running(pid) for d in dungeons.values()):
-            return "這隻角色正在打副本"
-        return None
-
-    grind = GrindManager(
-        guard=guard,
-        read_locked=wm.read_locked,
-        character_name=wm.character_name,
-        channel=channel,
-        store=GuardStore(db),
-        hook_caps=hook_caps,
-        busy=grind_busy,
-    )
-    hook.add_packet_listener(ATTACK_PACKET, grind.on_attack_packet)
-    hook.add_packet_listener(CAST_START_PACKET, grind.on_cast_packet)
-
-    # 分身交貨: never on a character another module is driving.
-    def handoff_busy(pid: int) -> str | None:
-        if daily.status(pid).running:
-            return "這隻角色正在跑日常"
-        if tower.status(pid).running:
-            return "這隻角色正在登塔"
-        if supply.status(pid).running:
-            return "這隻角色正在補給"
-        if grind.running(pid):
-            return "這隻角色正在打怪"
-        if any(d.running(pid) for d in dungeons.values()):
-            return "這隻角色正在打副本"
-        return None
-
-    def account_of(name: str) -> int | None:
-        row = db.get_character_account(name)
-        return row["id"] if row else None
-
-    def item_info(item_id: int) -> tuple[str, bool, bool, str] | None:
-        meta = item_catalog.lookup([item_id])
-        m = meta[0] if meta else None
-        return (m.name, m.no_trade, m.no_store, m.category) if m else None
-
-    stage_names = stage_names_by_id()
-    handoff = HandoffManager(
-        guard=guard,
-        character_name=wm.character_name,
-        channel=channel,
-        store=GuardStore(db),
-        navigator=navigator,
-        supply=supply,
-        read_stage=lambda pid: (wm.read_locked(pid, read_stage_id) or (None,))[0],
-        stage_name=stage_names.get,
-        account_of=account_of,
-        busy=handoff_busy,
-        item_info=item_info,
-        hook_caps=hook_caps,
-    )
-    hook.add_packet_listener(TRADE_PACKET, handoff.on_trade_packet)
-
-    def withdraw_busy(pid: int) -> str | None:
-        if handoff.running(pid):
-            return "這隻角色正在分身交貨"
-        return handoff_busy(pid)
-
-    def account_name(name: str) -> str | None:
-        row = db.get_character_account(name)
-        return row["name"] if row else None
-
-    # 領倉白名單: take the listed items out of the account's warehouse.
-    withdraw = WithdrawManager(
-        supply=supply,
-        character_name=wm.character_name,
-        channel=channel,
-        store=GuardStore(db),
-        hook_caps=hook_caps,
-        item_info=item_info,
-        icon_url=lambda item_id: (
-            item_catalog.icon_path(item_id) if item_catalog.icon_url(item_id) else None
-        ),
-        warehouse_snapshot=db.latest_warehouse,
-        account_name=account_name,
-        record_bag=lambda name, items: db.save_snapshot(name, "inventory", items),
-        busy=withdraw_busy,
-    )
-    wm.set_daily_queue(daily)
-    wm.set_family_query(lambda pid: channel.send(pid, "family"))
-    # Another character on the same game window starts clean (queue first: it stops the tower).
-    for forget in (
-        daily.forget,
-        tower.forget,
-        grind.forget,
-        *(d.forget for d in dungeons.values()),
-        handoff.forget,
-        withdraw.forget,
-        supply.forget,
-        guard.forget,
-    ):
-        wm.add_forget(forget)
-    # 帳號派發: log characters in on the hooked windows, run their 日常, log out.
-    logins = LoginStore(db)
-    screens = ScreenReader()
-
-    def window_problem(pid: int) -> str | None:
-        info = hook.status(pid)
-        if info is None:
-            return "這個視窗沒有 hook"
-        if daily.status(pid).running:
-            return "這個視窗正在跑日常"
-        if info.proto >= PING_PROTO:
-            # v5 answers `ping` at the login screen too: a missing action
-            # module shows before a login is spent on it.
-            problem = ping_problem(lambda line: channel.send(pid, line))
-            if problem is not None:
-                return problem
-        # At the 帳密 screen the hook does not answer `caps` (live 2026-10-07):
-        # only a manifest already read rules a window out; the tower checks its
-        # commands itself when it starts after the login.
-        names = hook_caps.cached(pid)
-        if names is not None and not set(FEATURES["daily.tower"]) <= names:
-            return "這個 hook 沒有登塔要用的指令"
-        return None
-
-    def hook_check(pid: int) -> str | None:
-        info = hook.status(pid)
-        return hook_problem(
-            lambda line: channel.send(pid, line),
-            FEATURES["daily.tower"],
-            ping=info is not None and info.proto >= PING_PROTO,
-        )
-
-    dispatch = DispatchManager(
-        logins,
-        LoginFlow(screens.read, GameInput(), wm.rescan, wm.character_name),
-        daily,
-        window_problem=window_problem,
-        confirm_character=wm.confirm_character,
-        hook_check=hook_check,
-        # The worker keeps the last name after a logout: only trust it in game.
-        in_game_as=lambda pid: wm.character_name(pid) if screens.read(pid).kind == "game" else None,
-        live_pids=wm.live_pids,
-    )
     market_db = MarketDB()
     market = MarketSurveyManager(live=wm.live_handle, pids=wm.live_pids, db=market_db)
     market.start()
@@ -357,21 +55,9 @@ def _build_services(dev: bool) -> dict:
         "market_manager": market,
         "damage_manager": DamageRecorderManager(live=wm.live_handle, read_locked=wm.read_locked),
         "walk_manager": WalkManager(sample=wm.walk_sample),
-        "hook_hub": hook,
         "snapshot_db": db,
         "autoclick_manager": autoclick,
         "keep_active_manager": keep_active,
-        "guard_manager": guard,
-        "tower_manager": tower,
-        "supply_manager": supply,
-        "handoff_manager": handoff,
-        "withdraw_manager": withdraw,
-        "grind_manager": grind,
-        "dungeon_managers": dungeons,
-        "daily_manager": daily,
-        "login_store": logins,
-        "dispatch_manager": dispatch,
-        "buff_tracker": buffs,
     }
 
 
@@ -510,16 +196,6 @@ def main() -> int:
         services["market_manager"].shutdown()
         # Recorder threads hold timeBeginPeriod(1); stop them so it is released.
         services["damage_manager"].shutdown()
-        services["hook_hub"].shutdown()
-        services["dispatch_manager"].shutdown()
-        services["daily_manager"].shutdown()
-        services["tower_manager"].shutdown()
-        services["grind_manager"].shutdown()
-        for d in services["dungeon_managers"].values():
-            d.shutdown()
-        services["handoff_manager"].shutdown()
-        services["guard_manager"].shutdown()
-        services["buff_tracker"].shutdown()
     return 0
 
 

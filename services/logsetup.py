@@ -14,7 +14,6 @@ import tempfile
 from pathlib import Path
 
 from services.diag_buffer import DiagnosticsBuffer, DiagnosticsHandler
-from services import run_log
 from services.diag_jsonl import JsonlHandler
 
 CONSOLE_FORMAT = (
@@ -102,7 +101,6 @@ def setup_logging(buffer: DiagnosticsBuffer, console: bool = True) -> Path | Non
     jsonl_handler, path = _make_jsonl_handler()
     if jsonl_handler is not None:
         root.addHandler(jsonl_handler)
-        run_log.install(path.parent / run_log.FOLDER_NAME)  # the run record, beside it
 
     if console:
         stream = logging.StreamHandler()
@@ -133,4 +131,3 @@ def _reset_for_tests() -> None:
     global _configured
     _configured = False
     _set_current_path(None)
-    run_log._reset_for_tests()

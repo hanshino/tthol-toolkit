@@ -6,16 +6,10 @@ Schema:
     accounts(id, name TEXT UNIQUE)
     character_accounts(character TEXT PK, account_id INTEGER NOT NULL → accounts.id)
     character_settings(character, section, data TEXT, updated_at)  PK (character, section)
-    login_entries(character PK, username, server, password BLOB, protect BLOB, enabled, sort, updated_at)
 
-login_entries feeds the batch dispatch (log a character in, run its daily
-modules, log out). Password and protect are DPAPI blobs (services/secret_box);
-the table is left out of export_all on purpose, so no backup carries them.
-
-character_settings holds per-character feature settings as one JSON object per
-section ("guard.potion", "guard.buff", "items", later "daily.<module>"), so
-saving one feature never overwrites another and a new feature is a new section,
-not a schema change. Deleting a character's snapshots leaves its settings alone.
+character_settings holds per-character feature settings, one JSON object per
+section. Nothing in the app reads or writes it now; the table stays so data
+already saved survives, and backups still carry it (export_all / import_merge).
 
 items is a JSON array sorted by item_id: [{"item_id": N, "qty": N}, ...]
 checksum is SHA256 of the canonical items JSON string.
@@ -146,23 +140,7 @@ CREATE TABLE IF NOT EXISTS character_settings (
     updated_at  TEXT NOT NULL,
     PRIMARY KEY (character, section)
 );
-CREATE TABLE IF NOT EXISTS login_entries (
-    character   TEXT PRIMARY KEY,
-    username    TEXT NOT NULL,
-    server      TEXT NOT NULL,
-    password    BLOB,
-    protect     BLOB,
-    enabled     INTEGER NOT NULL DEFAULT 1,
-    sort        INTEGER NOT NULL DEFAULT 0,
-    updated_at  TEXT NOT NULL
-);
 """
-
-
-def _account_label(characters: list[str]) -> str:
-    """An account named after its characters: 甲 / 乙 / 丙 等 5 隻."""
-    label = " / ".join(characters[:3])
-    return f"{label} 等 {len(characters)} 隻" if len(characters) > 3 else label
 
 
 def _canonical(items: list[dict]) -> str:
@@ -183,7 +161,7 @@ class SnapshotDB:
         self._con.row_factory = sqlite3.Row
         self._con.executescript(SCHEMA)
         self._con.commit()
-        # Settings are read and written from guard threads as well as handlers.
+        # One connection shared by handler threads: writes and multi-step reads lock.
         self._settings_lock = threading.Lock()
 
     def close(self):
@@ -197,7 +175,6 @@ class SnapshotDB:
         canonical = _canonical(items)
         chk = _checksum(canonical)
 
-        # Supply / withdraw trips record from their own threads.
         with self._settings_lock:
             # Dedup: check last snapshot for this character+source
             row = self._con.execute(
@@ -440,70 +417,17 @@ class SnapshotDB:
         return True
 
     def account_characters(self) -> list[dict]:
-        """Every character the app knows (snapshots, 帳號派發, an account) with
+        """Every character the app knows (snapshots, an account) with
         its account: [{character, account_id, account_name}]."""
         rows = self._con.execute(
             "SELECT c.character, a.id AS account_id, a.name AS account_name FROM ("
-            "  SELECT character FROM snapshots UNION SELECT character FROM login_entries"
-            "  UNION SELECT character FROM character_accounts"
+            "  SELECT character FROM snapshots UNION SELECT character FROM character_accounts"
             ") c "
             "LEFT JOIN character_accounts ca ON ca.character=c.character "
             "LEFT JOIN accounts a ON a.id=ca.account_id "
             "ORDER BY c.character"
         ).fetchall()
         return [dict(r) for r in rows]
-
-    def sync_login_accounts(self) -> int:
-        """Put the 帳號派發 characters that share a login on one account.
-
-        Fill-only: a character already on an account keeps it. A login with
-        none of its characters on an account gets a new one named after the
-        characters (the login itself stays out of backups). A login whose
-        characters already sit on two accounts is left alone. Returns how many
-        characters were assigned."""
-        with self._settings_lock:
-            logins = self._con.execute(
-                "SELECT character, username FROM login_entries ORDER BY sort, character"
-            ).fetchall()
-        groups: dict[str, list[str]] = {}
-        for r in logins:
-            groups.setdefault(r["username"], []).append(r["character"])
-        assigned = {
-            r["character"]: r["account_id"]
-            for r in self._con.execute("SELECT character, account_id FROM character_accounts")
-        }
-        added = 0
-        for chars in groups.values():
-            if len(chars) < 2:
-                continue
-            have = {assigned[c] for c in chars if c in assigned}
-            if len(have) > 1:
-                continue
-            free = [c for c in chars if c not in assigned]
-            if not free:
-                continue
-            if have:
-                account_id = have.pop()
-            else:
-                account_id = self._new_account(_account_label(chars))
-            for c in free:
-                self._con.execute(
-                    "INSERT INTO character_accounts (character, account_id) VALUES (?, ?)",
-                    (c, account_id),
-                )
-                assigned[c] = account_id
-                added += 1
-        if added:
-            self._con.commit()
-        return added
-
-    def _new_account(self, name: str) -> int:
-        """A new account (NO commit); a taken name gets a number appended."""
-        label, n = name, 1
-        while self._con.execute("SELECT 1 FROM accounts WHERE name=?", (label,)).fetchone():
-            n += 1
-            label = f"{name} ({n})"
-        return self._con.execute("INSERT INTO accounts (name) VALUES (?)", (label,)).lastrowid
 
     def latest_warehouse(self, character: str) -> dict | None:
         """The newest warehouse snapshot of the character's account (its own
@@ -553,95 +477,6 @@ class SnapshotDB:
             }
             for r in rows
         ]
-
-    # ---- Per-character settings ----------------------------------------------
-
-    def get_setting(self, character: str, section: str) -> dict | None:
-        with self._settings_lock:
-            row = self._con.execute(
-                "SELECT data FROM character_settings WHERE character=? AND section=?",
-                (character, section),
-            ).fetchone()
-        if row is None:
-            return None
-        try:
-            data = json.loads(row["data"])
-        except ValueError:
-            return None
-        return data if isinstance(data, dict) else None
-
-    def set_setting(self, character: str, section: str, data: dict) -> None:
-        text = json.dumps(data, ensure_ascii=False, sort_keys=True)
-        now = datetime.now().isoformat(timespec="seconds")
-        with self._settings_lock:
-            self._con.execute(
-                "INSERT INTO character_settings (character, section, data, updated_at) "
-                "VALUES (?, ?, ?, ?) ON CONFLICT(character, section) "
-                "DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at",
-                (character, section, text, now),
-            )
-            self._con.commit()
-
-    def settings_characters(self) -> list[dict]:
-        """[{character, sections}] for every character that has settings."""
-        with self._settings_lock:
-            rows = self._con.execute(
-                "SELECT character, section FROM character_settings ORDER BY character, section"
-            ).fetchall()
-        out: dict[str, list[str]] = {}
-        for r in rows:
-            out.setdefault(r["character"], []).append(r["section"])
-        return [{"character": c, "sections": secs} for c, secs in out.items()]
-
-    def copy_settings(self, source: str, target: str, sections: list[str]) -> int:
-        """Copy the given sections from one character to another; returns how many."""
-        copied = 0
-        for section in sections:
-            data = self.get_setting(source, section)
-            if data is not None:
-                self.set_setting(target, section, data)
-                copied += 1
-        return copied
-
-    # ---- Login entries (batch dispatch; never exported) -------------------
-
-    def login_rows(self) -> list[dict]:
-        with self._settings_lock:
-            rows = self._con.execute(
-                "SELECT character, username, server, password, protect, enabled, sort "
-                "FROM login_entries ORDER BY sort, character"
-            ).fetchall()
-        return [dict(r) for r in rows]
-
-    def login_upsert(self, row: dict) -> None:
-        now = datetime.now().isoformat(timespec="seconds")
-        with self._settings_lock:
-            self._con.execute(
-                "INSERT INTO login_entries "
-                "(character, username, server, password, protect, enabled, sort, updated_at) "
-                "VALUES (:character, :username, :server, :password, :protect, :enabled, :sort, :now) "
-                "ON CONFLICT(character) DO UPDATE SET username=excluded.username, "
-                "server=excluded.server, password=excluded.password, protect=excluded.protect, "
-                "enabled=excluded.enabled, sort=excluded.sort, updated_at=excluded.updated_at",
-                {**row, "now": now},
-            )
-            self._con.commit()
-
-    def login_set_secret(self, username: str, column: str, blob: bytes | None) -> None:
-        """One account's password or protect, on every character of that account."""
-        if column not in ("password", "protect"):
-            raise ValueError(column)
-        with self._settings_lock:
-            self._con.execute(
-                f"UPDATE login_entries SET {column}=? WHERE username=?", (blob, username)
-            )
-            self._con.commit()
-
-    def login_delete(self, character: str) -> bool:
-        with self._settings_lock:
-            cur = self._con.execute("DELETE FROM login_entries WHERE character=?", (character,))
-            self._con.commit()
-        return cur.rowcount > 0
 
     # ---- Backup / restore (full-db export + non-destructive merge) --------
 

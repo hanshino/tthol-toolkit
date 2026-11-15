@@ -1,11 +1,9 @@
 import { useRef } from 'react';
 import type { CharacterRow } from '../../api/types';
-import { can, isStopped, isUnlocated, type CharTab, type GlobalView } from '../../nav';
-import { AssistTab } from './AssistTab';
+import { isStopped, isUnlocated, type CharTab, type GlobalView } from '../../nav';
+import { AutoClickTab } from './AutoClickTab';
 import { BodyTab } from './BodyTab';
 import { CharHeader } from './CharHeader';
-import { ChatTab } from './ChatTab';
-import { DailyTab } from './DailyTab';
 import { DamageTab } from './DamageTab';
 import { ItemsTab } from './ItemsTab';
 import { MapAnalysis } from './MapAnalysis';
@@ -14,20 +12,14 @@ import { SkillsTab } from './SkillsTab';
 import { useCharacterDetail } from './useCharacterDetail';
 import './workspace.css';
 
-const TABS: { k: CharTab; n: string; s: string }[] = [
+const tabs: { k: CharTab; n: string; s: string }[] = [
   { k: 'items', n: '行囊', s: '道具' },
   { k: 'body', n: '根脈', s: '屬性 · 裝備' },
   { k: 'skills', n: '武學', s: '技能 · 經脈' },
   { k: 'maps', n: '行止', s: '地圖' },
   { k: 'market', n: '市集', s: '攤位調查' },
   { k: 'damage', n: '戰錄', s: '傷害 · DPS' },
-  { k: 'assist', n: '輔助', s: '守護 · 補給 · 交貨' },
-];
-// Only when the client's hook allows the feature (see `can`): 日常 walks,
-// fights and talks through hook commands, 傳音 reads its chat packets.
-const HOOK_TABS: { k: CharTab; n: string; s: string; feature: string }[] = [
-  { k: 'daily', n: '日常', s: '玄天塔', feature: 'daily.' },
-  { k: 'chat', n: '傳音', s: '聊天', feature: 'chat' },
+  { k: 'assist', n: '輔助', s: '英雄培養' },
 ];
 
 export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
@@ -44,8 +36,6 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
   // different character starts fresh.
   const visited = useRef(new Set<CharTab>());
   visited.current.add(tab);
-  // Once opened it stays even if the hook drops, so it does not vanish under the user.
-  const tabs = [...TABS, ...HOOK_TABS.filter(t => can(char, t.feature) || visited.current.has(t.k))];
 
   return (
     <div className="ws">
@@ -79,16 +69,7 @@ export function CharWorkspace({ char, goneSince, tab, onTab, onNav }: {
               {t.k === 'maps' && <MapAnalysis char={char} active={tab === 'maps'} />}
               {t.k === 'market' && <MarketTab pid={char.pid} onOpenPrices={() => onNav('market')} />}
               {t.k === 'damage' && <DamageTab pid={char.pid} active={tab === 'damage'} />}
-              {t.k === 'assist' && (
-                <AssistTab
-                  pid={char.pid} active={tab === 'assist'}
-                  canLove={can(char, 'love')} canHandoff={can(char, 'handoff')}
-                  canWithdraw={can(char, 'withdraw')}
-                  canGrind={can(char, 'grind')}
-                />
-              )}
-              {t.k === 'daily' && <DailyTab pid={char.pid} active={tab === 'daily'} />}
-              {t.k === 'chat' && <ChatTab pid={char.pid} active={tab === 'chat'} />}
+              {t.k === 'assist' && <AutoClickTab pid={char.pid} active={tab === 'assist'} />}
             </div>
           ))}
       </div>

@@ -1,7 +1,7 @@
 import type { CharacterRow } from './api/types';
 
-export type CharTab = 'items' | 'body' | 'skills' | 'maps' | 'market' | 'assist' | 'daily' | 'damage' | 'chat';
-export type GlobalView = 'overview' | 'treasury' | 'market' | 'snapshots' | 'dispatch' | 'diagnostics';
+export type CharTab = 'items' | 'body' | 'skills' | 'maps' | 'market' | 'assist' | 'damage';
+export type GlobalView = 'overview' | 'treasury' | 'market' | 'snapshots' | 'diagnostics';
 export type View = { kind: GlobalView } | { kind: 'char'; pid: number };
 export type OpenChar = (pid: number, tab?: CharTab) => void;
 
@@ -31,15 +31,4 @@ export function isStopped(c: CharacterRow): boolean {
 export function pidForName(chars: CharacterRow[], name: string): number | null {
   const hits = chars.filter(c => c.name === name);
   return hits.length === 1 ? hits[0].pid : null;
-}
-
-/**
- * A hook feature (services/hook_caps.FEATURES: 'chat', 'guard', 'daily.tower'
- * ...) the client's hook allows now. The backend decides from the hook's own
- * command manifest, so a hook injected later or an older build needs nothing
- * here. A prefix ending in '.' matches any feature under it ('daily.').
- */
-export function can(c: CharacterRow, feature: string): boolean {
-  const have = c.features ?? [];
-  return feature.endsWith('.') ? have.some(f => f.startsWith(feature)) : have.includes(feature);
 }

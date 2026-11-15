@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react';
 import { ApiError, get, post } from '../../api/client';
 import { describeError, reportClientError } from '../../diag/report';
 import type {
-  CharacterRow, ConnectResult, FamilyInfo, LoginEntry, OkResponse, StatSimExport,
+  CharacterRow, ConnectResult, OkResponse, StatSimExport,
 } from '../../api/types';
-import { LoginDialog } from '../../components/LoginDialog';
 import { friendlyError } from '../../components/friendlyError';
 import { isStopped, isUnlocated } from '../../nav';
 import { Bar, BuffChips, DollAvatar, LinkDot, Seal } from '../../primitives';
@@ -29,19 +28,6 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
   const [busy, setBusy] = useState<'rescan' | 'relocate' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [hpDraft, setHpDraft] = useState('');
-  const [login, setLogin] = useState<LoginEntry | null>(null);
-  const [loginOpen, setLoginOpen] = useState(false);
-  const located = !unlocated && !gone;
-
-  // 加入自動登入 is only for a character located in game: its name comes from there.
-  useEffect(() => {
-    if (!located) { setLogin(null); return; }
-    let alive = true;
-    get<LoginEntry | null>(`/api/characters/${char.pid}/login`)
-      .then(e => { if (alive) setLogin(e); })
-      .catch(e => reportClientError(e, { component: 'CharHeader.login', silent: true }));
-    return () => { alive = false; };
-  }, [char.pid, char.name, located]);
 
   const rescan = async () => {
     setBusy('rescan');
@@ -94,31 +80,12 @@ export function CharHeader({ char, goneSince, onBackToOverview }: {
         <div className="ws-id-text">
           <div className="ws-name">
             <LinkDot status={gone ? 'lost' : char.link} /><span className="ws-name-text">{char.name}</span>
-            {located && (
-              <button
-                type="button" className="ws-login" data-on={login ? '' : undefined}
-                onClick={() => setLoginOpen(true)}
-                title={login ? `帳號派發會用 ${login.username} 登入這隻角色` : '記下這隻角色的帳號，讓帳號派發自動登入'}
-              >
-                {login ? (login.enabled ? '已加入自動登入' : '自動登入已停用') : '加入自動登入'}
-              </button>
-            )}
           </div>
-          {loginOpen && (
-            <LoginDialog
-              pid={char.pid} name={char.name} entry={login}
-              onClose={() => setLoginOpen(false)} onSaved={setLogin}
-            />
-          )}
           <div className="ws-sub">
             {unlocated
               ? `pid ${char.pid} · 尚未定位`
               : `${char.sect ? `${char.sect} · ` : ''}Lv ${char.level} · pid ${char.pid}`}
-            {char.hook && !gone && (
-              <span className="ws-hook"><span className="ws-hook-dot" aria-hidden />Hook 已連線 · v{char.hook.proto}</span>
-            )}
           </div>
-          {!unlocated && <FamilyLine family={char.family ?? null} hooked={!!char.hook && !gone} />}
         </div>
         <div className="ws-actions">
           <button
@@ -310,26 +277,6 @@ function HpRescue({ pid, value, busy, onChange, onSubmit }: {
         {busy ? '定位中…' : '用血量定位'}
       </button>
       <span className="ws-rescue-hint">在遊戲中查看角色目前血量，填入後即可掃描定位</span>
-    </div>
-  );
-}
-
-// The family summary only arrives when the family window opens in game (hook
-// packet 0x31); the last one is kept per character, so say when it was seen.
-function FamilyLine({ family, hooked }: { family: FamilyInfo | null; hooked: boolean }) {
-  if (!family) {
-    return hooked
-      ? <div className="ws-family is-empty">家族：請在遊戲裡打開家族視窗</div>
-      : null;
-  }
-  const seen = new Date(family.received_at * 1000).toLocaleString('zh-TW', { hour12: false });
-  return (
-    <div className="ws-family" title={`莊園 #${family.manor_id} · ${seen} 收到`}>
-      <span className="ws-family-name">{family.name}</span>
-      <span>Lv {family.level}</span>
-      <span>{family.manor_name ?? '莊園'} #{family.manor_id}</span>
-      <span>{family.members}/{family.member_cap} 人</span>
-      <span className="ws-family-seen">{seen}</span>
     </div>
   );
 }

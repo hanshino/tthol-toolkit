@@ -8,7 +8,6 @@ import { Treasury } from './pages/Treasury';
 import { Market } from './pages/Market';
 import { Snapshots } from './pages/Snapshots';
 import { Diagnostics } from './pages/Diagnostics';
-import { Dispatch } from './pages/Dispatch';
 import { CharWorkspace } from './pages/CharWorkspace';
 import type { CharacterRow } from './api/types';
 
@@ -47,7 +46,6 @@ export function App() {
           {view.kind === 'treasury' && <Treasury chars={snap.chars} onOpenChar={openChar} />}
           {view.kind === 'market' && <Market chars={snap.chars} />}
           {view.kind === 'snapshots' && <Snapshots chars={snap.chars} onOpenChar={openChar} />}
-          {view.kind === 'dispatch' && <Dispatch />}
           {view.kind === 'diagnostics' && <Diagnostics />}
           {view.kind === 'char' && (workspace
             ? (

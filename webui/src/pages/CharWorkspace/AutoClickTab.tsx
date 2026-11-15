@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get, post } from '../../api/client';
 import { reportClientError } from '../../diag/report';
-import { heroState, stateClass } from './assistState';
+import './assist.css';
 
 type Status = {
   running: boolean;
@@ -70,12 +70,12 @@ export function AutoClickTab({ pid, active }: { pid: number; active: boolean }) 
     ? new Date(status.last_click_at * 1000).toLocaleTimeString('zh-TW', { hour12: false })
     : '—';
 
-  const state = heroState(status.running);
+  const stateText = status.running ? '執行中' : '未啟用';
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <section className="gd-panel gd-strip" aria-label="英雄培養">
-        <span className={stateClass(state)}><i />{state.text}</span>
+        <span className={`gd-state${status.running ? ' is-on' : ''}`}><i />{stateText}</span>
         <div className="gd-strip-text">
           <span className="gd-title">英雄培養</span>
           <span className="gd-dim">自動點商人洗英雄變身</span>

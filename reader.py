@@ -1503,7 +1503,7 @@ def _obj_text(buf, offset, size):
 # The client's message templates (cp950, printf style): a std::map<int, char*>
 # at a static address, [+4] head node, [+8] size. MSVC tree node: +0 left,
 # +4 parent, +8 right, +0xC key, +0x10 text, +0x15 isnil. World shouts and
-# system lines (hook packet 0xFD) carry ids into it, e.g. 6033..6037
+# system lines carry ids into it, e.g. 6033..6037
 # "%s 說> 好運到，歡喜開 %s 禮得 %s 好寶。", 60077 "家族成員%s上線了!".
 # Not in tthol.sqlite. 3,499 entries, verified 2026-10-05 on two clients.
 STRING_TABLE_PTR = 0x008094C4

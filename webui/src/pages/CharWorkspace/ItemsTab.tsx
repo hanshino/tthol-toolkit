@@ -1,14 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { post } from '../../api/client';
 import { describeError, reportClientError } from '../../diag/report';
 import type { CharacterDetail, SaveSnapshotResult } from '../../api/types';
 import { LinkDot, type LinkStatus } from '../../primitives';
 import { buildEntries, CATEGORIES, groupByCategory, SOURCE_LABEL, type Category, type Entry, type Tab } from '../../components/items/entries';
 import { ContainerHoldings, ItemDetail } from '../../components/items/ItemDetail';
-import { Row, Slot, type RuleBadge } from '../../components/items/ItemCells';
-import { CopySettings, ItemRuleEditor } from '../../components/items/ItemRuleEditor';
-import { RuleMenu, RulePicker, commonActions } from '../../components/items/RuleMenu';
-import { ACTION_LABEL, ACTION_SHORT, LATER_ACTIONS, useItemRules } from '../../components/items/useItemRules';
+import { Row, Slot } from '../../components/items/ItemCells';
 import { useItemMeta } from '../../components/items/useItemMeta';
 import '../../components/items/items.css';
 
@@ -56,13 +53,6 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState<SnapshotSource | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [ruledOnly, setRuledOnly] = useState(false);
-  // Multi-select (Ctrl / Shift click) for one 處置 on many items; `anchor` is
-  // where a Shift range starts.
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [anchor, setAnchor] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; keys: string[] } | null>(null);
-  const closeMenu = useCallback(() => setMenu(null), []);
 
   const updatePrefs = (next: Partial<typeof prefs>) => {
     const merged = { ...prefs, ...next };
@@ -90,17 +80,9 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
   const warehouse = detail?.warehouse ?? [];
   const slots = [...inventory, ...pet, ...warehouse];
   const meta = useItemMeta(slots.map(s => s.item_id));
-  const itemRules = useItemRules(pid, warehouse.map(s => s.item_id));
-  const badge = (itemId: number): RuleBadge | undefined => {
-    const a = itemRules.rules[itemId]?.action;
-    const short = a ? ACTION_SHORT[a] : undefined;
-    return a && short ? { short, label: ACTION_LABEL[a], tone: LATER_ACTIONS.includes(a) ? 'later' : 'use' } : undefined;
-  };
-  const ruledCount = Object.keys(itemRules.rules).length;
 
   const entries = buildEntries(slots, meta, { tab, merge: prefs.merge, query });
-  const byCategory = category === 'all' ? entries : entries.filter(e => e.category === category);
-  const shown = ruledOnly ? byCategory.filter(e => itemRules.rules[e.itemId]) : byCategory;
+  const shown = category === 'all' ? entries : entries.filter(e => e.category === category);
   const current: Entry | undefined = shown.find(e => e.key === selected) ?? shown[0];
 
   const invTs = detail?.inventory_updated_at ?? null;
@@ -124,68 +106,27 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
 
   const showSources = tab === 'all';
   // Raw slot order (as in game) only when nothing regroups or merges the slots.
-  const flat = prefs.view === 'grid' && !prefs.merge && category === 'all' && !query.trim() && !ruledOnly;
-
-  // Click: one item (clears the picks). Ctrl / Cmd: add or drop it. Shift:
-  // the range from the last clicked item, in the order shown.
-  const onCell = (e: Entry) => (ev: React.MouseEvent) => {
-    if (ev.shiftKey && anchor) {
-      const order = shown.map(x => x.key);
-      const [a, b] = [order.indexOf(anchor), order.indexOf(e.key)].sort((x, y) => x - y);
-      if (a >= 0) {
-        setPicked(new Set([...picked, ...order.slice(a, b + 1)]));
-        setSelected(e.key);
-        return;
-      }
-    }
-    if (ev.ctrlKey || ev.metaKey) {
-      const next = new Set(picked);
-      if (next.size === 0 && current) next.add(current.key); // the shown item joins in
-      if (next.has(e.key)) next.delete(e.key);
-      else next.add(e.key);
-      setPicked(next);
-      setAnchor(e.key);
-      setSelected(e.key);
-      return;
-    }
-    setPicked(new Set());
-    setAnchor(e.key);
-    setSelected(e.key);
-  };
-  const onCellMenu = (e: Entry) => (ev: React.MouseEvent) => {
-    ev.preventDefault();
-    const keys = picked.has(e.key) && picked.size > 1 ? [...picked] : [e.key];
-    if (keys.length === 1) setSelected(e.key);
-    setMenu({ x: ev.clientX, y: ev.clientY, keys });
-  };
-  const byKey = new Map(entries.map(e => [e.key, e]));
-  const idsOf = (keys: Iterable<string>) =>
-    [...new Set([...keys].map(k => byKey.get(k)?.itemId).filter((x): x is number => x != null))];
-  const pickedIds = idsOf(picked);
+  const flat = prefs.view === 'grid' && !prefs.merge && category === 'all' && !query.trim();
 
   const renderEntries = (list: Entry[]) => prefs.view === 'grid'
     ? (
       <div className="inv-grid">
         {list.map(e => (
-          <Slot key={e.key} entry={e} selected={picked.size === 0 && e.key === current?.key}
-            picked={picked.has(e.key)} showSources={showSources}
-            onSelect={onCell(e)} onMenu={onCellMenu(e)} rule={badge(e.itemId)} />
+          <Slot key={e.key} entry={e} selected={e.key === current?.key}
+            showSources={showSources} onSelect={() => setSelected(e.key)} />
         ))}
       </div>
     )
     : (
       <div className="inv-list">
         {list.map(e => (
-          <Row key={e.key} entry={e} selected={picked.size === 0 && e.key === current?.key}
-            picked={picked.has(e.key)} showSources={showSources}
-            onSelect={onCell(e)} onMenu={onCellMenu(e)} rule={badge(e.itemId)} />
+          <Row key={e.key} entry={e} selected={e.key === current?.key}
+            showSources={showSources} onSelect={() => setSelected(e.key)} />
         ))}
       </div>
     );
 
-  const emptyText = ruledOnly
-    ? '這裡沒有設定處置的道具 — 在道具上按右鍵，或點選後在右側「處置」設定'
-    : query.trim()
+  const emptyText = query.trim()
     ? `沒有符合「${query.trim()}」的道具`
     : tab === 'warehouse' && whTs === null
       ? '尚未讀取庫房 — 在遊戲中開啟倉庫即可自動讀取'
@@ -209,7 +150,7 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
           <div className="inv-tabs" role="tablist">
             {(['all', 'inventory', 'pet', 'warehouse'] as const).map(t => (
               <button key={t} type="button" role="tab" className="inv-tab" aria-selected={tab === t}
-                onClick={() => { setTab(t); setCategory('all'); setSelected(null); setPicked(new Set()); }}>
+                onClick={() => { setTab(t); setCategory('all'); setSelected(null); }}>
                 {t === 'all' ? '全部' : SOURCE_LABEL[t]}
                 <span className="inv-n">{counts[t]}</span>
                 {t === 'warehouse' && !whOpen && whTs !== null && <span className="inv-tab-note">已關閉</span>}
@@ -229,11 +170,6 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
               title="同一種道具佔好幾格時，合成一格顯示總數"
               onClick={() => { updatePrefs({ merge: !prefs.merge }); setSelected(null); }}>
               合併同名
-            </button>
-            <button type="button" className={ruledOnly ? 'is-active' : ''} aria-pressed={ruledOnly}
-              title="只顯示有設定處置（定期使用、中了狀態就用、賣掉、存倉）的道具"
-              onClick={() => { setRuledOnly(!ruledOnly); setSelected(null); }}>
-              已設處置 {ruledCount}
             </button>
             <div className="inv-seg" role="group" aria-label="檢視方式">
               <button type="button" className={prefs.view === 'grid' ? 'is-active' : ''} aria-pressed={prefs.view === 'grid'}
@@ -275,22 +211,11 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
                 ))}
           </div>
 
-          {pickedIds.length > 1 && (
-            <div className="inv-batch" role="region" aria-label="批次處置">
-              <span className="inv-batch-n">已選 {pickedIds.length} 種</span>
-              {commonActions(itemRules, pickedIds).length > 0
-                ? <RulePicker key={pickedIds.join(',')} state={itemRules} ids={pickedIds} />
-                : <span className="inv-rule-note">選到的道具沒有共同可用的處置</span>}
-              <button type="button" className="is-ghost" onClick={() => setPicked(new Set())}>取消選取</button>
-            </div>
-          )}
-
           <div className="inv-foot">
             <span>
               {prefs.merge ? `${shown.length} 種道具` : `${shown.length} 格`} · 共 {totalQty.toLocaleString()} 個
             </span>
             <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              <CopySettings character={itemRules.character} onCopied={msg => { setToast(msg); itemRules.reload(); }} />
               <button type="button" className="is-ghost" onClick={() => saveSnapshot('inventory')}
                 disabled={inventory.length === 0 || saving !== null} title="將目前行囊內容存入留影">
                 {saving === 'inventory' ? '保存中…' : '↧ 留影身'}
@@ -306,19 +231,7 @@ export function ItemsTab({ pid, detail, error, onOpenSnapshots }: {
           </div>
         </section>
 
-        {menu && (
-          <RuleMenu
-            state={itemRules}
-            ids={idsOf(menu.keys)}
-            title={menu.keys.length > 1 ? `已選 ${idsOf(menu.keys).length} 種道具` : byKey.get(menu.keys[0])?.name ?? ''}
-            at={menu}
-            onClose={closeMenu}
-            onDetail={menu.keys.length === 1 ? () => { setPicked(new Set()); setSelected(menu.keys[0]); } : undefined}
-          />
-        )}
-
         <ItemDetail entry={current}>
-          {current && <ItemRuleEditor itemId={current.itemId} state={itemRules} />}
           {current && <ContainerHoldings slots={slots} itemId={current.itemId} />}
         </ItemDetail>
       </div>

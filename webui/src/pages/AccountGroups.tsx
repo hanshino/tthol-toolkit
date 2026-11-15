@@ -6,8 +6,7 @@ import { Panel } from '../primitives';
 import './accounts.css';
 
 // 帳號分組: characters of one game account share one warehouse, so the 寶庫
-// counts only the newest warehouse record of each account, and 分身交貨 never
-// trades between them. 帳號派發 characters on one login are grouped on their own.
+// counts only the newest warehouse record of each account.
 const NEW = 'new';
 const NONE = 'none';
 
@@ -72,7 +71,6 @@ export function AccountGroups() {
     <Panel title="帳號分組">
       <p className="ag-help">
         同一個遊戲帳號的角色共用倉庫，放在同一組後，寶庫只算這組最新的那份倉庫紀錄，不會重複計算。
-        帳號派發裡用同一個登入帳號的角色會自動分在一起；其他的在這裡指定。
       </p>
       {error && <div className="ag-err" role="alert">{error}</div>}
       <div className="ag-grid">

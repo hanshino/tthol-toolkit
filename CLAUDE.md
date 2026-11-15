@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Memory reader and toolkit for the Tthol game (`tthola.dat`, 32-bit process). Reads character state from game memory — never modifies game memory. Where the app acts on the game, it does so through background window input (`services/game_input.py`) and the tthol-hook command pipe (`services/hook_cmd.py`), not by writing memory.
+Memory reader and toolkit for the Tthol game (`tthola.dat`, 32-bit process). Reads character state from game memory — never modifies game memory. The few features that act on the game (auto-click, keep-active, click-to-walk) do so through background window input (`services/auto_click.py`, `services/walker.py`), not by writing memory. The app does not use tthol-hook.
 
 ## Commands
 

@@ -1,5 +1,5 @@
 """Where a game client is between logins, read from its UI window list (RTTI
-class names, captions, rects), and the background input that moves it on.
+class names, captions, rects).
 
 Read-only on game memory. Probed live 2026-10-06 (memory: project_login_screen):
 
@@ -19,9 +19,7 @@ from __future__ import annotations
 
 import re
 import struct
-import threading
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import reader
 
@@ -72,62 +70,6 @@ class Widget:
         return (left + right) // 2, (top + bottom) // 2
 
 
-@dataclass
-class Screen:
-    kind: str  # login / select / protect / game / unknown
-    widgets: list[Widget] = field(default_factory=list)
-    servers: list[str] = field(default_factory=list)
-    server_selected: int = -1
-    list_rect: tuple[int, int, int, int] | None = None
-
-    def by_id(self, wid: int) -> Widget | None:
-        return next((w for w in self.widgets if w.wid == wid), None)
-
-    @property
-    def box(self) -> Widget | None:
-        """The 確定 of an ad / tip box on screen, if one is up."""
-        box = self.by_id(MSGBOX)
-        ok = self.by_id(MSGBOX_OK)
-        return ok if box is not None and box.shown and ok is not None else None
-
-    def edits(self) -> list[Widget]:
-        """CWndEdit widgets top to bottom (帳號, 密碼 on the login screen)."""
-        return sorted((w for w in self.widgets if w.cls == "CWndEdit"), key=lambda w: w.rect[1])
-
-    def login_button(self) -> Widget | None:
-        """登入: the left of the two image buttons right under the password edit.
-        The right one closes the client."""
-        eds = self.edits()
-        if len(eds) < 2:
-            return None
-        below = eds[1].rect[3]
-        row = [
-            w
-            for w in self.widgets
-            if w.cls == "CWndButton"
-            and below < w.rect[1] < below + 40
-            and w.rect[2] - w.rect[0] > 60
-        ]
-        return min(row, key=lambda w: w.rect[0]) if len(row) == 2 else None
-
-    def slots(self) -> list[tuple[str, Widget | None, bool]]:
-        """(name, click button, selected) per character slot; name "" = empty."""
-        out = []
-        for name_id, button_id, mark_id in zip(SLOT_NAMES, SLOT_BUTTONS, SLOT_MARKS):
-            name = self.by_id(name_id)
-            mark = self.by_id(mark_id)
-            out.append(
-                (name.caption if name else "", self.by_id(button_id), bool(mark and mark.value))
-            )
-        return out
-
-    def server_point(self, index: int) -> tuple[int, int] | None:
-        if self.list_rect is None or not 0 <= index < len(self.servers):
-            return None
-        left, _top, right, _bottom = self.list_rect
-        return (left + right) // 2, LIST_ROW_TOP + LIST_ROW_H * index + LIST_ROW_H // 2
-
-
 def classify(widgets: list[Widget], in_game: bool) -> str:
     caps = {w.caption for w in widgets if w.cls == "CWndStatic"}
     if LOGIN_CAPTION in caps:
@@ -159,43 +101,6 @@ def screen_kind(pm) -> str:
     except Exception:
         in_game = False
     return classify(widgets, in_game)
-
-
-class ScreenReader:
-    """read(pid) -> Screen, one pymem handle per pid (opened on first use)."""
-
-    def __init__(self) -> None:
-        self._pms: dict[int, object] = {}
-        self._lock = threading.Lock()
-
-    def _pm(self, pid: int):
-        with self._lock:
-            pm = self._pms.get(pid)
-            if pm is None:
-                import pymem
-
-                pm = pymem.Pymem()
-                pm.open_process_from_id(pid)
-                self._pms[pid] = pm
-            return pm
-
-    def forget(self, pid: int) -> None:
-        with self._lock:
-            self._pms.pop(pid, None)
-
-    def read(self, pid: int) -> Screen:
-        try:
-            pm = self._pm(pid)
-            widgets, servers, selected, list_rect = _read_widgets(pm)
-            try:
-                in_game = bool(reader.read_hp_from_player_chain(pm))
-            except Exception:
-                in_game = False
-        except Exception:
-            self.forget(pid)  # the process went away, or a stale handle
-            return Screen("unknown")
-        screen = Screen(classify(widgets, in_game), widgets, servers, selected, list_rect)
-        return screen
 
 
 def _u32(pm, addr: int) -> int:
@@ -266,63 +171,3 @@ def _read_list(pm, obj: int) -> tuple[list[str], int]:
     except Exception:
         return [], -1
     return names, selected
-
-
-# ---- background input --------------------------------------------------------------
-
-
-class GameInput:
-    """Clicks and typing posted to the game window (the real cursor does not move)."""
-
-    WM_KEYDOWN, WM_KEYUP, WM_CHAR = 0x0100, 0x0101, 0x0102
-    VK_BACK, VK_END = 0x08, 0x23
-
-    def click(self, pid: int, point: tuple[int, int]) -> bool:
-        from services.auto_click import _resolve_hwnd
-        from services.game_input import click_button
-
-        hwnd = _resolve_hwnd(pid)
-        if not hwnd:
-            return False
-        click_button(hwnd, *point)
-        return True
-
-    def _key(self, hwnd: int, vk: int, char: int | None = None) -> None:
-        from services.game_input import user32
-
-        scan = user32.MapVirtualKeyW(vk, 0)
-        user32.PostMessageW(hwnd, self.WM_KEYDOWN, vk, 1 | (scan << 16))
-        if char is not None:
-            user32.PostMessageW(hwnd, self.WM_CHAR, char, 1 | (scan << 16))
-        time.sleep(0.03)
-        user32.PostMessageW(hwnd, self.WM_KEYUP, vk, 1 | (scan << 16) | (0xC0 << 24))
-        time.sleep(0.05)
-
-    def type(self, pid: int, text: str) -> bool:
-        from services.auto_click import _resolve_hwnd
-        from services.game_input import user32
-
-        hwnd = _resolve_hwnd(pid)
-        if not hwnd:
-            return False
-        for ch in text:
-            user32.PostMessageW(hwnd, self.WM_CHAR, ord(ch), 1)
-            time.sleep(0.06)
-        return True
-
-    def erase(self, pid: int, count: int) -> bool:
-        """End, then `count` backspaces."""
-        from services.auto_click import _resolve_hwnd
-
-        hwnd = _resolve_hwnd(pid)
-        if not hwnd:
-            return False
-        self._key(hwnd, self.VK_END)
-        for _ in range(count):
-            self._key(hwnd, self.VK_BACK, 0x08)
-        return True
-
-    def logout(self, pid: int) -> bool:
-        from services.game_input import leave_game
-
-        return leave_game(pid)

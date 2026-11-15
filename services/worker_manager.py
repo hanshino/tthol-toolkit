@@ -19,7 +19,6 @@ from services.api_types import (
     Vitals,
     WorldSnapshot,
 )
-from services.buff_tracker import merge_buffs
 from services.char_session import CharSession
 from services.events import PositionStream, WorldStream
 from services.process_detector import find_tthol_processes
@@ -33,134 +32,20 @@ class WorkerManager:
         self,
         snapshot_db: SnapshotDB | None = None,
         autoclick_manager=None,
-        hook_hub=None,
-        buff_tracker=None,
-        family=None,
     ) -> None:
         self._sessions: dict[int, CharSession] = {}
         # Every create / replace / drop of a session. rescan used to pop the old
         # one and add the new one later; a snapshot in between made a session of
         # its own that rescan then overwrote, and that worker ran on unowned (live
-        # 2026-10-07: one more worker per dispatch login, each logging the same).
+        # 2026-10-07: one more worker per login, each logging the same).
         self._sessions_lock = threading.RLock()
         self._db = snapshot_db
         self._autoclick = autoclick_manager
-        self._hook = hook_hub
-        self._buffs = buff_tracker
-        self._family = family  # FamilyTracker: last 0x31 per character name
-        self._daily = None  # DailyQueueManager: the 日常 queue and its card
         self._keep_active = None  # KeepActiveManager: on by default once located
         self._keep_auto: set[int] = set()  # pids already given their default
-        self._hook_caps = None  # HookCaps: which hook features each client allows
-        self._names: dict[int, str] = {}  # pid -> last character located in that window
-        self._name_seen: dict[int, str] = {}  # pid -> a new name seen once, not yet trusted
-        self._names_lock = threading.Lock()  # the snapshot handler and the batch dispatch
-        self._forget: list = []  # fn(pid): drop what a module holds for the window's last character
-        self._family_query = (
-            None  # fn(pid): the hook's `family` (the 0x31 reply lands in FamilyTracker)
-        )
-        self._family_asked: set[tuple[int, str]] = set()  # (pid, name) asked this login
-
-    def set_family_tracker(self, tracker) -> None:
-        self._family = tracker
-
-    def add_forget(self, fn) -> None:
-        """`fn(pid)` runs when another character logs in on the same game window
-        (or the window closes): the module stops what it ran for the old one
-        and drops its log, so the new character starts clean."""
-        self._forget.append(fn)
-
-    def _watch_names(self, live_pids: set[int]) -> None:
-        switched, gone = [], []
-        with self._names_lock:
-            gone = [pid for pid in self._names if pid not in live_pids]
-            for pid in live_pids:
-                sess = self._sessions.get(pid)
-                name = sess.name if sess is not None else None
-                if not name:
-                    continue  # between characters, or a map load: not a switch yet
-                old = self._names.get(pid)
-                if old is not None and old != name and self._name_seen.get(pid) != name:
-                    # A name read mid-login can be garbage (";w9w", live 2026-10-06):
-                    # a switch stops modules, so the new name must hold for two ticks.
-                    self._name_seen[pid] = name
-                    continue
-                self._name_seen.pop(pid, None)
-                self._names[pid] = name
-                if old is not None and old != name:
-                    switched.append((pid, old, name))
-            for pid in gone:
-                self._names.pop(pid, None)
-                self._name_seen.pop(pid, None)
-        for pid, old, name in switched:
-            log.info("character switched pid=%d %s -> %s", pid, old, name, extra={"cat": "api"})
-            self._run_forget(pid)
-        for pid in gone:
-            self._run_forget(pid)
-
-    def confirm_character(self, pid: int, name: str) -> None:
-        """The batch dispatch logged `name` in on this window (and checked it):
-        take the switch now, so the old character's modules are dropped before
-        the new one's start, not stopped by the next snapshot tick."""
-        with self._names_lock:
-            old = self._names.get(pid)
-            self._names[pid] = name
-            self._name_seen.pop(pid, None)
-        if old is not None and old != name:
-            log.info(
-                "character switched pid=%d %s -> %s (dispatch)",
-                pid,
-                old,
-                name,
-                extra={"cat": "api"},
-            )
-            self._run_forget(pid)
-
-    def _run_forget(self, pid: int) -> None:
-        for fn in self._forget:
-            try:
-                fn(pid)
-            except Exception:
-                log.exception("forget failed pid=%d", pid, extra={"cat": "api"})
-
-    def set_family_query(self, fn) -> None:
-        self._family_query = fn
-
-    def _ask_family(self, live_pids: set[int]) -> None:
-        """Once per login, ask the hook for the family summary: the server sends
-        0x31 only when the family window opens, and the navigator needs the
-        manor. Only where the hook lists `family` in caps; never polled."""
-        if self._family_query is None or self._hook_caps is None:
-            return
-        self._family_asked = {(p, n) for p, n in self._family_asked if p in live_pids}
-        for pid in live_pids:
-            name = self._names.get(pid)
-            if not name or (pid, name) in self._family_asked:
-                continue
-            if "family" not in self._hook_caps.features(pid):
-                continue
-            self._family_asked.add((pid, name))
-            threading.Thread(
-                target=self._ask_family_one, args=(pid,), daemon=True, name=f"family-{pid}"
-            ).start()
-
-    def _ask_family_one(self, pid: int) -> None:
-        try:
-            reply = self._family_query(pid)
-        except Exception as e:
-            log.info("family query failed pid=%d: %s", pid, e, extra={"cat": "hook"})
-            return
-        if not reply.get("ok"):
-            log.info("family query pid=%d: %s", pid, reply.get("error"), extra={"cat": "hook"})
-
-    def set_daily_queue(self, mgr) -> None:
-        self._daily = mgr
 
     def set_keep_active(self, mgr) -> None:
         self._keep_active = mgr
-
-    def set_hook_caps(self, caps) -> None:
-        self._hook_caps = caps
 
     def _keep_active_default(self, live_pids: set[int]) -> None:
         """保持渲染 is on by default: started once per game window, when its
@@ -216,8 +101,6 @@ class WorkerManager:
                 self._sessions.pop(dead_pid).stop()
 
         self._keep_active_default(live_pids)
-        self._watch_names(live_pids)
-        self._ask_family(live_pids)
 
         rows = []
         for pid in live_pids:
@@ -225,18 +108,6 @@ class WorkerManager:
             r = sess.row() or _placeholder_row(pid, sess.link, sess.last_error)
             if self._autoclick is not None:
                 r = r.model_copy(update={"autoclick": self._autoclick.status(pid)})
-            if self._hook is not None:
-                r = r.model_copy(update={"hook": self._hook.status(pid)})
-            if self._family is not None and sess.name:
-                r = r.model_copy(update={"family": self._family.get(sess.name)})
-            if self._hook_caps is not None:
-                r = r.model_copy(update={"features": self._hook_caps.features(pid)})
-            if self._daily is not None and sess.name:
-                try:
-                    r = r.model_copy(update={"daily": self._daily.status(pid)})
-                except Exception:
-                    log.exception("daily status failed pid=%d", pid, extra={"cat": "daily"})
-            r = self._with_hook_buffs(pid, r)
             rows.append(r)
         return WorldSnapshot(chars=rows, server_ts=time.time())
 
@@ -246,16 +117,7 @@ class WorkerManager:
             if sess is None:
                 sess = CharSession(pid)
                 self._sessions[pid] = sess
-        return self._with_hook_buffs(pid, sess.detail())
-
-    def _with_hook_buffs(self, pid: int, model):
-        """Replace the memory-array buffs with the hook's list when it has one."""
-        if self._buffs is None:
-            return model
-        hooked = self._buffs.buffs(pid)
-        if hooked is None:
-            return model
-        return model.model_copy(update={"buffs": merge_buffs(hooked, model.buffs)})
+        return sess.detail()
 
     def connect(self, pid: int, body: ConnectRequest) -> ConnectResult:
         with self._sessions_lock:

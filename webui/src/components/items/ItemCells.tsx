@@ -25,30 +25,23 @@ function qtyText(n: number) {
   return n >= 100000 ? `${Math.floor(n / 10000)}萬` : String(n);
 }
 
-/** 道具處置 badge text, e.g. 定 / 解 / 賣 / 存; absent for no rule. */
-export type RuleBadge = { short: string; label: string; tone: 'use' | 'later' };
-
 type CellProps = {
   entry: Entry;
   selected: boolean;
-  picked?: boolean;
   showSources: boolean;
-  onSelect: (e: React.MouseEvent) => void;
-  onMenu?: (e: React.MouseEvent) => void;
-  rule?: RuleBadge;
+  onSelect: () => void;
 };
 
-export function Slot({ entry, selected, picked, showSources, onSelect, onMenu, rule }: CellProps) {
+export function Slot({ entry, selected, showSources, onSelect }: CellProps) {
   return (
     <button
       type="button"
-      className={picked ? 'inv-slot is-picked' : 'inv-slot'}
-      aria-pressed={selected || !!picked}
-      aria-label={`${entry.name} ×${entry.qty}${rule ? `，處置：${rule.label}` : ''}`}
-      title={`${entry.name} ×${entry.qty.toLocaleString()}${rule ? `（${rule.label}）` : ''}`}
+      className="inv-slot"
+      aria-pressed={selected}
+      aria-label={`${entry.name} ×${entry.qty}`}
+      title={`${entry.name} ×${entry.qty.toLocaleString()}`}
       style={{ '--inv-c': categoryColor(entry.category) } as React.CSSProperties}
       onClick={onSelect}
-      onContextMenu={onMenu}
     >
       <ItemIcon name={entry.name} meta={entry.meta} size={44} />
       {entry.meta?.no_trade && <span className="inv-bound" />}
@@ -56,12 +49,11 @@ export function Slot({ entry, selected, picked, showSources, onSelect, onMenu, r
         ? <span className="inv-corner">{entry.sources.map(s => SOURCE_SHORT[s]).join('')}</span>
         : entry.stacks > 1 && <span className="inv-corner">{entry.stacks}格</span>}
       {entry.qty > 1 && <span className="inv-qty">{qtyText(entry.qty)}</span>}
-      {rule && <span className={`inv-rule-badge is-${rule.tone}`} aria-hidden="true">{rule.short}</span>}
     </button>
   );
 }
 
-export function Row({ entry, selected, picked, showSources, onSelect, onMenu, rule }: CellProps) {
+export function Row({ entry, selected, showSources, onSelect }: CellProps) {
   const m = entry.meta;
   const sub = [
     m?.type_label,
@@ -73,17 +65,13 @@ export function Row({ entry, selected, picked, showSources, onSelect, onMenu, ru
     ? entry.sources.map(s => SOURCE_LABEL[s]).join('、')
     : entry.stacks > 1 ? `${entry.stacks} 格` : '';
   return (
-    <button type="button" className={picked ? 'inv-row is-picked' : 'inv-row'}
-      aria-pressed={selected || !!picked} onClick={onSelect} onContextMenu={onMenu}>
+    <button type="button" className="inv-row" aria-pressed={selected} onClick={onSelect}>
       <span className="inv-row-icon">
         <ItemIcon name={entry.name} meta={m} size={36} />
         {m?.no_trade && <span className="inv-bound" />}
       </span>
       <span className="inv-row-name">
-        <span>
-          {entry.name}
-          {rule && <span className={`inv-rule-pill is-${rule.tone}`}>{rule.label}</span>}
-        </span>
+        <span>{entry.name}</span>
         {sub && <span className="inv-row-sub">{sub}</span>}
       </span>
       <span className="inv-row-qty">
