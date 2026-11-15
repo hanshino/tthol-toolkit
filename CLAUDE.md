@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Read-only memory reader for the Tthol game (`tthola.dat`, 32-bit process). Reads character stats from game memory — never modifies game memory.
+Memory reader and toolkit for the Tthol game (`tthola.dat`, 32-bit process). Reads character state from game memory — never modifies game memory. Where the app acts on the game, it does so through background window input (`services/game_input.py`) and the tthol-hook command pipe (`services/hook_cmd.py`), not by writing memory.
 
 ## Commands
 
@@ -51,7 +51,7 @@ The character struct lives on the heap and moves (`0xFDFDFDFD` after restart), s
 
 **`knowledge.json`** is the structure knowledge base defining field offsets relative to the HP address (offset 0) — the source of truth for the character struct layout.
 
-All character fields are `int32` at 4-byte aligned offsets from the HP base address. See `knowledge.json` for the full offset table.
+Most character fields are `int32` at 4-byte aligned offsets from the HP base address; a few are `string`, `big5` or `pointer`. See `knowledge.json` for the full offset table and each field's type.
 
 ## Conventions
 

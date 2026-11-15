@@ -72,8 +72,9 @@ message text is prose and changes between versions.
 
 Then read `detail.bytes_hex` — the first 32 bytes at the last known address:
 
-- Starts `cdcdcdcd` — the block was freed. The struct moved; normal during a
-  map change, a problem if it repeats.
+- Starts `dddddddd` — the block was freed. The struct moved; normal during a
+  map change, a problem if it repeats. (`cdcdcdcd` is allocated but not yet
+  initialised memory.)
 - Starts `fdfdfdfd` — the game was restarted. The session is stale; the
   UI's 重偵 button rebuilds it.
 - `chain_hp` is an integer, but both `compat_false` and `compat_true` are
@@ -115,7 +116,7 @@ raises only the `tthol` logger to DEBUG and resets to INFO on restart.
   is missing entirely, the CLI still tries
   `%LOCALAPPDATA%\tthol-reader\logs\events.jsonl` and says so on stderr.
 - Locate exhaustion is reported once, by the retry loop itself
-  (`ReaderWorker._report_locate_exhausted`), not by its three callers. If you
+  (`ReaderWorker._report_locate_exhausted`), not by its callers. If you
   add another caller, do not re-report, and do not substitute a bare log line:
   only the structured event carries the `code` and snapshot this triage reads.
 - The ring buffer holds 1000 events; `events.jsonl` holds 5 MB × 5 rotations.
